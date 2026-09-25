@@ -1,4 +1,3 @@
-import std.stdio;
 import std.format : format;
 import mayfair;
 
@@ -16,47 +15,49 @@ void main()
 
     static immutable Colour ink = Colour(24, 24, 37); // dark, to read against the pastel boxes
 
-    auto content = new Column().padding(16).gap(16);
+    auto content = new Column().padding(16).spacing(16);
     foreach (r; 0 .. 2) {
-        auto row = new Row().grow(1).gap(16);
+        auto row = new Row().spacing(16).grow(1);
         foreach (c; 0 .. 2) {
             auto i = r * 2 + c;
-            row.add(new Box(colours[i]).add(new Label(captions[i]).font(sans).colour(ink)));
+            row.add(new Box(colours[i]).add(new Label(captions[i]).font(sans).textFill(ink)));
         }
         content.add(row);
     }
     // No font given: the default, at the theme's text size
-    content.add(new Label("The default font, at Theme.text_size").colour(Theme.text_colour));
+    content.add(new Label("The default font, at Theme.text_size"));
 
-    // Buttons, and a label they change. Setting the text re-lays out the row, since the label's width changes.
+    // A text field, and a button that's disabled for as long as the field is empty: one binding,
+    // no handlers. Enter in the field greets too, since it has an action of its own.
     auto status = new Label("Not clicked yet");
-    int clicks;
-    auto buttons = new Row().gap(12);
-    YGNodeStyleSetAlignItems(buttons.node, YGAlignCenter);
-    // Tab moves focus between them and Space presses the focused one. "Click me" is the default
-    // button, so Enter presses it wherever focus is, and Escape presses the cancel button.
+    auto name = new TextField().promptText("Your name");
+    auto greet = new Button("Greet");
+    greet.disableProperty.bind(name.textProperty.isEmpty);
+    void sayHello() { status.setText("Hello, " ~ name.text); }
+    greet.setOnAction(&sayHello);
+    name.setOnAction(&sayHello);
+    content.add(new Row().spacing(12).alignment(Pos.centerLeft).fillHeight(false)
+        .add(new Label("Name")).add(name).add(greet));
+
+    // The count is a property, and the status label follows it through a binding rather than
+    // being set by each button. "Click me" is the default button, so Enter presses it wherever
+    // focus is (except in the name field, which has its own action); Escape presses the cancel one.
+    auto clicks = new Property!int(0);
     auto clickMe = new Button("Click me").defaultButton(true)
-        .onAction({ status.setText(format!"Clicked %d times"(++clicks)); });
+        .onAction({ clicks.set(clicks.get + 1); });
+    clicks.addListener((int was, int now) {
+        status.setText(now ? format!"Clicked %d times"(now) : "Not clicked yet");
+    });
     auto toggle = new Button("Disable it");
-    toggle.onAction({
-        clickMe.disable(!clickMe.disable);
+    toggle.setOnAction({
+        clickMe.setDisable(!clickMe.disable);
         toggle.setText(clickMe.disable ? "Enable it" : "Disable it");
     });
-    // A text field. Enter in it runs its own action; a field without one would pass Enter on to
-    // "Click me", the default button.
-    auto name = new TextField().promptText("Your name");
-    name.onAction({ status.setText(name.text.length ? "Hello, " ~ name.text : "Not clicked yet"); });
-    auto nameRow = new Row().gap(12);
-    YGNodeStyleSetAlignItems(nameRow.node, YGAlignCenter);
-    nameRow.add(new Label("Name").colour(Theme.text_colour));
-    nameRow.add(name);
-    content.add(nameRow);
-
-    buttons.add(clickMe);
-    buttons.add(new Button("Reset").cancelButton(true).onAction({ clicks = 0; status.setText("Not clicked yet"); }));
-    buttons.add(toggle);
-    buttons.add(status);
-    content.add(buttons);
+    content.add(new Row().spacing(12).alignment(Pos.centerLeft).fillHeight(false)
+        .add(clickMe)
+        .add(new Button("Reset").cancelButton(true).onAction({ clicks.set(0); }))
+        .add(toggle)
+        .add(status));
 
     auto app = new App("Freds new app");
     app.scene = new Scene(content);
@@ -64,14 +65,14 @@ void main()
 }
 
 /// A rounded rectangle of one colour, with whatever it's given centred inside it.
-class Box : Widget
+class Box : Column
 {
     this(Colour colour)
     {
         this.colour = colour;
-        grow(1);
-        YGNodeStyleSetJustifyContent(node, YGJustifyCenter);
-        YGNodeStyleSetAlignItems(node, YGAlignCenter);
+        setGrow(1);
+        setAlignment(Pos.center);
+        setFillWidth(false);
     }
 
 protected:

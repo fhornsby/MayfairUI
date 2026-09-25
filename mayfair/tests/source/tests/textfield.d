@@ -19,8 +19,7 @@ void editing()
     TextField field;
     int actions;
     run("text field: editing", {
-        auto root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        auto root = new Column().fillWidth(false);
         field = new TextField("old");
         field.onAction({ actions++; });
         root.add(field);
@@ -60,8 +59,7 @@ void undoRedo()
 {
     TextField field;
     run("text field: undo and redo", {
-        auto root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        auto root = new Column().fillWidth(false);
         field = new TextField();
         root.add(field);
         return cast(Widget) root;
@@ -89,8 +87,7 @@ void mouse()
 {
     TextField field;
     run("text field: word drag, middle click", {
-        auto root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        auto root = new Column().fillWidth(false);
         field = new TextField("one two three");
         root.add(field);
         return cast(Widget) root;
@@ -131,8 +128,7 @@ void rightToLeft()
 {
     TextField field;
     run("text field: right to left", {
-        auto root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        auto root = new Column().fillWidth(false);
         field = new TextField();
         root.add(field);
         return cast(Widget) root;

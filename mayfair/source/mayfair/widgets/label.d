@@ -2,6 +2,7 @@ module mayfair.widgets.label;
 
 import mayfair.accessibility;
 import mayfair.layout;
+import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.theme;
 import mayfair.text;
@@ -23,6 +24,11 @@ import mayfair.widgets.widget;
     Without a font of its own it uses the default at the theme's text size, which is what most
     labels want; font() swaps in another. Either way, characters the font can't draw come from a
     fallback (see shapeText), so a label never has to know which fonts cover what.
+
+    Its text, font and colour are properties, as JavaFX's Label's are, so a label can show
+    whatever it's bound to:
+
+        status.textProperty.bind(count.map((int n) => format!"Clicked %d times"(n)));
 */
 class Label : Widget
 {
@@ -30,54 +36,28 @@ public:
     this(string text)
     {
         _font = defaultFont(Theme.text_size);
-        accessibleRole(AccessibleRole.label);
+        _text = text;
+        setAccessibleRole(AccessibleRole.label);
         // Yoga asks a leaf how big it wants to be through this callback, which finds its way back
         // here through the node's context pointer
         YGNodeSetContext(node, cast(void*) this);
         YGNodeSetMeasureFunc(node, &measureLabel);
-        setText(text);
+        reshape();
     }
 
-    string text() const nothrow @nogc { return _text; }
+    /// What it says. Setting it re-shapes and re-measures.
+    mixin(declareProperty!(string, "text", "null", q{ reshape(); }));
 
-    Colour colour() const nothrow @nogc { return _colour; }
+    /// What it's drawn with, e.g. `font("Noto Serif", 24)` or a Font opened from the app's own file.
+    mixin(declareProperty!(Font, "font", "null", q{ reshape(); }));
 
-    /// Sets the ink colour. Works before or after mount. Returns this, so calls chain.
-    Label colour(Colour c) nothrow @nogc
-    {
-        _colour = c;
-        if (shape)
-            tvg_shape_set_fill_color(shape, _colour.tupleof);
-        return this;
-    }
-
-    Font font() nothrow @nogc { return _font; }
-
-    /// Draws with `f` instead, e.g. `font("Noto Serif", 24)` or a Font opened from the app's own
-    /// file. Re-shapes and re-measures. Returns this, so calls chain.
-    Label font(Font f)
-    {
-        _font = f;
-        return setText(_text);
-    }
-
-    /// Re-shapes and re-measures. Returns this, so calls chain.
-    Label setText(string text)
-    {
-        _text = text;
-        _run = shapeText(_font, text);
-        _ascender = _font.ascender;
-        _lineHeight = _font.lineHeight;
-        YGNodeMarkDirty(node); // the measured size changed, so the layout above it has to be redone
-        invalidate();
-        invalidateAccessible();
-        return this;
-    }
+    /// The colour of the text. JavaFX's textFill.
+    mixin(declareProperty!(Colour, "textFill", "Theme.text_colour", q{ applyFill(); }));
 
 protected:
     override void mounted() nothrow
     {
-        tvg_shape_set_fill_color(shape, _colour.tupleof);
+        applyFill();
         applyOpacity();
     }
 
@@ -99,6 +79,24 @@ protected:
     }
 
 private:
+    /// Shapes the text again, for a new text or font, and has the layout measure it again.
+    void reshape()
+    {
+        _run = shapeText(_font, _text);
+        _ascender = _font.ascender;
+        _lineHeight = _font.lineHeight;
+        YGNodeMarkDirty(node); // the measured size changed, so the layout above it has to be redone
+        invalidate();
+        invalidateAccessible();
+    }
+
+    void applyFill() nothrow @nogc
+    {
+        if (shape)
+            tvg_shape_set_fill_color(shape, _textFill.tupleof);
+        invalidate();
+    }
+
     // A disabled label fades, like any other control: it's a control in JavaFX too
     void applyOpacity() nothrow @nogc
     {
@@ -106,9 +104,6 @@ private:
             tvg_paint_set_opacity(shape, disabled ? cast(ubyte)(255 * Theme.disabled_opacity) : 255);
     }
 
-    Colour _colour = Theme.text_colour;
-    Font _font;
-    string _text;
     GlyphRun _run;
     float _ascender = 0, _lineHeight = 0;
 }

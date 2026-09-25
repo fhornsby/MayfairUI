@@ -4,6 +4,7 @@ import mayfair.accessibility;
 import mayfair.animation;
 import mayfair.clipboard;
 import mayfair.layout;
+import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.text;
 import mayfair.theme;
@@ -43,6 +44,11 @@ import mayfair.widgets.widget;
     is reported as the user moves it. It can also be set, and its selection changed, by assistive
     technology.
 
+    Its text is a property, as JavaFX's is: listen to textProperty to hear every change, typed
+    or otherwise, or bind it to show something else -- a field whose text is bound shows what it's
+    bound to and can't be typed into, since typing would have to set it. Where the caret is, the
+    anchor, and the selected text are read-only properties.
+
     Offsets into the text are bytes of UTF-8, as D strings are, and always fall between
     characters: anything given one inside a character moves it to the start of that character.
 */
@@ -52,10 +58,11 @@ public:
     this(string text = "")
     {
         _font = defaultFont(Theme.text_size);
-        focusTraversable(true);
-        acceptsTextInput(true);
-        cursor(Cursor.text);
-        accessibleRole(AccessibleRole.textField);
+        _promptRun = shapeText(_font, null);
+        setFocusTraversable(true);
+        setAcceptsTextInput(true);
+        setCursor(Cursor.text);
+        setAccessibleRole(AccessibleRole.textField);
         YGNodeSetContext(node, cast(void*) this);
         YGNodeSetMeasureFunc(node, &measureTextField);
         YGNodeStyleSetPadding(node, YGEdgeHorizontal, Theme.text_field_padding_x);
@@ -67,81 +74,64 @@ public:
             .interpolator(Interpolator.easeOut);
         _blink = new Timeline(KeyFrame(Duration.zero, { showCaret(true); }),
                               KeyFrame(Theme.caret_blink_time / 2, { showCaret(false); }),
-                              KeyFrame(Theme.caret_blink_time, null));
+                              KeyFrame(Theme.caret_blink_time));
         _blink.cycleCount(Theme.caret_blink_count).onFinished({ showCaret(true); });
 
-        setText(text);
+        _text = singleLine(text);
+        _caretPosition = _anchor = _text.length;
+        relayout();
     }
 
-    string text() const nothrow @nogc { return _text; }
+    /*
+        What's in it. Set from outside -- by the app, or a binding -- the caret goes to the end and
+        the undo history starts afresh, since it's the app saying what the field holds rather than
+        the user editing it.
+    */
+    mixin(declareProperty!(string, "text", `""`, q{ textSet(); }));
 
-    /// Replaces all of the text, putting the caret at the end. This is the app setting what the
-    /// field holds, not the user editing it, so it starts the undo history afresh. Returns this.
-    TextField setText(string text)
-    {
-        const clean = singleLine(text);
-        edit(clean, clean.length);
-        _undo = _redo = null;
-        _lastEdit = EditKind.none;
-        return this;
-    }
-
-    string promptText() const nothrow @nogc { return _prompt; }
-
-    /// What the field shows, faintly, while it's empty: a hint at what goes in it. Returns this.
-    TextField promptText(string text)
-    {
-        _prompt = text;
-        _promptRun = shapeText(_font, text);
+    /// What the field shows, faintly, while it's empty: a hint at what goes in it.
+    mixin(declareProperty!(string, "promptText", "null", q{
+        _promptRun = shapeText(_font, _promptText);
         invalidate();
         invalidateAccessible();
-        return this;
+    }));
+
+    /// What to do when Enter is pressed in the field. JavaFX's setOnAction.
+    void setOnAction(void delegate() handler) nothrow @nogc
+    {
+        _onAction = handler;
     }
 
-    /// What to do when Enter is pressed in the field. Returns this, so calls chain.
+    /// The same, returning this so calls chain.
     TextField onAction(void delegate() handler) nothrow @nogc
     {
         _onAction = handler;
         return this;
     }
 
-    /// Called with the new text whenever it changes, however it changed. Returns this.
-    TextField onTextChanged(void delegate(string text) handler) nothrow @nogc
-    {
-        _onTextChanged = handler;
-        return this;
-    }
-
-    bool editable() const nothrow @nogc { return _editable; }
-
     /// Whether the text can be changed by the user. A field that isn't can still be focused,
-    /// selected and copied from. Returns this, so calls chain.
-    TextField editable(bool on) nothrow @nogc
-    {
-        _editable = on;
-        acceptsTextInput(on);
+    /// selected and copied from.
+    mixin(declareProperty!(bool, "editable", "true", q{
+        setAcceptsTextInput(_editable);
         invalidate();
         invalidateAccessible();
-        return this;
-    }
+    }));
 
-    Font font() nothrow @nogc { return _font; }
-
-    /// Draws with `f` instead of the theme's default. Returns this, so calls chain.
-    TextField font(Font f)
-    {
-        _font = f;
+    /// What it's drawn with, instead of the theme's default.
+    mixin(declareProperty!(Font, "font", "null", q{
         YGNodeMarkDirty(node);
-        promptText(_prompt);
+        _promptRun = shapeText(_font, _promptText);
         relayout();
-        return this;
-    }
+    }));
 
     /// Where the caret is.
-    size_t caretPosition() const nothrow @nogc { return _caret; }
+    mixin(declareReadOnlyProperty!(size_t, "caretPosition", "0"));
 
     /// The other end of the selection from the caret; the same as the caret if nothing's selected.
-    size_t anchor() const nothrow @nogc { return _anchor; }
+    mixin(declareReadOnlyProperty!(size_t, "anchor", "0"));
+
+    /// What's selected, or nothing.
+    mixin(declareReadOnlyProperty!(string, "selectedText", "null"));
 
     /// Puts the caret at `offset`, selecting nothing.
     void positionCaret(size_t offset)
@@ -156,9 +146,7 @@ public:
     }
 
     void selectAll() { select(0, _text.length); }
-    void deselect() { select(_caret, _caret); }
-
-    string selectedText() const nothrow @nogc { return _text[selectionStart .. selectionEnd]; }
+    void deselect() { select(_caretPosition, _caretPosition); }
 
     /// Replaces the selection with `text`, or inserts it at the caret if nothing's selected.
     void replaceSelection(string text)
@@ -168,13 +156,13 @@ public:
 
     void copy()
     {
-        if (_anchor != _caret)
+        if (_anchor != _caretPosition)
             Clipboard.text = selectedText;
     }
 
     void cut()
     {
-        if (!_editable || _anchor == _caret)
+        if (!canEdit() || _anchor == _caretPosition)
             return;
         copy();
         replaceSelection("");
@@ -182,7 +170,7 @@ public:
 
     void paste()
     {
-        if (!_editable)
+        if (!canEdit())
             return;
         if (auto pasted = Clipboard.text)
             replaceSelection(pasted);
@@ -217,7 +205,7 @@ protected:
     {
         if (event.type == KeyEventType.typed)
         {
-            if (_editable)
+            if (canEdit())
             {
                 _composed = null; // committed, if it was being composed
                 change(selectionStart, selectionEnd, event.character, EditKind.typing);
@@ -230,18 +218,18 @@ protected:
             return;
 
         const extend = event.shift, byWord = event.control;
-        const hasSelection = _anchor != _caret;
+        const hasSelection = _anchor != _caretPosition;
         // In a line that reads right to left, the word before is the one to the right
         const rtl = _line.run.rightToLeft;
         switch (event.code)
         {
             case KeyCode.left:
-                moveCaret(byWord ? (rtl ? _line.nextWordEnd(_caret) : _line.previousWordStart(_caret))
-                        : hasSelection && !extend ? visualEnd(false) : _line.visualNeighbour(_caret, false), extend);
+                moveCaret(byWord ? (rtl ? _line.nextWordEnd(_caretPosition) : _line.previousWordStart(_caretPosition))
+                        : hasSelection && !extend ? visualEnd(false) : _line.visualNeighbour(_caretPosition, false), extend);
                 break;
             case KeyCode.right:
-                moveCaret(byWord ? (rtl ? _line.previousWordStart(_caret) : _line.nextWordEnd(_caret))
-                        : hasSelection && !extend ? visualEnd(true) : _line.visualNeighbour(_caret, true), extend);
+                moveCaret(byWord ? (rtl ? _line.previousWordStart(_caretPosition) : _line.nextWordEnd(_caretPosition))
+                        : hasSelection && !extend ? visualEnd(true) : _line.visualNeighbour(_caretPosition, true), extend);
                 break;
             case KeyCode.home:
                 moveCaret(0, extend);
@@ -250,12 +238,12 @@ protected:
                 moveCaret(_text.length, extend);
                 break;
             case KeyCode.backspace:
-                if (_editable)
-                    deleteTo(byWord ? _line.previousWordStart(_caret) : _line.previous(_caret));
+                if (canEdit())
+                    deleteTo(byWord ? _line.previousWordStart(_caretPosition) : _line.previous(_caretPosition));
                 break;
             case KeyCode.delete_:
-                if (_editable)
-                    deleteTo(byWord ? _line.nextWordEnd(_caret) : _line.next(_caret));
+                if (canEdit())
+                    deleteTo(byWord ? _line.nextWordEnd(_caretPosition) : _line.next(_caretPosition));
                 break;
             case KeyCode.enter:
             case KeyCode.numpadEnter:
@@ -302,7 +290,7 @@ protected:
 
     override void handleInputMethod(ref InputMethodEvent event)
     {
-        if (!_editable)
+        if (!canEdit())
             return;
         _composed = event.composed;
         _composedCaret = event.caret;
@@ -326,7 +314,7 @@ protected:
                 {
                     // The primary selection goes in where the click was, leaving any selection here alone
                     requestFocus();
-                    if (_editable)
+                    if (canEdit())
                         if (auto primary = Clipboard.primary)
                             change(at, at, primary, EditKind.other);
                     event.consume();
@@ -359,7 +347,7 @@ protected:
                     dragTo(hitTest(event.x));
                 break;
             case MouseEventType.released:
-                if (_selecting && _anchor != _caret)
+                if (_selecting && _anchor != _caretPosition)
                     Clipboard.primary = selectedText;
                 _selecting = false;
                 break;
@@ -414,7 +402,7 @@ protected:
         applyOpacity();
     }
 
-    override void unmounted() nothrow
+    override void unmounted()
     {
         _hoverFade.stop();
         _ringFade.stop();
@@ -474,13 +462,13 @@ protected:
         }
 
         tvg_shape_reset(_selectionPaint);
-        if (focused && _anchor != _caret && !_composed.length)
+        if (focused && _anchor != _caretPosition && !_composed.length)
             appendBoxes(_selectionPaint, selectionStart, selectionEnd, _lineTop, lineHeight);
 
         tvg_shape_reset(_textPaint);
         const baseline = _lineTop + _font.ascender;
         const scale = scene ? scene.scale : 1.0f;
-        if (!_line.text.length && _prompt.length)
+        if (!_line.text.length && _promptText.length)
         {
             tvg_shape_set_fill_color(_textPaint, Theme.prompt_text_colour.tupleof);
             emitRun(_textPaint, _promptRun, _originX, baseline, scale);
@@ -492,7 +480,7 @@ protected:
         }
 
         tvg_shape_reset(_caretPaint);
-        if (focused && _editable && _caretOn && (_anchor == _caret || _composed.length))
+        if (focused && canEdit() && _caretOn && (_anchor == _caretPosition || _composed.length))
             tvg_shape_append_rect(_caretPaint, _originX + caretX - Theme.caret_width / 2, _lineTop,
                                   Theme.caret_width, lineHeight, 0, 0, true);
         // What an input method is composing, underlined, as every platform shows it
@@ -509,9 +497,9 @@ protected:
     override void describeAccessible(ref AccessibleNode node)
     {
         node.value(_text);
-        if (_prompt.length)
-            node.placeholder(_prompt);
-        if (_editable)
+        if (_promptText.length)
+            node.placeholder(_promptText);
+        if (canEdit())
         {
             node.addAction(AccessibleAction.setValue);
             node.addAction(AccessibleAction.replaceSelectedText);
@@ -560,7 +548,7 @@ protected:
                 run.bounds(_originX + x0, _lineTop, x1 - x0, _font.lineHeight);
             });
         }
-        node.textSelection(accessiblePosition(line, _anchor), accessiblePosition(line, _caret));
+        node.textSelection(accessiblePosition(line, _anchor), accessiblePosition(line, _caretPosition));
     }
 
     override bool ownsAccessibleNode(ulong id)
@@ -576,12 +564,12 @@ protected:
         switch (action)
         {
             case AccessibleAction.setValue:
-                if (!_editable)
+                if (!canEdit())
                     return false;
                 change(0, _text.length, data.value, EditKind.other); // the user's doing, so it can be undone
                 return true;
             case AccessibleAction.replaceSelectedText:
-                if (!_editable)
+                if (!canEdit())
                     return false;
                 replaceSelection(data.value);
                 return true;
@@ -608,12 +596,9 @@ private:
 
     enum charactersPerRun = 255;
 
-    string _text, _prompt;
-    Font _font;
     EditableLine _line; // what's shown: the text, with anything being composed in place of the selection
     GlyphRun _promptRun;
-    size_t _caret, _anchor;
-    bool _editable = true;
+    bool _editing; // the field itself is changing its text, as opposed to being told to
     bool _selecting;    // a drag that started with a press here is selecting
     DragUnit _dragUnit;
     size_t _dragWordStart, _dragWordEnd; // the word a double click selected, which a drag keeps
@@ -624,7 +609,6 @@ private:
     ulong[] _runIds;
     size_t[] _runFirst; // the first character of each accessibility run, and the count at the end
     void delegate() _onAction;
-    void delegate(string) _onTextChanged;
 
     Snapshot[] _undo, _redo;
     EditKind _lastEdit;
@@ -637,8 +621,8 @@ private:
     Tvg_Paint _selectionPaint, _textPaint, _caretPaint;
     Tvg_Paint[3] _clips;
 
-    size_t selectionStart() const nothrow @nogc { return _anchor < _caret ? _anchor : _caret; }
-    size_t selectionEnd() const nothrow @nogc { return _anchor < _caret ? _caret : _anchor; }
+    size_t selectionStart() const nothrow @nogc { return _anchor < _caretPosition ? _anchor : _caretPosition; }
+    size_t selectionEnd() const nothrow @nogc { return _anchor < _caretPosition ? _caretPosition : _anchor; }
 
     /*
         Replaces text[from .. to] with `replacement`, putting the caret after it, and remembers
@@ -650,7 +634,7 @@ private:
     {
         const clean = singleLine(replacement);
         const continues = kind != EditKind.other && kind == _lastEdit
-            && _caret == _anchor && _caret == _editCaret;
+            && _caretPosition == _anchor && _caretPosition == _editCaret;
         if (!continues)
         {
             _undo ~= snapshot();
@@ -660,37 +644,68 @@ private:
         _redo = null;
         edit(_text[0 .. from] ~ clean ~ _text[to .. $], from + clean.length);
         _lastEdit = kind;
-        _editCaret = _caret;
+        _editCaret = _caretPosition;
     }
 
-    /// The new text, with the caret at `caret` and nothing selected.
+    /// The new text, with the caret at `caret` and nothing selected. The text goes first, since
+    /// the caret, and what it selects, are places in it.
     void edit(string text, size_t caret)
     {
-        const changed = text != _text;
-        _text = text;
-        _caret = _anchor = caret;
+        {
+            _editing = true;
+            scope(exit) _editing = false;
+            setText(text);
+        }
+        place(caret, caret);
         relayout();
         restartBlink();
-        if (changed && _onTextChanged)
-            _onTextChanged(_text);
     }
 
-    Snapshot snapshot() const nothrow @nogc { return Snapshot(_text, _caret, _anchor); }
+    /// Whether the user can change the text: it's editable, and not bound to something else.
+    bool canEdit() nothrow @nogc
+    {
+        return _editable && !(_textProperty && _textProperty.isBound);
+    }
+
+    /// The text was set from outside, by the app or a binding.
+    void textSet()
+    {
+        if (_editing)
+            return; // edit() is seeing to the rest
+        const clean = singleLine(_text);
+        if (clean != _text && !(_textProperty && _textProperty.isBound))
+            return setText(clean); // which comes back here with it
+        _composed = null;
+        place(_text.length, _text.length);
+        _undo = _redo = null;
+        _lastEdit = EditKind.none;
+        relayout();
+        restartBlink();
+    }
+
+    /// Moves the caret and anchor, and tells anyone watching.
+    void place(size_t anchor, size_t caret)
+    {
+        _setAnchor(anchor);
+        _setCaretPosition(caret);
+        _setSelectedText(_text[selectionStart .. selectionEnd]);
+    }
+
+    Snapshot snapshot() const nothrow @nogc { return Snapshot(_text, _caretPosition, _anchor); }
 
     void restore(Snapshot s)
     {
         edit(s.text, s.caret);
-        _anchor = s.anchor;
+        place(s.anchor, s.caret);
         _lastEdit = EditKind.none; // what's typed next is a new edit, not more of an old one
         invalidate();
     }
 
     void select(size_t anchor, size_t caret)
     {
-        if (anchor == _anchor && caret == _caret)
+        if (anchor == _anchor && caret == _caretPosition)
             return;
-        _anchor = anchor;
-        _caret = caret;
+        place(anchor, caret);
         _lastEdit = EditKind.none; // moving the caret ends a run of typing, for undo
         // Selected text is the primary selection on Linux; a drag's waits for the button to come up
         if (!_selecting && anchor != caret)
@@ -738,10 +753,10 @@ private:
     /// Deletes the selection if there is one, and otherwise from the caret to `to`.
     void deleteTo(size_t to)
     {
-        if (_anchor != _caret)
+        if (_anchor != _caretPosition)
             change(selectionStart, selectionEnd, "", EditKind.other);
-        else if (to != _caret)
-            change(to < _caret ? to : _caret, to < _caret ? _caret : to, "", EditKind.deleting);
+        else if (to != _caretPosition)
+            change(to < _caretPosition ? to : _caretPosition, to < _caretPosition ? _caretPosition : to, "", EditKind.deleting);
     }
 
     void showCaret(bool on)
@@ -754,7 +769,7 @@ private:
     void restartBlink()
     {
         _caretOn = true;
-        if (focused && _editable)
+        if (focused && canEdit())
             _blink.playFromStart();
     }
 
@@ -806,7 +821,7 @@ private:
     size_t displayCaret() const nothrow @nogc
     {
         if (!_composed.length)
-            return _caret;
+            return _caretPosition;
         if (_composedCaret < 0)
             return selectionStart + _composed.length;
         // The input method counts its caret in characters, which here means code points
@@ -866,7 +881,7 @@ private:
             const character = _runFirst[r] + p.character;
             return character < _line.stops.length ? _line.stops[character] : _text.length;
         }
-        return _caret; // not one of ours: leave the caret where it is
+        return _caretPosition; // not one of ours: leave the caret where it is
     }
 
     void applyOpacity() nothrow @nogc

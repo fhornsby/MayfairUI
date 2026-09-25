@@ -5,3 +5,4 @@ public import mayfair.widgets;
 public import mayfair.theme;
 public import mayfair.animation;
 public import mayfair.clipboard;
+public import mayfair.properties;

@@ -4,13 +4,86 @@ import core.time : Duration, nsecs;
 import std.algorithm : sort;
 import std.math : ceil, floor;
 import mayfair.animation.animation;
+import mayfair.animation.interpolator;
+import mayfair.properties.property;
 
-/// A moment in a Timeline, and what happens then. JavaFX's KeyFrame, less its KeyValues, which
-/// need a property system to set: `onFinished` does whatever they would have.
+/*
+    A value a property should have at some moment: JavaFX's KeyValue. In a KeyFrame, it says what
+    the property is at that frame's time; in between frames the Timeline moves it there from what
+    it was, eased by `interpolator`, which belongs to the end it's moving towards.
+
+        auto slide = new Timeline(KeyFrame(300.msecs, KeyValue(box.prefWidthProperty, 400f, Interpolator.easeOut)));
+        slide.play();
+
+    Numbers and colours move smoothly. Anything else -- a string, a bool -- has nothing in between,
+    and changes at the end, as JavaFX's do.
+*/
+struct KeyValue
+{
+    this(T)(Property!T target, T end, Interpolator interpolator = Interpolator.linear)
+    {
+        this.target = target;
+        this.interpolator = interpolator;
+        this.end = new Box!T(end);
+        read = &readValue!T;
+        write = &writeBetween!T;
+    }
+
+    Object target;
+    Interpolator interpolator;
+
+private:
+    Object end;                                                 // a Box!T
+    Object function(Object target) read;                        // the target's value now, boxed
+    void function(Object target, Object from, Object to, double t) write;
+}
+
+private final class Box(T)
+{
+    T value;
+    this(T value) { this.value = value; }
+}
+
+private Object readValue(T)(Object target)
+{
+    return new Box!T((cast(Property!T) target).get());
+}
+
+private void writeBetween(T)(Object target, Object from, Object to, double t)
+{
+    import mayfair.theme : Colour;
+    const a = (cast(Box!T) from).value, b = (cast(Box!T) to).value;
+    static if (is(T : double))
+        const value = cast(T)(a + (b - a) * t);
+    else static if (is(T == Colour))
+        const value = a.interpolate(b, t);
+    else
+        const value = t < 1 ? a : b; // nothing in between: it changes at the end
+    auto property = cast(Property!T) target;
+    if (!property.isBound)
+        property.set(value);
+}
+
+/// A moment in a Timeline, and what happens then: properties reach the values given, and
+/// `onFinished` runs. JavaFX's KeyFrame.
 struct KeyFrame
 {
     Duration time;
     void delegate() onFinished;
+    KeyValue[] values;
+
+    this(Duration time, KeyValue[] values...)
+    {
+        this.time = time;
+        this.values = values.dup;
+    }
+
+    this(Duration time, void delegate() onFinished, KeyValue[] values...)
+    {
+        this.time = time;
+        this.onFinished = onFinished;
+        this.values = values.dup;
+    }
 }
 
 /*
@@ -28,6 +101,9 @@ struct KeyFrame
     passed, however long a pulse was, so none is skipped when the app was busy; and it runs
     backwards and swings to and fro the same as any Animation. A KeyFrame at zero fires as it
     starts from the beginning.
+
+    KeyFrames with KeyValues move properties smoothly between them, which takes every frame; a
+    property with no KeyValue at zero starts from whatever it was when the Timeline started.
 */
 class Timeline : Animation
 {
@@ -37,6 +113,16 @@ public:
         _frames = frames.dup;
         _frames.sort!((a, b) => a.time < b.time);
         cycleDuration(_frames.length ? _frames[$ - 1].time : Duration.zero);
+        foreach (ref f; _frames)
+            foreach (ref v; f.values)
+            {
+                _animatesValues = true;
+                bool known;
+                foreach (t; _targets)
+                    known |= t is v.target;
+                if (!known)
+                    _targets ~= v.target;
+            }
     }
 
 protected:
@@ -47,6 +133,9 @@ protected:
         const cycle = cycleSeconds;
         if (cycle <= 0 || !_frames.length)
             return;
+        if (fresh)
+            captureStarts();
+        interpolateValues(fractionAt(to) * cycle);
         const forwards = to >= from;
         const lo = forwards ? from : to, hi = forwards ? to : from;
 
@@ -86,6 +175,8 @@ protected:
 
     override Duration untilNextPulse() const nothrow @nogc
     {
+        if (_animatesValues)
+            return Duration.zero; // moving properties smoothly takes every frame
         const cycle = cycleSeconds;
         if (cycle <= 0 || rate == 0)
             return rate == 0 ? Duration.max : Duration.zero;
@@ -117,6 +208,70 @@ protected:
 
 private:
     KeyFrame[] _frames;
+    bool _animatesValues;
+    Object[] _targets;   // every property a KeyValue moves
+    Object[] _starts;    // what each was when the Timeline started, boxed, for those with no KeyValue at zero
+
+    void captureStarts()
+    {
+        _starts.length = _targets.length;
+        foreach (i, target; _targets)
+            _starts[i] = keyValueFor(target).read(target);
+    }
+
+    /// Any KeyValue for `target`, for the functions that know its type.
+    ref const(KeyValue) keyValueFor(Object target)
+    {
+        foreach (ref f; _frames)
+            foreach (ref v; f.values)
+                if (v.target is target)
+                    return v;
+        assert(0, "every target has a KeyValue");
+    }
+
+    /// Puts every animated property where it should be `at` seconds into the cycle: between the
+    /// KeyFrames either side that say anything about it, or at the last one's value past them all.
+    void interpolateValues(double at)
+    {
+        if (!_animatesValues || _starts.length != _targets.length)
+            return;
+        foreach (i, target; _targets)
+        {
+            Object from = _starts[i];
+            double fromTime = 0;
+            const(KeyValue)* next;
+            double nextTime = 0;
+            foreach (ref f; _frames)
+            {
+                const time = f.time.total!"hnsecs" / 1e7;
+                foreach (ref v; f.values)
+                {
+                    if (v.target !is target)
+                        continue;
+                    if (time <= at)
+                    {
+                        from = cast(Object) v.end;
+                        fromTime = time;
+                    }
+                    else if (!next)
+                    {
+                        next = &v;
+                        nextTime = time;
+                    }
+                }
+            }
+            if (!next)
+            {
+                // Past the last value for it: that's where it stays
+                keyValueFor(target).write(target, from, from, 1);
+                continue;
+            }
+            const span = nextTime - fromTime;
+            const t = span > 0 ? next.interpolator.curve((at - fromTime) / span) : 1;
+            next.write(target, from, cast(Object) next.end, t);
+        }
+    }
+
 }
 
 unittest
@@ -144,4 +299,30 @@ unittest
     pulseAnimations(start + 10.seconds);
     assert(fired == "0he0he0he", fired);
     assert(t.status == Status.stopped);
+
+    // KeyValues: a property moved from where it started to 100, half way at half time, eased
+    import mayfair.properties.property : Property;
+    import mayfair.animation.interpolator : Interpolator;
+    auto width = new Property!float(0);
+    auto grow = new Timeline(KeyFrame(1.seconds, KeyValue(width, 100f)));
+    grow.play();
+    const begun = MonoTime.currTime;
+    pulseAnimations(begun);
+    pulseAnimations(begun + 500.msecs);
+    assert(width.get > 49 && width.get < 51, "half way");
+    pulseAnimations(begun + 2.seconds);
+    assert(width.get == 100 && grow.status == Status.stopped);
+    assert(grow.untilNextPulse == Duration.zero); // values move every frame
+
+    // Two KeyFrames, and a string, which changes at its frame rather than in between
+    auto label = new Property!string("start");
+    auto steps = new Timeline(KeyFrame(Duration.zero, KeyValue(width, 0f)),
+                              KeyFrame(1.seconds, KeyValue(width, 10f), KeyValue(label, "done")),
+                              KeyFrame(2.seconds, KeyValue(width, 30f, Interpolator.linear)));
+    steps.play();
+    const s0 = MonoTime.currTime;
+    pulseAnimations(s0);
+    assert(width.get < 0.1f && label.get == "start"); // a few microseconds in
+    pulseAnimations(s0 + 1500.msecs);
+    assert(width.get > 19 && width.get < 21 && label.get == "done");
 }

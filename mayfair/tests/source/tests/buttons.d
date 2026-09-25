@@ -10,8 +10,7 @@ void clicking()
     Button b;
     int actions, clicked, entered, exited;
     run("button: click, drag off, drag back on", {
-        auto root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        auto root = new Column().fillWidth(false);
         b = new Button("Press");
         b.onAction({ actions++; });
         b.onMouseClicked((ref e) { clicked++; })

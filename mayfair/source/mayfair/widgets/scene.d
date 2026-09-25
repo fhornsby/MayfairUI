@@ -1,6 +1,7 @@
 module mayfair.widgets.scene;
 
 import mayfair.accessibility;
+import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.trace;
 import mayfair.layout;
@@ -21,8 +22,14 @@ import mayfair.widgets.input;
 class Scene
 {
 public:
-    /// The colour behind everything. Set it before the scene is shown.
-    Colour fill = Theme.background_colour;
+    /// The colour behind everything. JavaFX's Scene.fill.
+    mixin(declareProperty!(Colour, "fill", "Theme.background_colour", q{
+        if (background)
+        {
+            tvg_shape_set_fill_color(background, _fill.tupleof);
+            paintRequested = true;
+        }
+    }));
 
     this(Widget root) nothrow @nogc
     {
@@ -49,7 +56,7 @@ public:
         config = YGConfigNew();
 
         background = tvg_shape_new();
-        tvg_shape_set_fill_color(background, fill.tupleof);
+        tvg_shape_set_fill_color(background, _fill.tupleof);
         tvg_scene_add(paints, background); // added first, so it's drawn behind the tree
 
         _root.mount(this);
@@ -154,7 +161,7 @@ package:
         {
             // The press is over, for the ancestors too: there's nothing left for it to be released on
             for (auto w = grabbed; w; w = w.parent)
-                w._pressed = false;
+                w._setPressed(false);
             grabbed = null;
             buttonsDown = 0;
         }
@@ -162,7 +169,7 @@ package:
         {
             // The pointer is still over the parent, as far as anyone knows until the next repick
             for (auto w = hovered; w !is gone.parent; w = w.parent)
-                w._hover = false;
+                w._setHover(false);
             hovered = gone.parent;
         }
     }
@@ -277,7 +284,7 @@ package(mayfair):
         buttonsDown |= 1 << button;
         if (button == MouseButton.primary)
             for (auto w = grabbed; w; w = w.parent)
-                w._pressed = true;
+                w._setPressed(true);
         bubble(grabbed, MouseEventType.pressed, button, clicks);
     }
 
@@ -297,7 +304,7 @@ package(mayfair):
         // button's text and let go on its edge, and it's still the button that was clicked
         for (auto w = target; w; w = w.parent)
         {
-            if (w._hover)
+            if (w.hover)
             {
                 bubble(w, MouseEventType.clicked, button, clicks);
                 break;
@@ -305,7 +312,7 @@ package(mayfair):
         }
         if (button == MouseButton.primary)
             for (auto w = target; w; w = w.parent)
-                w._pressed = false;
+                w._setPressed(false);
     }
 
     /// Which modifier keys are held, for the mouse events that follow to carry.
@@ -459,9 +466,9 @@ private:
         // Exits first, deepest first; then entries, outermost first. JavaFX's order.
         for (auto w = hovered; w; w = w.parent)
         {
-            if (w._hover && !isWithin(leaf, w))
+            if (w.hover && !isWithin(leaf, w))
             {
-                w._hover = false;
+                w._setHover(false);
                 tell(w, MouseEventType.exited);
             }
         }
@@ -471,10 +478,10 @@ private:
 
     void enter(Widget w)
     {
-        if (!w || w._hover)
+        if (!w || w.hover)
             return;
         enter(w.parent);
-        w._hover = true;
+        w._setHover(true);
         tell(w, MouseEventType.entered);
     }
 

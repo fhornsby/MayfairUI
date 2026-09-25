@@ -3,6 +3,7 @@ module mayfair.widgets.button;
 import mayfair.accessibility;
 import mayfair.animation;
 import mayfair.layout;
+import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.theme;
 import mayfair.widgets.input;
@@ -36,13 +37,13 @@ class Button : Widget
 public:
     this(string text)
     {
-        _label = new Label(text).colour(Theme.button_text_colour);
-        _label.accessibleHidden(true);
+        _text = text;
+        _label = new Label(text).textFill(Theme.button_text_colour).accessibleHidden(true);
         add(_label);
-        focusTraversable(true);
-        accessibleRole(AccessibleRole.button);
-        YGNodeStyleSetPadding(node, YGEdgeHorizontal, Theme.button_padding_x);
-        YGNodeStyleSetPadding(node, YGEdgeVertical, Theme.button_padding_y);
+        setFocusTraversable(true);
+        setAccessibleRole(AccessibleRole.button);
+        setPadding(Insets(Theme.button_padding_y, Theme.button_padding_x));
+        // Centring its one child is how a button lays out, not a setting, so it's Yoga's directly
         YGNodeStyleSetJustifyContent(node, YGJustifyCenter);
         YGNodeStyleSetAlignItems(node, YGAlignCenter);
 
@@ -54,17 +55,19 @@ public:
         _flash.cycleCount(2).autoReverse(true);
     }
 
-    string text() const nothrow @nogc { return _label.text; }
-
-    /// Returns this, so calls chain.
-    Button setText(string text)
-    {
-        _label.setText(text);
+    /// What it says.
+    mixin(declareProperty!(string, "text", "null", q{
+        _label.setText(_text);
         invalidateAccessible();
-        return this;
+    }));
+
+    /// What to do when the button is clicked. JavaFX's setOnAction.
+    void setOnAction(void delegate() handler) nothrow @nogc
+    {
+        _onAction = handler;
     }
 
-    /// What to do when the button is clicked. Returns this, so calls chain.
+    /// The same, returning this so calls chain.
     Button onAction(void delegate() handler) nothrow @nogc
     {
         _onAction = handler;
@@ -78,25 +81,15 @@ public:
             _onAction();
     }
 
-    bool defaultButton() const nothrow @nogc { return _defaultButton; }
+    /// Whether this is the button Enter presses, wherever focus is. It's drawn in the accent colour.
+    mixin(declareProperty!(bool, "defaultButton", "false", q{ invalidate(); }));
 
-    /// Makes this the button Enter presses, wherever focus is, and draws it in the accent colour.
-    /// Returns this, so calls chain.
-    Button defaultButton(bool on) nothrow @nogc
-    {
-        _defaultButton = on;
-        invalidate();
-        return this;
-    }
+    /// Whether this is the button Escape presses, wherever focus is.
+    mixin(declareProperty!(bool, "cancelButton", "false"));
 
-    bool cancelButton() const nothrow @nogc { return _cancelButton; }
-
-    /// Makes this the button Escape presses, wherever focus is. Returns this, so calls chain.
-    Button cancelButton(bool on) nothrow @nogc
-    {
-        _cancelButton = on;
-        return this;
-    }
+    /// Whether it's pressed in and will fire when let go: held down with the pointer still over it,
+    /// or with Space. JavaFX's armed.
+    mixin(declareReadOnlyProperty!(bool, "armed", "false"));
 
 protected:
     override void handleMouse(ref MouseEvent event)
@@ -199,12 +192,12 @@ protected:
         applyOpacity();
     }
 
-    override void unmounted() nothrow
+    override void unmounted()
     {
         foreach (t; [_hoverFade, _pressFade, _ringFade, _flash])
             t.stop();
         _hoverAmount = _pressAmount = _ringAmount = _flashAmount = 0;
-        _armed = false;
+        _setArmed(false);
     }
 
     override void paint(float x, float y, float w, float h) nothrow @nogc
@@ -238,24 +231,23 @@ protected:
 private:
     Label _label;
     void delegate() _onAction;
-    bool _armed;
-    bool _defaultButton, _cancelButton;
+
 
     Transition _hoverFade, _pressFade, _ringFade, _flash;
     double _hoverAmount = 0, _pressAmount = 0, _ringAmount = 0, _flashAmount = 0; // each 0 to 1
 
     void arm(bool armed)
     {
-        if (armed == _armed)
+        if (armed == this.armed)
             return;
-        _armed = armed;
+        _setArmed(armed);
         armed ? _pressFade.playForward() : _pressFade.playReverse();
     }
 
     /// Lets go of the button, running the action if it was still armed.
     void release()
     {
-        const wasArmed = _armed;
+        const wasArmed = this.armed;
         arm(false);
         if (wasArmed)
             fire();

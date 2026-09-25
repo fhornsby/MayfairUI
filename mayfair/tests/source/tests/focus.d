@@ -20,14 +20,11 @@ void keyboardDisableRemove()
 
     static Widget sized(Widget w)
     {
-        YGNodeStyleSetWidth(w.node, 100);
-        YGNodeStyleSetHeight(w.node, 40);
-        return w;
+        return w.prefSize(100, 40);
     }
 
     run("focus: keyboard, default and cancel, disable, remove, repick", {
-        root = new Column();
-        YGNodeStyleSetAlignItems(root.node, YGAlignFlexStart);
+        root = new Column().fillWidth(false);
         spacer = sized(new Widget);
         a = new Button("A").defaultButton(true).onAction({ aCount++; });
         b = new Button("B").cancelButton(true).onAction({ bCount++; });

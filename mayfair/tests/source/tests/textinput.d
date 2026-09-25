@@ -10,9 +10,9 @@ private class Recorder : Widget
     string[] typed, composed;
     this()
     {
-        acceptsTextInput(true);
-        focusTraversable(true);
-        YGNodeStyleSetHeight(node, 30);
+        setAcceptsTextInput(true);
+        setFocusTraversable(true);
+        setPrefHeight(30);
     }
 protected:
     override void handleKey(ref KeyEvent e)

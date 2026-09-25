@@ -33,6 +33,8 @@ final class Driver
     /// Runs `task` on the UI thread and waits for it to finish.
     void ui(void delegate() task)
     {
+        if (appGone)
+            return; // it crashed, and that's been reported: nothing's left to run anything
         auto done = new Semaphore;
         Throwable failed;
         Platform.runLater({
@@ -43,7 +45,10 @@ final class Driver
             done.notify();
         });
         if (!done.wait(10.seconds))
+        {
             fail("timed out waiting for the UI thread");
+            appGone = true; // don't wait ten seconds for each step that follows
+        }
         else if (failed)
             fail("UI thread threw: " ~ failed.msg);
     }
@@ -169,6 +174,7 @@ final class Driver
 
 private:
     SDL_WindowID windowID;
+    shared bool appGone;
     float pointsToWindow = 1;
     string[] kept;
     string savedClipboard, savedPrimary;
@@ -233,8 +239,17 @@ void run(string name, Widget delegate() build, void delegate(Driver) script)
         catch (Throwable t)
             d.fail("script threw: " ~ t.msg);
     });
+    // The script's thread mustn't keep the process alive if the App dies under it
+    driver.isDaemon = true;
     driver.start();
-    app.run();
+    try
+        app.run();
+    catch (Throwable t)
+    {
+        // A crash in the UI is this test's failure, not the end of the run
+        d.fail(format!"the App crashed: %s at %s(%s)"(t.msg, t.file, t.line));
+        d.appGone = true;
+    }
     driver.join();
     SDL_SetEventFilter(null, null);
 

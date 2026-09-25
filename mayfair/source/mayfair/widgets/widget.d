@@ -2,10 +2,39 @@ module mayfair.widgets.widget;
 
 import core.atomic : atomicExchange, atomicLoad, cas;
 import mayfair.accessibility;
+import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.layout;
 import mayfair.widgets.scene;
 import mayfair.widgets.input;
+
+/// Space around the four sides of something, in points: padding inside a widget, or a margin
+/// outside it. JavaFX's Insets, in the same order: top, right, bottom, left.
+struct Insets
+{
+    float top = 0, right = 0, bottom = 0, left = 0;
+
+    /// The same on every side.
+    this(float all) nothrow @nogc
+    {
+        top = right = bottom = left = all;
+    }
+
+    this(float top, float right, float bottom, float left) nothrow @nogc
+    {
+        this.top = top;
+        this.right = right;
+        this.bottom = bottom;
+        this.left = left;
+    }
+
+    /// `vertical` above and below, `horizontal` either side.
+    this(float vertical, float horizontal) nothrow @nogc
+    {
+        top = bottom = vertical;
+        left = right = horizontal;
+    }
+}
 
 /// A rectangle, in points. JavaFX's Bounds.
 struct Bounds
@@ -35,11 +64,21 @@ struct Bounds
     What a widget never sees either way is the scale. One transform on the Scene turns points into
     device pixels and its config carries the factor Yoga rounds layout with, so a widget styles,
     lays out and paints in points throughout.
+
+    Its settings are properties, as in JavaFX: `padding` gets one, `padding(Insets(8))` sets it
+    and returns the widget as its own type so calls chain, and `paddingProperty` is the property
+    itself, to bind or listen to. State it reports rather than takes -- whether it's hovered, has
+    focus, is disabled -- is a read-only property: watched and bound to, never set from outside.
+
+    Layout goes through those properties: sizes, padding, margin and grow here, and spacing and
+    alignment on the containers (Row, Column). Underneath is Yoga, a flexbox engine, and `node` is
+    its node, for the layout they don't cover -- the escape hatch, as overriding layoutChildren()
+    is in JavaFX. Anything set there that a property also sets goes with whichever was set last.
 */
 class Widget
 {
 public:
-    YGNodeRef node;
+    YGNodeRef node;    /// Yoga's node: see above. For layout the properties don't reach.
     Tvg_Paint shape;   /// Null until mounted.
     Widget parent;     /// Null for a scene's root, and for a tree not yet added to anything.
     Scene scene;       /// Null until mounted.
@@ -82,6 +121,7 @@ public:
         _children ~= child;
         YGNodeInsertChild(node, child.node, _children.length - 1);
         invalidateAccessible(); // its list of children changed
+        child.refreshDisabled(); // it's disabled now if this is
         if (scene)
             child.mount(scene, paintAfter(child)); // this tree is already live, so the newcomer has to catch up
         return this;
@@ -109,6 +149,7 @@ public:
             YGNodeRemoveChild(node, child.node);
             _children = _children[0 .. i] ~ _children[i + 1 .. $];
             child.parent = null;
+            child.refreshDisabled(); // no longer disabled by this
             invalidateAccessible();
             break;
         }
@@ -116,43 +157,55 @@ public:
     }
 
     /*
-        Style. These are the handful of flex properties worth a name of their own; anything else is
-        set on `node` directly with Yoga's own API. They work before or after mount, because the node
-        is there from the start. Each returns Widget rather than the type it was called on, so a long
-        chain ends up statically typed as a Widget: name the widget first if you need it as itself.
+        Layout, JavaFX's Region properties, over Yoga's flexbox.
+
+        A size left at useComputedSize (the default) is worked out from what's inside: a label's
+        text, a row's children. Set, prefWidth and prefHeight are the size it asks for, and the
+        min and max bound what a parent can make of it when there's more or less room.
     */
+    enum float useComputedSize = float.nan; /// JavaFX's Region.USE_COMPUTED_SIZE
+
+    mixin(declareProperty!(float, "minWidth", "float.nan", q{ applySize(); }));
+    mixin(declareProperty!(float, "prefWidth", "float.nan", q{ applySize(); }));
+    mixin(declareProperty!(float, "maxWidth", "float.nan", q{ applySize(); }));
+    mixin(declareProperty!(float, "minHeight", "float.nan", q{ applySize(); }));
+    mixin(declareProperty!(float, "prefHeight", "float.nan", q{ applySize(); }));
+    mixin(declareProperty!(float, "maxHeight", "float.nan", q{ applySize(); }));
+
+    /// Sets the preferred width and height at once. Returns this, so calls chain.
+    final This prefSize(this This)(float width, float height)
+    {
+        setPrefWidth(width);
+        setPrefHeight(height);
+        return cast(This) this;
+    }
+
+    /// Space inside the widget's edges, around what it holds.
+    mixin(declareProperty!(Insets, "padding", "Insets.init", q{ applyPadding(); }));
+
+    /// The same padding on every side. Returns this, so calls chain.
+    final This padding(this This)(float all)
+    {
+        setPadding(Insets(all));
+        return cast(This) this;
+    }
+
+    /// Space outside the widget's edges, between it and its neighbours. JavaFX sets this as a
+    /// constraint on the parent (HBox.setMargin); here the widget holds it itself.
+    mixin(declareProperty!(Insets, "margin", "Insets.init", q{ applyMargin(); }));
+
     /*
-        Takes a share of the space along the parent's main axis, in proportion to `factor`.
+        How much of the spare room along its parent's main axis this widget takes: none by default,
+        and in proportion to the others that grow when it's more than that. JavaFX says the same
+        with HBox.setHgrow(node, Priority.ALWAYS), which is 1 here.
 
-        This is CSS's `flex: <factor>` shorthand, not `flex-grow` on its own, and the difference is
-        the whole point. flex-grow alone leaves flex-basis at auto, which starts every widget at its
-        own content size and shares out only what's left over -- so two widgets that both "grow
-        equally" come out different sizes as soon as they hold different content, and a row of
-        labelled boxes ends up visibly uneven. A basis of 0 starts them all from nothing, so the
-        share really is the whole space.
-
-        A widget that wants its content size respected and then to grow sets flex-grow on `node`
-        directly, the same as any other property without a name here.
+        It's CSS's `flex: <grow>`, not `flex-grow` on its own, and the difference is the point.
+        flex-grow alone starts each widget at its own content size and shares out only what's left,
+        so two widgets that both grow come out different sizes as soon as they hold different
+        content, and a row of labelled boxes is visibly uneven. Growing here starts them all from
+        nothing, so equal shares are equal. For the other behaviour, set flex-grow on `node`.
     */
-    final Widget grow(float factor) nothrow @nogc
-    {
-        YGNodeStyleSetFlexGrow(node, factor);
-        YGNodeStyleSetFlexShrink(node, 1);
-        YGNodeStyleSetFlexBasis(node, 0);
-        return this;
-    }
-
-    final Widget padding(float points) nothrow @nogc
-    {
-        YGNodeStyleSetPadding(node, YGEdgeAll, points);
-        return this;
-    }
-
-    final Widget gap(float points) nothrow @nogc
-    {
-        YGNodeStyleSetGap(node, YGGutterAll, points);
-        return this;
-    }
+    mixin(declareProperty!(float, "grow", "0", q{ applyGrow(); }));
 
     /*
         Input. The Scene works out which widget the mouse is over and hands it the event; see
@@ -161,23 +214,24 @@ public:
         pressed -- goes in handleMouse() instead, which runs after these and only if they didn't
         consume the event, so the app gets the first say.
     */
-    final Widget onMousePressed(MouseHandler handler) nothrow @nogc { return on(MouseEventType.pressed, handler); }
-    final Widget onMouseReleased(MouseHandler handler) nothrow @nogc { return on(MouseEventType.released, handler); }
-    final Widget onMouseClicked(MouseHandler handler) nothrow @nogc { return on(MouseEventType.clicked, handler); }
-    final Widget onMouseEntered(MouseHandler handler) nothrow @nogc { return on(MouseEventType.entered, handler); }
-    final Widget onMouseExited(MouseHandler handler) nothrow @nogc { return on(MouseEventType.exited, handler); }
-    final Widget onMouseMoved(MouseHandler handler) nothrow @nogc { return on(MouseEventType.moved, handler); }
-    final Widget onMouseDragged(MouseHandler handler) nothrow @nogc { return on(MouseEventType.dragged, handler); }
-
-    final Cursor cursor() const nothrow @nogc { return _cursor; }
+    final void setOnMousePressed(MouseHandler handler) nothrow @nogc { on(MouseEventType.pressed, handler); }
+    final This onMousePressed(this This)(MouseHandler handler) { on(MouseEventType.pressed, handler); return cast(This) this; }
+    final void setOnMouseReleased(MouseHandler handler) nothrow @nogc { on(MouseEventType.released, handler); }
+    final This onMouseReleased(this This)(MouseHandler handler) { on(MouseEventType.released, handler); return cast(This) this; }
+    final void setOnMouseClicked(MouseHandler handler) nothrow @nogc { on(MouseEventType.clicked, handler); }
+    final This onMouseClicked(this This)(MouseHandler handler) { on(MouseEventType.clicked, handler); return cast(This) this; }
+    final void setOnMouseEntered(MouseHandler handler) nothrow @nogc { on(MouseEventType.entered, handler); }
+    final This onMouseEntered(this This)(MouseHandler handler) { on(MouseEventType.entered, handler); return cast(This) this; }
+    final void setOnMouseExited(MouseHandler handler) nothrow @nogc { on(MouseEventType.exited, handler); }
+    final This onMouseExited(this This)(MouseHandler handler) { on(MouseEventType.exited, handler); return cast(This) this; }
+    final void setOnMouseMoved(MouseHandler handler) nothrow @nogc { on(MouseEventType.moved, handler); }
+    final This onMouseMoved(this This)(MouseHandler handler) { on(MouseEventType.moved, handler); return cast(This) this; }
+    final void setOnMouseDragged(MouseHandler handler) nothrow @nogc { on(MouseEventType.dragged, handler); }
+    final This onMouseDragged(this This)(MouseHandler handler) { on(MouseEventType.dragged, handler); return cast(This) this; }
 
     /// The pointer's shape while it's over this widget, and anything below it that doesn't say
-    /// otherwise. A disabled widget shows the default whatever it says. Returns this, so calls chain.
-    final Widget cursor(Cursor c) nothrow @nogc
-    {
-        _cursor = c;
-        return this;
-    }
+    /// otherwise. A disabled widget shows the default whatever it says.
+    mixin(declareProperty!(Cursor, "cursor", "Cursor.inherit"));
 
     /// Where this widget is in the window, in points from its top left, as it was last drawn: what
     /// the user sees. Empty until it's been drawn. JavaFX's localToScene(getBoundsInLocal()).
@@ -189,15 +243,17 @@ public:
     }
 
     /// Whether the pointer is over this widget, or over anything below it.
-    final bool hover() const nothrow @nogc { return _hover; }
+    mixin(declareReadOnlyProperty!(bool, "hover", "false", "", "package"));
 
     /// Whether the primary button went down on this widget, or on anything below it, and is still down.
-    final bool pressed() const nothrow @nogc { return _pressed; }
+    mixin(declareReadOnlyProperty!(bool, "pressed", "false", "", "package"));
 
     /// Key events go to the widget with focus and bubble up from it. The same rules as the mouse
     /// handlers above apply: the app's handler first, then the widget's own handleKey().
-    final Widget onKeyPressed(KeyHandler handler) nothrow @nogc { return on(KeyEventType.pressed, handler); }
-    final Widget onKeyReleased(KeyHandler handler) nothrow @nogc { return on(KeyEventType.released, handler); }
+    final void setOnKeyPressed(KeyHandler handler) nothrow @nogc { on(KeyEventType.pressed, handler); }
+    final This onKeyPressed(this This)(KeyHandler handler) { on(KeyEventType.pressed, handler); return cast(This) this; }
+    final void setOnKeyReleased(KeyHandler handler) nothrow @nogc { on(KeyEventType.released, handler); }
+    final This onKeyReleased(this This)(KeyHandler handler) { on(KeyEventType.released, handler); return cast(This) this; }
 
     /*
         Text. A widget that takes typed text says so with acceptsTextInput(true), and while it has
@@ -208,23 +264,19 @@ public:
         commits whole words -- so a text field listens to typed events for what to insert, and to
         pressed ones only for editing keys like Backspace and the arrows.
     */
-    final Widget onKeyTyped(KeyHandler handler) nothrow @nogc { return on(KeyEventType.typed, handler); }
+    final void setOnKeyTyped(KeyHandler handler) nothrow @nogc { on(KeyEventType.typed, handler); }
+    final This onKeyTyped(this This)(KeyHandler handler) { on(KeyEventType.typed, handler); return cast(This) this; }
 
     /// Called as an input method composes text, before it's committed. JavaFX's onInputMethodTextChanged.
-    final Widget onInputMethodTextChanged(InputMethodHandler handler) nothrow @nogc
+    final void setOnInputMethodTextChanged(InputMethodHandler handler) nothrow @nogc { inputMethodHandler = handler; }
+    final This onInputMethodTextChanged(this This)(InputMethodHandler handler)
     {
         inputMethodHandler = handler;
-        return this;
+        return cast(This) this;
     }
 
-    final bool acceptsTextInput() const nothrow @nogc { return _acceptsTextInput; }
-
-    /// Whether this widget takes typed text. Off by default. Returns this, so calls chain.
-    final Widget acceptsTextInput(bool on) nothrow @nogc
-    {
-        _acceptsTextInput = on;
-        return this;
-    }
+    /// Whether this widget takes typed text. Off by default.
+    mixin(declareProperty!(bool, "acceptsTextInput", "false"));
 
     /*
         Focus. One widget in a scene has it, and hears the keyboard first. Tab and Shift+Tab move it
@@ -232,17 +284,11 @@ public:
         focus too. focused() is only true while the window itself has keyboard focus, as in JavaFX,
         so a control can rely on losing it when the user switches away.
     */
-    final bool focusTraversable() const nothrow @nogc { return _focusTraversable; }
-
     /// Whether Tab can move focus here. Off by default; widgets that take input switch it on.
-    final Widget focusTraversable(bool on) nothrow @nogc
-    {
-        _focusTraversable = on;
-        invalidateAccessible(); // whether it offers the focus action
-        return this;
-    }
+    mixin(declareProperty!(bool, "focusTraversable", "false", q{ invalidateAccessible(); }));
 
-    final bool focused() const nothrow @nogc { return _focused; }
+    /// Whether this widget has focus, and its window has the keyboard.
+    mixin(declareReadOnlyProperty!(bool, "focused", "false", "", "private"));
 
     /// Whether this is the widget with focus in its scene, whether or not the window has
     /// keyboard focus right now -- which focused() also asks.
@@ -250,7 +296,7 @@ public:
 
     /// Whether the widget has focus and should show it: it got it from the keyboard. A control
     /// draws its focus ring by this rather than focused(), so clicking one doesn't ring it.
-    final bool focusVisible() const nothrow @nogc { return _focusVisible; }
+    mixin(declareReadOnlyProperty!(bool, "focusVisible", "false", "", "private"));
 
     /// Takes focus. Does nothing until the widget is in a live scene, or while it's disabled.
     final void requestFocus()
@@ -259,34 +305,16 @@ public:
             scene.setFocus(this, false);
     }
 
-    /// Whether this widget is switched off itself. See disabled() for whether it's off at all.
-    final bool disable() const nothrow @nogc { return _disable; }
-
     /*
         Switches this widget and everything below it off, or back on: JavaFX's disable. A disabled
         widget hears no input and can't have focus, and controls draw themselves faded. Disabling a
-        row of buttons disables every button in it. Returns this, so calls chain.
+        row of buttons disables every button in it. This is whether the widget is switched off
+        itself; `disabled` is whether it's off at all, by this or by anything above it.
     */
-    final Widget disable(bool on)
-    {
-        if (on == _disable)
-            return this;
-        _disable = on;
-        // Below a disabled ancestor nothing was enabled to begin with, so nothing has changed
-        if (!(parent && parent.disabled))
-        {
-            if (on && scene)
-                scene.forgetFocusWithin(this);
-            disabledTreeChanged();
-        }
-        return this;
-    }
+    mixin(declareProperty!(bool, "disable", "false", q{ refreshDisabled(); }));
 
-    /// Whether this widget, or anything above it, is disabled.
-    final bool disabled() const nothrow @nogc
-    {
-        return _disable || (parent && parent.disabled);
-    }
+    /// Whether this widget is switched off, by its own `disable` or an ancestor's. JavaFX's disabled.
+    mixin(declareReadOnlyProperty!(bool, "disabled", "false", "", "private"));
 
     /// Gives this widget its shape and brings everything below it to life. Called by Scene.
     /*
@@ -298,52 +326,26 @@ public:
         describeAccessible(): its name, its text, what it can do. The properties here let code
         using a widget change what it says without subclassing, as JavaFX's do.
     */
-    final AccessibleRole accessibleRole() const nothrow @nogc { return _accessibleRole; }
-
-    /// What kind of thing this widget is. Returns this, so calls chain.
-    final Widget accessibleRole(AccessibleRole role) nothrow @nogc
-    {
-        _accessibleRole = role;
-        invalidateAccessible();
-        return this;
-    }
-
-    final string accessibleText() const nothrow @nogc { return _accessibleText; }
+    /// What kind of thing this widget is.
+    mixin(declareProperty!(AccessibleRole, "accessibleRole", "AccessibleRole.node", q{ invalidateAccessible(); }));
 
     /// What a screen reader calls this widget, in place of what it would say itself: "Close" for
-    /// a button that shows only an ×. Null to go back to that. Returns this, so calls chain.
-    final Widget accessibleText(string text) nothrow @nogc
-    {
-        _accessibleText = text;
-        invalidateAccessible();
-        return this;
-    }
+    /// a button that shows only an ×. Null to go back to that.
+    mixin(declareProperty!(string, "accessibleText", "null", q{ invalidateAccessible(); }));
 
-    final string accessibleHelp() const nothrow @nogc { return _accessibleHelp; }
-
-    /// More about this widget than its name, read after it. Returns this, so calls chain.
-    final Widget accessibleHelp(string text) nothrow @nogc
-    {
-        _accessibleHelp = text;
-        invalidateAccessible();
-        return this;
-    }
-
-    final bool accessibleHidden() const nothrow @nogc { return _accessibleHidden; }
+    /// More about this widget than its name, read after it.
+    mixin(declareProperty!(string, "accessibleHelp", "null", q{ invalidateAccessible(); }));
 
     /*
         Leaves this widget out of the accessibility tree, and puts its children where it would have
         been. For a widget that's part of how another is drawn rather than a thing in its own
-        right: a button's text is its name, not a label inside it. Returns this, so calls chain.
+        right: a button's text is its name, not a label inside it.
     */
-    final Widget accessibleHidden(bool hidden) nothrow @nogc
-    {
-        _accessibleHidden = hidden;
+    mixin(declareProperty!(bool, "accessibleHidden", "false", q{
         invalidateAccessible();
         if (parent)
             parent.invalidateAccessible(); // its children, as a screen reader sees them, changed
-        return this;
-    }
+    }));
 
     /// Marks this widget's accessibility node as needing to be sent again, for when something it
     /// says about itself changed -- new text, say. Where it is and what's below it are noticed without being told.
@@ -459,7 +461,7 @@ protected:
 
     /// Called once the shapes are gone, when the widget is removed from a live tree. Where anything
     /// mid-way -- an animation, a half-finished press -- goes back to rest, ready to be added again.
-    void unmounted() nothrow {}
+    void unmounted() {}
 
     /// A widget's own response to the mouse, FLTK's handle(). Runs after any handler the app set
     /// with onMouse...(), unless that consumed the event. Consume what this uses, so it goes no further.
@@ -586,16 +588,14 @@ package:
         }
     }
 
-    bool _hover, _pressed; // kept up to date by the Scene
-    bool _focused, _focusVisible;
 
     /// Sets focused() and focusVisible(), and tells the widget if either changed.
     final void setFocusState(bool focused, bool visible)
     {
-        if (focused == _focused && visible == _focusVisible)
+        if (focused == this.focused && visible == focusVisible)
             return;
-        _focused = focused;
-        _focusVisible = visible;
+        _setFocused(focused);
+        _setFocusVisible(visible);
         focusChanged();
     }
 
@@ -684,26 +684,17 @@ private:
     MouseHandler[MouseEventType.max + 1] mouseHandlers;
     KeyHandler[KeyEventType.max + 1] keyHandlers;
     InputMethodHandler inputMethodHandler;
-    bool _acceptsTextInput;
-    bool _focusTraversable;
-    AccessibleRole _accessibleRole;
-    string _accessibleText, _accessibleHelp;
-    bool _accessibleHidden;
-    Cursor _cursor;
     Tvg_Paint[] extraPaints; // from addPaint(), drawn after `shape` and before the children
     Tvg_Paint mountBefore;   // while mounting, where the shapes go: see mount()
-    bool _disable;
 
-    Widget on(MouseEventType type, MouseHandler handler) nothrow @nogc
+    void on(MouseEventType type, MouseHandler handler) nothrow @nogc
     {
         mouseHandlers[type] = handler;
-        return this;
     }
 
-    Widget on(KeyEventType type, KeyHandler handler) nothrow @nogc
+    void on(KeyEventType type, KeyHandler handler) nothrow @nogc
     {
         keyHandlers[type] = handler;
-        return this;
     }
 
     /// The first shape drawn after everything under `w`: the next sibling's, or failing that, the
@@ -726,7 +717,7 @@ private:
     }
 
     /// Takes the shapes of this widget and everything below it out of the scene.
-    void unmount() nothrow
+    void unmount()
     {
         foreach (child; _children)
             child.unmount();
@@ -739,19 +730,68 @@ private:
         shape = null;
         scene = null;
         painted = Rect.init; // NaN again: nothing to hit, and painted in full if it comes back
-        _hover = _pressed = _focused = _focusVisible = false;
+        _setHover(false);
+        _setPressed(false);
+        _setFocused(false);
+        _setFocusVisible(false);
         unmounted();
     }
 
-    /// Tells this widget, and those below it that aren't disabled in their own right, that
-    /// disabled() has changed for them.
-    void disabledTreeChanged()
+    /*
+        Works out `disabled` again -- this widget's own `disable`, or its parent's `disabled` -- and
+        if that changed, tells the widget and goes on down to its children, whose depends on it.
+        Called when `disable` is set and when the widget moves to a different parent.
+    */
+    void refreshDisabled()
     {
+        const now = _disable || (parent && parent.disabled);
+        if (now == disabled)
+            return;
+        _setDisabled(now);
+        if (now && scene)
+            scene.forgetFocusWithin(this); // a disabled widget can't have focus
         invalidateAccessible();
         disabledChanged();
         foreach (child; _children)
-            if (!child._disable)
-                child.disabledTreeChanged();
+            child.refreshDisabled();
+    }
+
+    // Layout properties, passed on to Yoga. NaN means "work it out", which Yoga calls auto for a
+    // size and undefined for a bound.
+    void applySize() nothrow @nogc
+    {
+        _prefWidth == _prefWidth ? YGNodeStyleSetWidth(node, _prefWidth) : YGNodeStyleSetWidthAuto(node);
+        _prefHeight == _prefHeight ? YGNodeStyleSetHeight(node, _prefHeight) : YGNodeStyleSetHeightAuto(node);
+        YGNodeStyleSetMinWidth(node, _minWidth);
+        YGNodeStyleSetMaxWidth(node, _maxWidth);
+        YGNodeStyleSetMinHeight(node, _minHeight);
+        YGNodeStyleSetMaxHeight(node, _maxHeight);
+    }
+
+    void applyPadding() nothrow @nogc
+    {
+        YGNodeStyleSetPadding(node, YGEdgeTop, _padding.top);
+        YGNodeStyleSetPadding(node, YGEdgeRight, _padding.right);
+        YGNodeStyleSetPadding(node, YGEdgeBottom, _padding.bottom);
+        YGNodeStyleSetPadding(node, YGEdgeLeft, _padding.left);
+    }
+
+    void applyMargin() nothrow @nogc
+    {
+        YGNodeStyleSetMargin(node, YGEdgeTop, _margin.top);
+        YGNodeStyleSetMargin(node, YGEdgeRight, _margin.right);
+        YGNodeStyleSetMargin(node, YGEdgeBottom, _margin.bottom);
+        YGNodeStyleSetMargin(node, YGEdgeLeft, _margin.left);
+    }
+
+    void applyGrow() nothrow @nogc
+    {
+        YGNodeStyleSetFlexGrow(node, _grow);
+        YGNodeStyleSetFlexShrink(node, _grow > 0 ? 1 : 0);
+        if (_grow > 0)
+            YGNodeStyleSetFlexBasis(node, 0);
+        else
+            YGNodeStyleSetFlexBasisAuto(node);
     }
 }
 
