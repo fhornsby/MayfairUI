@@ -1,0 +1,57 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright \u00a9 2026, Freddie Hornsby",
+	"dependencies": {
+		"sdl-d": "~>3.2.27"
+	},
+	"description": "A Ui kit library",
+	"license": "MIT",
+	"name": "mayfair",
+	"targetType": "library",
+	"preGenerateCommands": [
+		"$PACKAGE_DIR/vendor/build.sh"
+	],
+	"importPaths": [
+		"source",
+		"bindings"
+	],
+	"cSourcePaths": [
+		"bindings"
+	],
+	"stringImportPaths": [
+		"fonts"
+	],
+	"cImportPaths": [
+		"vendor/thorvg/src/bindings/capi",
+		"vendor/wgpu-native/include",
+		"vendor/yoga",
+		"vendor/freetype/include",
+		"vendor/harfbuzz/src",
+		"vendor/libunibreak/src",
+		"vendor/accesskit/include",
+		"vendor/sheenbidi/Headers"
+	],
+	"lflags": [
+		"$PACKAGE_DIR/vendor/build/thorvg/src/libthorvg-1.a",
+		"$PACKAGE_DIR/vendor/wgpu-native/lib/libwgpu_native.a",
+		"$PACKAGE_DIR/vendor/build/yoga/libyogacore.a",
+		"$PACKAGE_DIR/vendor/build/harfbuzz/src/libharfbuzz.a",
+		"$PACKAGE_DIR/vendor/build/freetype/libfreetype.a",
+		"$PACKAGE_DIR/vendor/build/libunibreak/libunibreak.a",
+		"$PACKAGE_DIR/vendor/build/accesskit/libaccesskit.a",
+		"$PACKAGE_DIR/vendor/build/sheenbidi/libsheenbidi.a"
+	],
+	"libs": [
+		"stdc++",
+		"m",
+		"dl",
+		"pthread"
+	],
+	"toolchainRequirements": {
+		"dmd": "no",
+		"gdc": "no",
+		"ldc": ">=1.30.0"
+	}
+}

@@ -1,0 +1,48 @@
+Don't unconfigure an app-configured surface.
+
+Follow-up to the target type 2 patch: ThorVG unconfigured the surface whenever the size changed, so the
+application's next configure had to build a swapchain from scratch. Keeping it configured lets wgpu reuse
+the old swapchain. On a Vega 10 this barely moves the median (2.8 vs 3.1 ms) but removes the worst cases,
+which is what shows up as a stutter while resizing: max 7 ms instead of 32-39 ms.
+
+--- a/src/renderer/gpu_engine/wg/tvgWgRenderer.cpp
++++ b/src/renderer/gpu_engine/wg/tvgWgRenderer.cpp
+@@ -89,7 +89,9 @@
+ void WgRenderer::clearTargets()
+ {
+     releaseSurfaceTexture();
+-    if (surface) wgpuSurfaceUnconfigure(surface);
++    // an app-configured surface (target type 2) belongs to the application. Leaving it configured also lets
++    // wgpu reuse the old swapchain when the application configures the new size, which is much faster.
++    if (surface && !appConfiguresSurface) wgpuSurfaceUnconfigure(surface);
+     targetTexture = nullptr;
+     surface = nullptr;
+     mTargetSurface.stride = 0;
+@@ -414,6 +416,8 @@
+         return true;
+     }
+ 
++    appConfiguresSurface = (type == 2);
++
+     if (w == 0 || h == 0) return false;
+ 
+     // device or instance was changed, need to recreate all instances
+@@ -438,7 +442,7 @@
+     // type 2: a surface the application configures itself (after this call), e.g. to choose the present mode
+     if (type == 0 || type == 2) {
+         surface = (WGPUSurface)target;
+-        if (type == 0) surfaceConfigure(surface, mContext, w, h);
++        if (!appConfiguresSurface) surfaceConfigure(surface, mContext, w, h);
+     } else {
+         targetTexture = (WGPUTexture)target;
+     }
+--- a/src/renderer/gpu_engine/wg/tvgWgRenderer.h
++++ b/src/renderer/gpu_engine/wg/tvgWgRenderer.h
+@@ -108,6 +108,7 @@
+     WGPUTexture targetTexture{}; // external handle
+     WGPUSurfaceTexture surfaceTexture{};
+     WGPUSurface surface{};  // external handle
++    bool appConfiguresSurface = false;  // target type 2: the application configures the surface
+ };
+ 
+ #endif /* _TVG_WG_RENDERER_H_ */

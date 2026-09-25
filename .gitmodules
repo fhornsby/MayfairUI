@@ -1,0 +1,18 @@
+[submodule "mayfair/vendor/thorvg"]
+	path = mayfair/vendor/thorvg
+	url = https://github.com/thorvg/thorvg.git
+[submodule "mayfair/vendor/yoga"]
+	path = mayfair/vendor/yoga
+	url = https://github.com/facebook/yoga.git
+[submodule "mayfair/vendor/freetype"]
+	path = mayfair/vendor/freetype
+	url = https://gitlab.freedesktop.org/freetype/freetype.git
+[submodule "mayfair/vendor/harfbuzz"]
+	path = mayfair/vendor/harfbuzz
+	url = https://github.com/harfbuzz/harfbuzz.git
+[submodule "mayfair/vendor/libunibreak"]
+	path = mayfair/vendor/libunibreak
+	url = https://github.com/adah1972/libunibreak.git
+[submodule "mayfair/vendor/sheenbidi"]
+	path = mayfair/vendor/sheenbidi
+	url = https://github.com/Tehreer/SheenBidi.git

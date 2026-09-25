@@ -1,0 +1,9 @@
+{
+	"name": "mayfair-tests",
+	"description": "End-to-end tests: real windows, driven by real input events",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair": { "path": ".." }
+	}
+}

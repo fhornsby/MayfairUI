@@ -1,0 +1,34 @@
+Tighten the GPU tessellator's Bezier flattening tolerance.
+
+Bezier::flatten() decides a curve is straight enough to become a line segment when its
+flatness estimate falls under a fixed 0.5. That threshold is in *path* units, and the GPU
+engine tessellates before the transform is applied: gpuOptimize() passes the matrix, but
+only to detect thin paths, and leaves the output path in local coordinates for the vertex
+stage to transform. The CPU engine is unaffected, as it decomposes curves itself in 26.6
+fixed point.
+
+Mayfair draws everything in points and lets one transform on the scene scale it to device
+pixels, so path units are points. At UI text sizes a whole glyph is 10-17 units tall, which
+makes 0.5 an enormous threshold: glyph curves come out visibly faceted, worst on diagonals,
+and scaling the scene up for HiDPI magnifies the faceting rather than refining it.
+
+0.05 is measured to match the CPU engine's output at 1x with no measurable cost: tessellation
+is adaptive, so simple paths are unaffected, and update+draw for a full window of shapes and
+four text runs stayed at 0.48 ms steady state.
+
+This is a workaround with a known limit -- the tolerance is still absolute, so it degrades
+at large scene scales. The principled fix is for the tolerance to be divided by the
+transform's scale, which needs Bezier::segments() to take it as a parameter and the
+tessellator to be handed the matrix it is already given next door. Worth sending upstream.
+
+--- a/src/common/tvgMath.cpp
++++ b/src/common/tvgMath.cpp
+@@ -473,7 +473,7 @@
+     float diff2_y = fabsf((ctrl2.y * 3.f) - (end.y * 2.f) - start.y);
+     if (diff1_x < diff2_x) diff1_x = diff2_x;
+     if (diff1_y < diff2_y) diff1_y = diff2_y;
+-    return (diff1_x + diff1_y <= 0.5f);
++    return (diff1_x + diff1_y <= 0.05f);
+ }
+ 
+ 

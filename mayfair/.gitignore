@@ -1,0 +1,21 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/mayfair
+mayfair.so
+mayfair.dylib
+mayfair.dll
+mayfair.a
+mayfair.lib
+mayfair-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+/libmayfair.a
+# Native dependencies: built or downloaded by vendor/build.sh
+/vendor/build/
+/vendor/wgpu-native/
+/vendor/accesskit/

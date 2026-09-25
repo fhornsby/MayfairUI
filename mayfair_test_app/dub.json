@@ -1,0 +1,14 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A minimal D application.",
+	"license": "MIT",
+	"name": "mayfair_test_app",
+	"dependencies": {
+    "mayfair": {
+       "path": "../mayfair"
+    }
+  }
+}

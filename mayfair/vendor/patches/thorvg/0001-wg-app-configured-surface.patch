@@ -1,0 +1,35 @@
+Let the application configure a WebGPU surface target itself.
+
+tvg_wgcanvas_set_target() gains a third target type, 2: a WGPUSurface that ThorVG draws to but never
+configures. Type 0 still makes ThorVG configure the surface, and on Linux it leaves the present mode
+unset, which wgpu treats as Fifo (vsync on). Mayfair wants Mailbox where the GPU supports it, and
+ThorVG can't check that because it never sees the adapter. With type 0 Mayfair had to configure the
+surface a second time after ThorVG, costing ~4 ms per resize step on a Vega 10.
+
+ThorVG still unconfigures the surface on a size change, so the application configures it after
+set_target returns, with ThorVG's format (BGRA8Unorm) and the same size.
+
+--- a/src/renderer/gpu_engine/wg/tvgWgRenderer.cpp
++++ b/src/renderer/gpu_engine/wg/tvgWgRenderer.cpp
+@@ -425,7 +425,7 @@
+         mCompositor.initialize(mContext, w, h);
+ 
+     // update render targets dimensions
+-    } else if ((mTargetSurface.w != w) || (mTargetSurface.h != h) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
++    } else if ((mTargetSurface.w != w) || (mTargetSurface.h != h) || (type != 1 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
+         mRenderTargetPool.release(mContext);
+         mRenderTargetRoot.release(mContext);
+         clearTargets();
+@@ -435,9 +435,10 @@
+     }
+ 
+     // configure surface (must be called after context creation)
+-    if (type == 0) {
++    // type 2: a surface the application configures itself (after this call), e.g. to choose the present mode
++    if (type == 0 || type == 2) {
+         surface = (WGPUSurface)target;
+-        surfaceConfigure(surface, mContext, w, h);
++        if (type == 0) surfaceConfigure(surface, mContext, w, h);
+     } else {
+         targetTexture = (WGPUTexture)target;
+     }

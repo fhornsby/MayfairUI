@@ -1,0 +1,8 @@
+-I../vendor/thorvg/src/bindings/capi
+-I../vendor/wgpu-native/include
+-I../vendor/yoga
+-I../vendor/freetype/include
+-I../vendor/harfbuzz/src
+-I../vendor/libunibreak/src
+-I../vendor/accesskit/include
+-I../vendor/sheenbidi/Headers
