@@ -17,6 +17,7 @@ import mayfair.trace;
 import mayfair.accessibility;
 import mayfair.windowing.accessibility;
 import mayfair.windowing.platform;
+import mayfair.windowing.decorations;
 
 
 /*
@@ -209,8 +210,12 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
         case SDL_EventType.SDL_EVENT_WINDOW_RESIZED:
         case SDL_EventType.SDL_EVENT_WINDOW_MAXIMIZED:
         case SDL_EventType.SDL_EVENT_WINDOW_RESTORED:
-            if (event.window.windowID == SDL_GetWindowID(window))
+            if (event.window.windowID == SDL_GetWindowID(window)) {
                 accessibility.windowBoundsChanged();
+                if (event.type != SDL_EventType.SDL_EVENT_WINDOW_SHOWN && event.type != SDL_EventType.SDL_EVENT_WINDOW_MOVED
+                    && event.type != SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
+                    queueInputEvent(event);
+            }
             break;
         case SDL_EventType.SDL_EVENT_KEY_DOWN:
         case SDL_EventType.SDL_EVENT_KEY_UP:
@@ -403,6 +408,12 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
         case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_GAINED:
             _scene.windowFocus(true);
             break;
+        case SDL_EventType.SDL_EVENT_WINDOW_MAXIMIZED:
+            _scene.windowMaximised(true);
+            break;
+        case SDL_EventType.SDL_EVENT_WINDOW_RESTORED:
+            _scene.windowMaximised(false);
+            break;
         case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_LOST:
             _scene.windowFocus(false);
             break;
@@ -521,6 +532,61 @@ void render() nothrow @nogc {
           traceMs(start, traceNow()));
 }
 
+/*
+    What the title bar Mayfair draws asks the window to do.
+*/
+final class Controls : WindowControls {
+    void close() {
+        SDL_Event quit;
+        quit.type = SDL_EventType.SDL_EVENT_QUIT;
+        SDL_PushEvent(&quit);
+    }
+    void minimise() { SDL_MinimizeWindow(window); }
+    void toggleMaximised() {
+        if (maximised)
+            SDL_RestoreWindow(window);
+        else
+            SDL_MaximizeWindow(window);
+    }
+    bool maximised() { return (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0; }
+    void showMenu(float x, float y) { SDL_ShowWindowSystemMenu(window, toWindow(x), toWindow(y)); }
+}
+
+bool drawsDecorations; // Mayfair draws the title bar and edges, rather than the desktop
+
+/*
+    Where on the window a press is, for the window system, when Mayfair draws its decorations: an
+    edge or a corner to size it by -- unless it's maximised, when there's nothing to size -- the
+    title bar to move it by, where there's no control, or the app's. Also asked as the pointer
+    moves, which is how the pointer gets its resizing shapes at the edges.
+*/
+SDL_HitTestResult hitTestAt(float x, float y) nothrow @nogc {
+    enum edge = 6;   // points in from the window's edge that size it
+    enum corner = 16; // and along it from a corner that size both ways
+    const w = viewWidth / scale, h = viewHeight / scale;
+    const sized = !(SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN));
+    if (sized) {
+        const left = x < edge, right = x >= w - edge, top = y < edge, bottom = y >= h - edge;
+        const nearLeft = x < corner, nearRight = x >= w - corner, nearTop = y < corner, nearBottom = y >= h - corner;
+        if ((top && nearLeft) || (left && nearTop)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOPLEFT;
+        if ((top && nearRight) || (right && nearTop)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOPRIGHT;
+        if ((bottom && nearLeft) || (left && nearBottom)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOMLEFT;
+        if ((bottom && nearRight) || (right && nearBottom)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+        if (top) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOP;
+        if (bottom) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOM;
+        if (left) return SDL_HitTestResult.SDL_HITTEST_RESIZE_LEFT;
+        if (right) return SDL_HitTestResult.SDL_HITTEST_RESIZE_RIGHT;
+    }
+    auto bar = _scene ? _scene.titleBar : null;
+    if (!bar)
+        return SDL_HitTestResult.SDL_HITTEST_NORMAL;
+    // A menu open: the press is to close it, so it goes to the scene
+    foreach (p; _scene.popups)
+        if (p.autoHide || p.modal)
+            return SDL_HitTestResult.SDL_HITTEST_NORMAL;
+    return bar.dragsWindowAt(x, y) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE : SDL_HitTestResult.SDL_HITTEST_NORMAL;
+}
+
 public:
 
 
@@ -548,7 +614,21 @@ public:
 
     void run(){
         SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
+
+        // Who draws the title bar: the app, if it gave the scene one; otherwise the desktop, where
+        // it will -- and where it won't, as on GNOME, a plain one of Mayfair's. Decided before SDL
+        // starts, as SDL would otherwise have libdecor draw it, with GTK.
+        const appBar = _scene && _scene.titleBarChosen;
+        const wayland = onWayland();
+        drawsDecorations = appBar || (wayland && !compositorDecorates());
+        if (drawsDecorations && wayland)
+        {
+            keepLibdecorPluginsAway(true);
+            quietStderr(true); // libdecor says, twice, that it found no plugins: what was meant
+        }
+
         if (!SDL_Init(SDL_INIT_VIDEO)) {
+            quietStderr(false);
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
             return;
         }
@@ -557,8 +637,15 @@ public:
         scope(exit) traceClose();
 
         // Without HIGH_PIXEL_DENSITY the drawable stays at 1x and the compositor upscales it
-        window = SDL_CreateWindow(title.toStringz(), width, height,
-                                  SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        auto flags = SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if (drawsDecorations)
+            flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS;
+        window = SDL_CreateWindow(title.toStringz(), width, height, flags);
+        if (drawsDecorations && wayland)
+        {
+            quietStderr(false);
+            keepLibdecorPluginsAway(false);
+        }
         if (!window) {
             fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
             return;
@@ -573,6 +660,19 @@ public:
 
         if (!_scene)
             _scene = new Scene(new Widget); // nothing to show, but everything below still works
+        if (drawsDecorations)
+        {
+            // The app's title bar, or a plain one, and the window's edges and bar for moving and sizing it
+            if (!_scene.titleBar)
+            {
+                _scene.titleBar(new TitleBar(title));
+                _scene.titleBarChosen = false;
+            }
+            else if (!_scene.titleBar.title.length)
+                _scene.titleBar.setTitle(title);
+            _scene.windowControls = new Controls;
+            SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
+        }
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();
         _scene.platformColourScheme = systemColourScheme();
@@ -743,4 +843,61 @@ private extern(C) bool windowEventWatch(void* userdata, SDL_Event* event) nothro
         self.render();
     }
     return true;
+}
+
+private extern(C) SDL_HitTestResult hitTest(SDL_Window* window, const(SDL_Point)* area, void* data) nothrow @nogc
+{
+    auto app = cast(App) data;
+    return app.hitTestAt(app.toPoints(area.x), app.toPoints(area.y));
+}
+
+/*
+    Keeps libdecor from loading a plugin -- the GTK one, on GNOME -- while SDL makes the window, by
+    pointing it at a folder with none in it, and then puts the setting back as it was. libdecor
+    then draws nothing, and Mayfair draws the title bar.
+*/
+private void keepLibdecorPluginsAway(bool away) nothrow @nogc
+{
+    import core.stdc.stdlib : getenv;
+    import core.sys.posix.stdlib : setenv, unsetenv;
+    import core.stdc.string : strlen;
+    __gshared char[1024] saved;
+    __gshared bool hadOne;
+    enum none = "/proc/self/fdinfo/nonexistent\0"; // a folder that's never there
+    if (away) {
+        const was = getenv("LIBDECOR_PLUGIN_DIR");
+        hadOne = was !is null && strlen(was) < saved.length;
+        if (hadOne)
+            saved[0 .. strlen(was) + 1] = was[0 .. strlen(was) + 1];
+        setenv("LIBDECOR_PLUGIN_DIR", none.ptr, 1);
+    } else if (hadOne) {
+        setenv("LIBDECOR_PLUGIN_DIR", saved.ptr, 1);
+    } else {
+        unsetenv("LIBDECOR_PLUGIN_DIR");
+    }
+}
+
+/*
+    Stops anything reaching stderr, or lets it again: for libdecor, which, kept from its plugins,
+    says so as SDL starts and makes the window. Anything SDL itself has to say about that goes
+    through SDL_GetError, which is still reported.
+*/
+private void quietStderr(bool quiet) nothrow @nogc
+{
+    import core.sys.posix.fcntl : open, O_WRONLY;
+    import core.sys.posix.unistd : close, dup, dup2;
+    __gshared int saved = -1;
+    enum stderrFd = 2;
+    if (quiet && saved < 0) {
+        saved = dup(stderrFd);
+        const nul = open("/dev/null", O_WRONLY);
+        if (nul >= 0) {
+            dup2(nul, stderrFd);
+            close(nul);
+        }
+    } else if (!quiet && saved >= 0) {
+        dup2(saved, stderrFd);
+        close(saved);
+        saved = -1;
+    }
 }

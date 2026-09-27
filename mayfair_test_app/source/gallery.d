@@ -49,27 +49,29 @@ Dock buildGallery(string start = null)
     dock.setCentre(panes[sidebar.selectedIndex]);
     sidebar.selectedIndexProperty.addListener((int was, int now) { dock.setCentre(panes[now]); });
 
-    // Light or dark: the desktop's until the switch is used
-    auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"))
-        .tooltip("Switch between light and dark");
-    auto header = new Row().spacing(12).padding(Insets(10, 16)).alignment(Pos.centreLeft)
-        .add(new Icon(Image.fromData(import("tick-symbolic.svg"), "mayfair.svg")).iconSize(24))
-        .add(new Label("Mayfair").style("font-size: 18px; font-weight: bold;"))
-        .add(new Widget().grow(1)) // pushes the switch to the right
-        .add(dark);
-    header.style("background-colour: var(--base);");
-
-    // The sidebar scrolls, for a window too short for all its pages
-    dock.top(header).left(new ScrollPane(sidebar).fitToWidth(true)).bottom(status);
-    dark.setOnAction({
-        dock.scene.setColourScheme(dark.selected ? ColourScheme.dark : ColourScheme.light);
-        report(dark.selected ? "Dark" : "Light");
-    });
+    // The page, the sidebar and the status bar; the title bar is the window's (see buildTitleBar)
+    dock.left(new ScrollPane(sidebar).fitToWidth(true)).bottom(status);
     return dock;
 }
 
 
 alias Report = void delegate(string);
+
+/*
+    The gallery's title bar: its name, and the switch between light and dark at the end. Given
+    to the scene, it makes the window draw its own decorations, wherever it is.
+*/
+TitleBar buildTitleBar(Dock gallery)
+{
+    auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"))
+        .tooltip("Switch between light and dark");
+    dark.setOnAction({
+        gallery.scene.setColourScheme(dark.selected ? ColourScheme.dark : ColourScheme.light);
+    });
+    return new TitleBar("Mayfair gallery")
+        .addStart(new Icon(Image.fromData(import("tick-symbolic.svg"), "mayfair.svg")).iconSize(20))
+        .addEnd(dark);
+}
 
 /*
     Actions made in a loop are made here, a call each. A delegate made in a loop's body shares

@@ -10,6 +10,7 @@ import gallery;
 void main(string[] args)
 {
     auto app = new App("Mayfair gallery");
-    app.scene = new Scene(buildGallery(args.length > 1 ? args[1] : null));
+    auto gallery = buildGallery(args.length > 1 ? args[1] : null);
+    app.scene = new Scene(gallery).titleBar(buildTitleBar(gallery));
     app.run();
 }

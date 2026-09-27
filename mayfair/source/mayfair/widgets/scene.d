@@ -11,6 +11,7 @@ import mayfair.widgets.widget;
 import mayfair.widgets.input;
 import mayfair.widgets.styling;
 import mayfair.widgets.popup;
+import mayfair.widgets.titlebar : TitleBar;
 import mayfair.widgets.label : Label;
 import mayfair.widgets.layouts : Alignment;
 import mayfair.animation;
@@ -93,6 +94,8 @@ public:
 
         _root.styleClass.add("root"); // what a theme's .root rule, and its variables, are for
         _root.mount(this, paints);
+        if (_titleBar)
+            mountTitleBar();
 
         // The root fills the window. It's in percentages so a resize doesn't have to restyle it:
         // layout() passes the window size for them to resolve against.
@@ -116,6 +119,8 @@ public:
         {
             while (popups.length)
                 hidePopup(popups[$ - 1]);
+            if (_titleBar)
+                _titleBar.unmountTree();
             _root.unmountTree();
         }
         catch (Exception) {}
@@ -153,7 +158,15 @@ public:
     /// Sizes and positions the whole tree for a window `w` x `h` points.
     void layout(float w, float h) nothrow @nogc
     {
-        YGNodeCalculateLayout(_root.node, w, h, YGDirectionLTR);
+        // The title bar along the top at its own height, and the root in what's below it
+        float top = 0;
+        if (_titleBar)
+        {
+            YGNodeCalculateLayout(_titleBar.node, w, float.nan, YGDirectionLTR);
+            top = YGNodeLayoutGetHeight(_titleBar.node);
+        }
+        _root.cellY = top;
+        YGNodeCalculateLayout(_root.node, w, h - top > 0 ? h - top : 0, YGDirectionLTR);
         // Each popup as big as it asks, but inside the window, with a margin if there's room for one
         foreach (p; popups)
         {
@@ -173,7 +186,7 @@ public:
     /// Whether anything needs laying out again: the tree, a popup, or which popups there are.
     bool layoutNeeded() nothrow @nogc
     {
-        if (popupsMoved || YGNodeIsDirty(_root.node))
+        if (popupsMoved || YGNodeIsDirty(_root.node) || (_titleBar && YGNodeIsDirty(_titleBar.node)))
             return true;
         foreach (p; popups)
             if (YGNodeIsDirty(p.node))
@@ -187,6 +200,8 @@ public:
         tvg_shape_reset(background);
         tvg_shape_append_rect(background, 0, 0, w, h, 0, 0, true);
         _root.paintTree(0, 0);
+        if (_titleBar)
+            _titleBar.paintTree(0, 0);
         foreach (p; popups)
         {
             if (p._scrim)
@@ -197,6 +212,31 @@ public:
             }
             p.paintTree(0, 0, 0, 0, p._shownAmount);
         }
+    }
+
+    /*
+        The bar along the top of the window, drawn by the app: see TitleBar. Given one, the window
+        draws its own decorations; without, the desktop draws them where it will, and the App
+        gives it a plain one where it won't. The root goes below it.
+    */
+    final TitleBar titleBar() nothrow @nogc { return _titleBar; }
+
+    /// ditto
+    final Scene titleBar(TitleBar bar)
+    {
+        if (_titleBar && paints)
+            _titleBar.unmountTree();
+        _titleBar = bar;
+        titleBarChosen = bar !is null;
+        if (bar)
+        {
+            bar.styleOwner = _root; // the root's palette, and font
+            if (paints)
+                mountTitleBar();
+        }
+        popupsMoved = windowChildrenChanged = true;
+        paintRequested = true;
+        return this;
     }
 
     /// The popups showing, from the bottom up: menus, drop-down lists, tooltips, dialogs.
@@ -282,6 +322,8 @@ package(mayfair):
         if (!_root)
             return;
         markCssDirty(_root, true);
+        if (_titleBar)
+            markCssDirty(_titleBar, true);
         foreach (p; popups)
             markCssDirty(p, true);
         cssRequested = true;
@@ -529,14 +571,14 @@ package(mayfair):
             traverse(event.shift ? -1 : 1);
             return;
         }
-        focusScope.offerShortcut(event);
+        offerShortcut(event);
     }
 
     void keyReleased(KeyEvent event)
     {
         bubble(event);
         if (!event.consumed)
-            focusScope.offerShortcut(event);
+            offerShortcut(event);
     }
 
     /// Text typed into the widget with focus, bubbling up from it.
@@ -567,11 +609,29 @@ package(mayfair):
     void windowFocus(bool focused)
     {
         windowFocused = focused;
+        if (_titleBar)
+            _titleBar.windowFocused(focused);
         if (focusOwner)
             refreshFocus(focusOwner);
     }
 
 package(mayfair):
+    WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
+    bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
+
+    /// The window was maximised or restored, for the title bar's button to say which it does.
+    void windowMaximised(bool on)
+    {
+        if (_titleBar)
+            _titleBar.windowMaximised(on);
+    }
+
+    void mountTitleBar() nothrow
+    {
+        _titleBar.mount(this, paints);
+        markCssDirty(_titleBar, true);
+    }
+
     Popup[] popups;             // showing, bottom to top
     bool popupsMoved;           // one's been shown or hidden, so layout has to run
     bool windowChildrenChanged; // the window's accessibility node has to list them again
@@ -641,7 +701,10 @@ package(mayfair):
     /// The root, and each popup: the tops of what's in the window.
     Widget[] topLevel() nothrow
     {
-        Widget[] all = [_root];
+        Widget[] all;
+        if (_titleBar)
+            all ~= _titleBar;
+        all ~= _root;
         foreach (p; popups)
             all ~= p;
         return all;
@@ -650,6 +713,7 @@ package(mayfair):
 private:
     float _scale = 1.0f;
     Widget _root;
+    TitleBar _titleBar;
     StylesheetList _stylesheets;
     Tvg_Paint background;
 
@@ -690,7 +754,12 @@ private:
                 return hit;
             blocked = blocked || p.autoHide || p.modal;
         }
-        return blocked ? null : _root.pick(x, y);
+        if (blocked)
+            return null;
+        if (_titleBar)
+            if (auto hit = _titleBar.pick(x, y))
+                return hit;
+        return _root.pick(x, y);
     }
 
     /*
@@ -783,6 +852,15 @@ private:
             w.contextMenu.showAt(w, x, y);
     }
 
+    /// Offers a key nothing took as a shortcut: to the popup with focus, or the tree and its title bar.
+    void offerShortcut(ref KeyEvent event)
+    {
+        auto scope_ = focusScope;
+        scope_.offerShortcut(event);
+        if (!event.consumed && scope_ is _root && _titleBar)
+            _titleBar.offerShortcut(event);
+    }
+
     /// Where Tab moves and shortcuts go: the topmost popup that has focus, or the whole tree.
     Widget focusScope() nothrow @nogc
     {
@@ -803,7 +881,10 @@ private:
     void traverse(int direction)
     {
         Widget[] order;
-        focusScope.collectTraversable(order);
+        auto scope_ = focusScope;
+        if (scope_ is _root && _titleBar)
+            _titleBar.collectTraversable(order); // the bar first, as it's first in the window
+        scope_.collectTraversable(order);
         if (!order.length)
             return;
         ptrdiff_t at = -1;
@@ -935,4 +1016,15 @@ private:
                 return true;
         return false;
     }
+}
+
+/// What a window can be asked to do by the title bar Mayfair draws for it. The App is one.
+interface WindowControls
+{
+    void close();
+    void minimise();
+    void toggleMaximised();
+    bool maximised();
+    /// Shows the window system's own menu for the window, at `x`, `y` points in it.
+    void showMenu(float x, float y);
 }

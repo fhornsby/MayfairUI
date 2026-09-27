@@ -54,6 +54,7 @@
     --divider: #cbd5e1;              /* a line between parts */
     --popup: #ffffff;                /* a menu's, a drop-down's, a dialog's surface */
     --row-stripe: #0f172a08;         /* every other row of a table */
+    --title-bar: #e2e8f0;            /* the bar along the top of the window */
     --tooltip: #1e293bee;            /* a tooltip, dark in both schemes */
     --tooltip-text: #f8fafc;
 }
@@ -89,6 +90,7 @@
         --divider: #334155;
         --popup: #1e293b;
         --row-stripe: #e2e8f00a;
+        --title-bar: #1e293b;
         --tooltip: #020617ee;
         --tooltip-text: #e2e8f0;
     }
@@ -660,4 +662,48 @@
 
 .table-view .placeholder {
     colour: var(--prompt-text);
+}
+
+/*
+    The title bar Mayfair draws, when it draws one: the window's title in the middle, bold, on a
+    band a shade off the window's own, with a line under it. Everything in it fades a little while
+    the window hasn't focus, as GNOME's do.
+*/
+.title-bar {
+    min-height: 46;
+    padding: 6 8;
+    background-colour: var(--divider), var(--title-bar);
+    background-insets: 0, 0 0 1 0;
+}
+
+.title-bar .title {
+    font-weight: bold;
+}
+
+.title-bar .start, .title-bar .end {
+    gap: 6;
+}
+
+.title-bar:backdrop .title, .title-bar:backdrop .start, .title-bar:backdrop .end {
+    opacity: 0.6;
+}
+
+.window-button {
+    padding: 4;
+    --face: var(--row-hover);
+    background-colour: var(--face);
+    background-radius: 13;
+    transition: background-colour 120ms ease-out;
+}
+
+.window-button:hover {
+    --face: var(--row-selected);
+}
+
+.window-button:armed {
+    --face: var(--pressed-base);
+}
+
+.window-button .icon {
+    icon-size: 14;
 }

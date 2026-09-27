@@ -675,6 +675,8 @@ void applyCss(Scene scene)
         return;
     scene.cssRequested = false;
     restyleTree(scene, scene.root, false);
+    if (scene.titleBar)
+        restyleTree(scene, scene.titleBar, false);
     foreach (p; scene.popups)
         restyleTree(scene, p, false);
 }

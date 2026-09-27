@@ -211,8 +211,10 @@ void dialogs()
         show();
         d.ui({
             d.check(dialog.showing && dialog.modal, "showing, modal");
-            const b = dialog.boundsInScene, w = open.scene.root.boundsInScene;
-            d.check(near(b.centreX, w.centreX) && near(b.centreY, w.centreY), "in the middle of the window");
+            // The window, from its top -- title bar and all -- to the bottom of the root
+            const b = dialog.boundsInScene, root = open.scene.root.boundsInScene;
+            d.check(near(b.centreX, root.centreX) && near(b.centreY, root.maxY / 2),
+                    format!"in the middle of the window: %s in %s"(b, root));
         });
         d.click(under);
         d.ui({
