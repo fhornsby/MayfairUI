@@ -188,6 +188,8 @@ protected:
             left to its content, up to a max that nothing reaches, rather than unlimited.
         */
         enum limit = 1e6f;
+        placingCells = true;
+        scope (exit) placingCells = false;
         YGNodeStyleSetWidthAuto(cell);
         YGNodeStyleSetHeightAuto(cell);
         YGNodeStyleSetMaxWidth(cell, limit);
@@ -222,6 +224,8 @@ protected:
         child.cellX = left;
         child.cellY = top;
         // Exactly this big: a size of its own, which Yoga takes over the max that measuring left
+        placingCells = true;
+        scope (exit) placingCells = false;
         YGNodeStyleSetWidth(cell, snap(_contentLeft + x + w) - left);
         YGNodeStyleSetHeight(cell, snap(_contentTop + y + h) - top);
         YGNodeCalculateLayout(cell, float.nan, float.nan, YGDirectionLTR);

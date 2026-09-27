@@ -916,6 +916,7 @@ package:
     YGNodeRef cellNode;                // the cell it's in, if its parent places its children
     float cellX = 0, cellY = 0;        // where in its parent that cell is
     bool arrangeNeeded = true;         // for a widget that places its children: they need placing again
+    bool placingCells;                 // and it's measuring or placing them itself, right now
 
     /// Something about the children of a widget that places them has changed: measure and place again.
     final void childLayoutChanged() nothrow @nogc
@@ -1539,8 +1540,11 @@ private void applyAxis(alias setSize, alias setAuto, alias setMin, alias setMax)
 /// A cell's child changed its layout: its parent, which places it, has to measure and place again.
 private extern(C) void cellDirtied(YGNodeConstRef cell) nothrow @nogc
 {
+    // Unless it's the parent's own doing: sizing a cell to measure or place what's in it changes
+    // the cell, and that's not the child changing -- taken for one, it would lay out forever
     if (auto parent = cast(Widget) YGNodeGetContext(cell))
-        parent.childLayoutChanged();
+        if (!parent.placingCells)
+            parent.childLayoutChanged();
 }
 
 /// Puts every node in the tree under `w` back on Yoga's default config, so the scene's can be freed.

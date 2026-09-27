@@ -610,10 +610,14 @@ public:
         while (running) {
             const waitStart = traceNow();
             bool gotEvent;
-            if (repickPending) {
-                gotEvent = SDL_PollEvent(&event); // it's for update(), which should run now
-            } else if (animationsRunning()) {
+            // While something's animating, the next frame is when the display's ready for it, and
+            // not before: the repick below waits for it too, rather than the loop going round as
+            // fast as it can -- which, with a present mode that doesn't wait for the display, is
+            // hundreds of frames a second nobody sees
+            if (animationsRunning()) {
                 gotEvent = SDL_WaitEventTimeout(&event, msUntilNextPulse());
+            } else if (repickPending) {
+                gotEvent = SDL_PollEvent(&event); // it's for update(), which should run now
             } else {
                 if (!SDL_WaitEvent(&event))
                     break;

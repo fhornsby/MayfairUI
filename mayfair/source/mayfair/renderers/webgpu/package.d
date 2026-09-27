@@ -55,7 +55,18 @@ private:
 public:
     /// Sets up WebGPU and ThorVG for `window`. Prints the reason and returns false on failure.
     bool initialise(SDL_Window* window){
-        instance = wgpuCreateInstance(null);
+        // Only the backend Mayfair draws with. By default wgpu looks at every one it has, and
+        // looking at OpenGL loads EGL and the GL driver -- tens of megabytes, and a dozen threads,
+        // for an adapter that's never used.
+        WGPUInstanceExtras extras;
+        extras.chain.sType = cast(WGPUSType) WGPUSType_InstanceExtras;
+        version (OSX)
+            extras.backends = WGPUInstanceBackend_Metal;
+        else
+            extras.backends = WGPUInstanceBackend_Vulkan;
+        WGPUInstanceDescriptor descriptor;
+        descriptor.nextInChain = &extras.chain;
+        instance = wgpuCreateInstance(&descriptor);
         if (!instance) {
             fprintf(stderr, "wgpuCreateInstance failed\n");
             return false;

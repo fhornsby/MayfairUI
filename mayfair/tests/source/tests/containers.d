@@ -1,5 +1,6 @@
 module tests.containers;
 
+import core.time : msecs;
 import std.exception : collectException;
 import std.format : format;
 import std.math : abs;
@@ -213,6 +214,26 @@ void grids()
             grid.remove(bio);
             grid.scene.root.remove(bioAlone);
         });
+
+        // Nothing happening: nothing running. A container that took its own sizing of its
+        // children's cells for a change in them laid out again every frame, forever.
+        {
+            import core.thread : Thread;
+            import core.time : seconds;
+            import core.sys.posix.time : clock_gettime, timespec, CLOCK_PROCESS_CPUTIME_ID;
+            double cpu()
+            {
+                timespec t;
+                clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t);
+                return t.tv_sec + t.tv_nsec / 1e9;
+            }
+            d.settle();
+            Thread.sleep(300.msecs); // anything that was under way, finished
+            const before = cpu();
+            Thread.sleep(1.seconds);
+            const used = cpu() - before;
+            d.check(used < 0.1, format!"idle, it does nothing: %.3f s of CPU in a second"(used));
+        }
 
         d.ui({ grid.remove(note); });
         d.settle();
