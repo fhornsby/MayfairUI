@@ -43,6 +43,10 @@ enum AccessibleRole
     tabPanel,          /// What the selected tab shows
     listBox,           /// A list to choose from, such as a navigation sidebar
     listBoxOption,     /// One of a list box's choices; whether it's chosen goes in AccessibleNode.selected
+    table,             /// Rows and columns of cells, with a header
+    row,               /// One of a table's rows
+    cell,              /// One of a row's cells
+    columnHeader,      /// What a table's column is, at its top
     menu,
     comboBox,          /// A drop-down to choose one of a list from; its choice goes in AccessibleNode.value
     dialog,            /// A dialog over the window, named by its title
@@ -154,6 +158,22 @@ struct AccessibleNode
     {
         accesskit_node_set_toggled(node, on ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
     }
+
+    /*
+        Where it is among its like: the `position`th of `of`, counting from 1. What lets a screen
+        reader say "item 5 of 10,000" of a list whose rows out of view don't exist.
+    */
+    void positionInSet(size_t position, size_t of) nothrow @nogc
+    {
+        accesskit_node_set_position_in_set(node, position);
+        accesskit_node_set_size_of_set(node, of);
+    }
+
+    /// A table's size, or a row's or cell's place in it, counting from 0.
+    void rowCount(size_t n) nothrow @nogc { accesskit_node_set_row_count(node, n); }
+    void columnCount(size_t n) nothrow @nogc { accesskit_node_set_column_count(node, n); } /// ditto
+    void rowIndex(size_t i) nothrow @nogc { accesskit_node_set_row_index(node, i); }        /// ditto
+    void columnIndex(size_t i) nothrow @nogc { accesskit_node_set_column_index(node, i); }  /// ditto
 
     /// Whether what it opens -- a menu button's menu, a drop-down's list -- is showing.
     void expanded(bool on) nothrow @nogc
@@ -288,6 +308,10 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.progressIndicator: return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
         case AccessibleRole.tab:               return ACCESSKIT_ROLE_TAB;
         case AccessibleRole.comboBox:          return ACCESSKIT_ROLE_COMBO_BOX;
+        case AccessibleRole.table:             return ACCESSKIT_ROLE_TABLE;
+        case AccessibleRole.row:               return ACCESSKIT_ROLE_ROW;
+        case AccessibleRole.cell:              return ACCESSKIT_ROLE_CELL;
+        case AccessibleRole.columnHeader:      return ACCESSKIT_ROLE_COLUMN_HEADER;
         case AccessibleRole.dialog:            return ACCESSKIT_ROLE_DIALOG;
         case AccessibleRole.tabList:           return ACCESSKIT_ROLE_TAB_LIST;
         case AccessibleRole.tabPanel:          return ACCESSKIT_ROLE_TAB_PANEL;

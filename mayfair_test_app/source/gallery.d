@@ -29,6 +29,7 @@ Dock buildGallery(string start = null)
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
+        Page("Lists & tables", "view-list-symbolic", listsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
     ];
@@ -58,7 +59,8 @@ Dock buildGallery(string start = null)
         .add(dark);
     header.style("background-colour: var(--base);");
 
-    dock.top(header).left(sidebar).bottom(status);
+    // The sidebar scrolls, for a window too short for all its pages
+    dock.top(header).left(new ScrollPane(sidebar).fitToWidth(true)).bottom(status);
     dark.setOnAction({
         dock.scene.setColourScheme(dark.selected ? ColourScheme.dark : ColourScheme.light);
         report(dark.selected ? "Dark" : "Light");
@@ -455,6 +457,63 @@ Widget popupsPage(Report report)
                 .tooltip("A longer tooltip wraps once it's wider than a comfortable line, so it never runs off the window"))));
     result.stylesheets.add(sheet);
     return result;
+}
+
+/// A made-up person, for the table.
+struct Person
+{
+    string name, city, email;
+    int age;
+}
+
+/// A list cell with an icon before the text: what a cell factory makes.
+class FileCell : ListCell!string
+{
+    this()
+    {
+        add(new Icon("text-x-generic-symbolic"));
+    }
+}
+
+Widget listsPage(Report report)
+{
+    // Ten thousand items, of which only those in view are ever made
+    string[] files;
+    foreach (i; 0 .. 10_000)
+        files ~= format!"Document %05d.txt"(i);
+    auto list = new ListView!string(files).prefSize(300, 260);
+    list.cellFactory({ return cast(ListCell!string) new FileCell; });
+    list.selectedIndexProperty.addListener((int was, int now) { report("Selected " ~ list.selectedItem); });
+    list.onActivate((int i) { report("Opened " ~ files[i]); });
+
+    // A table of made-up people, sortable by any column
+    static immutable firsts = ["Ada", "Alan", "Grace", "Linus", "Margaret", "Dennis", "Barbara", "Ken", "Frances", "Tim"];
+    static immutable lasts = ["Lovelace", "Turing", "Hopper", "Torvalds", "Hamilton", "Ritchie", "Liskov", "Thompson",
+                              "Allen", "Berners-Lee"];
+    static immutable cities = ["London", "Cambridge", "Leeds", "Edinburgh", "Bath", "York", "Bristol", "Oxford"];
+    Person[] people;
+    foreach (i; 0 .. 5_000)
+    {
+        const first = firsts[(i * 7) % firsts.length], last = lasts[(i * 3 + i / 10) % lasts.length];
+        people ~= Person(first ~ " " ~ last, cities[(i * 5 + 1) % cities.length],
+                         format!"%s.%s%d@example.com"(first, last, i), 18 + (i * 37) % 70);
+    }
+    auto table = new TableView!Person(people).prefSize(560, 300);
+    table.add(new TableColumn!Person("Name", (Person p) => p.name))
+         .add(new TableColumn!Person("Age", (Person p) => format!"%d"(p.age)).alignment(Alignment.end))
+         .add(new TableColumn!Person("City", (Person p) => p.city))
+         .add(new TableColumn!Person("Email", (Person p) => p.email));
+    table.selectedIndexProperty.addListener((int was, int now) {
+        if (now >= 0)
+            report(format!"%s, %d, of %s"(table.selectedItem.name, table.selectedItem.age, table.selectedItem.city));
+    });
+    table.onActivate((int i) { report("Opened " ~ people[i].name); });
+
+    return page("Lists & tables", "A list or a table makes only the rows in view, however many items it has, "
+                ~ "and gives rows that scroll out of view to those scrolling in. Click a table's header to sort "
+                ~ "by it, click again for the other way, and drag its right edge to size the column.")
+        .add(section("A list of ten thousand, with a cell of its own", list))
+        .add(section("A table of five thousand people", table));
 }
 
 Widget stylingPage(Report report)

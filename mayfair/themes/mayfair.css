@@ -53,6 +53,7 @@
     --row-selected: #0284c726;       /* and the one chosen, tinted with the accent */
     --divider: #cbd5e1;              /* a line between parts */
     --popup: #ffffff;                /* a menu's, a drop-down's, a dialog's surface */
+    --row-stripe: #0f172a08;         /* every other row of a table */
     --tooltip: #1e293bee;            /* a tooltip, dark in both schemes */
     --tooltip-text: #f8fafc;
 }
@@ -87,6 +88,7 @@
         --row-selected: #38bdf833;
         --divider: #334155;
         --popup: #1e293b;
+        --row-stripe: #e2e8f00a;
         --tooltip: #020617ee;
         --tooltip-text: #e2e8f0;
     }
@@ -550,4 +552,112 @@
 .dialog .buttons {
     gap: 8;
     padding: 8 0 0 0;
+}
+
+/*
+    Lists: a box like a text field's, its rows lit up under the pointer, and the selected one in the
+    accent's tint -- stronger while the list has focus from the keyboard, so you can see where it is.
+*/
+.list-view {
+    width: 260;
+    height: 300;
+    padding: 1;
+    background-colour: var(--field-border), var(--field);
+    background-insets: 0, 1;
+    background-radius: 8, 7;
+}
+
+.list-view:focus-visible {
+    background-colour: var(--focus), var(--field);
+    background-insets: 0, 2;
+}
+
+.list-cell {
+    padding: 6 10;
+    gap: 8;
+    background-colour: transparent;
+}
+
+.list-cell:hover {
+    background-colour: var(--row-hover);
+}
+
+.list-cell:selected {
+    background-colour: var(--row-selected);
+}
+
+.list-view:focus-visible .list-cell:selected {
+    background-colour: var(--focus), var(--row-selected);
+    background-insets: 0, 0 0 0 3;
+}
+
+.list-view .placeholder {
+    colour: var(--prompt-text);
+}
+
+/*
+    Tables: a list's box, a header of columns with lines between them, and rows striped faintly so
+    a line can be followed across.
+*/
+.table-view {
+    width: 480;
+    height: 300;
+    padding: 1;
+    background-colour: var(--field-border), var(--field);
+    background-insets: 0, 1;
+    background-radius: 8, 7;
+}
+
+.table-view:focus-visible {
+    background-colour: var(--focus), var(--field);
+    background-insets: 0, 2;
+}
+
+.column-header-background {
+    background-colour: var(--divider), var(--base);
+    background-insets: 0, 0 0 1 0;
+    background-radius: 7 7 0 0, 7 7 0 0;
+}
+
+.column-header {
+    padding: 7 10;
+    graphic-text-gap: 4;
+    colour: var(--text);
+    /* A line at the right, between columns: the divider, all but the last point of it covered */
+    background-colour: var(--divider), var(--base), transparent;
+    background-insets: 6 0 6 0, 0 1 0 0, 0 1 0 0;
+}
+
+.column-header:hover {
+    background-colour: var(--divider), var(--base), var(--row-hover);
+}
+
+.column-header .sort-arrow {
+    icon-size: 12;
+}
+
+.table-row:odd {
+    background-colour: var(--row-stripe);
+}
+
+.table-row:hover {
+    background-colour: var(--row-hover);
+}
+
+.table-row:selected {
+    background-colour: var(--row-selected);
+}
+
+.table-view:focus-visible .table-row:selected {
+    background-colour: var(--focus), var(--row-selected);
+    background-insets: 0, 0 0 0 3;
+}
+
+.table-cell {
+    padding: 6 10;
+    colour: var(--text);
+}
+
+.table-view .placeholder {
+    colour: var(--prompt-text);
 }

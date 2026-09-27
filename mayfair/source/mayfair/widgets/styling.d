@@ -658,6 +658,17 @@ struct Declared
 }
 
 /// The style pass: restyles whatever's been marked in `scene`'s tree since the last one.
+/*
+    Styles `w` and everything below it now, rather than in the next style pass: for a widget
+    that has to know how big it is as soon as it's made, as a list does of its first row, to know
+    how tall every row is. It has to be in a scene, whose stylesheets say how.
+*/
+void styleNow(Widget w)
+{
+    if (w && w.scene)
+        restyleTree(w.scene, w, true);
+}
+
 void applyCss(Scene scene)
 {
     if (!scene.cssRequested || !scene.root)

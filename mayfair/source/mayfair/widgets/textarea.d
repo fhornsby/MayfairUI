@@ -282,7 +282,10 @@ private:
         foreach (ref l; lines)
             if (l.line.run.width > widest)
                 widest = l.line.run.width;
-        const w = _wrapText && widthMode != YGMeasureModeUndefined ? width : widest + Theme.caret_width;
+        // Wrapping, it's as wide as it's given, and asks for its column count's width: what it
+        // wants isn't its longest paragraph's, which is only how long it could go on for
+        const w = !_wrapText ? widest + Theme.caret_width
+                : widthMode != YGMeasureModeUndefined ? width : _prefColumnCount * _charWidth;
         return YGSize(w, lines.length * lineHeight);
     }
 

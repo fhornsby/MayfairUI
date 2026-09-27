@@ -77,6 +77,13 @@ public:
             setContent(content);
     }
 
+    /// The part of the content in view: where it starts, from the content's top left, and how
+    /// big the view is -- as of the last layout, and where it's scrolled to since. JavaFX's viewportBounds.
+    final Bounds viewportBounds() nothrow @nogc
+    {
+        return Bounds(scrollX, scrollY, _view_[0], _view_[1]);
+    }
+
     /// What it shows and scrolls.
     mixin(declareProperty!(Widget, "content", "null", q{ _view.show(_content); }));
 
@@ -130,6 +137,7 @@ protected:
     {
         // The view: as tall as the pane when fitting the content to it, and otherwise as the content
         child.place(fits(Axis.vertical) ? 1 : 0, false, false, YGAlignStretch);
+        fromOwnSize(child, fits(Axis.vertical));
     }
 
     /*
@@ -721,5 +729,21 @@ protected:
         const fitH = pane.fits(ScrollPane.Axis.vertical);
         child.place(pane.fits(ScrollPane.Axis.horizontal) ? 1 : 0, false, fitH,
                     fitH ? YGAlignStretch : YGAlignFlexStart);
+        fromOwnSize(child, pane.fits(ScrollPane.Axis.horizontal));
     }
+}
+
+/*
+    Fitted to the view along a flex line, the content grows and shrinks to it -- but from its own
+    size, not from nothing, as a growing child would by default. It's the same size in the view
+    either way; what differs is how big the pane is asked to be: as big as its content along the
+    axis it fits it on, as JavaFX's is, so a pane that only scrolls down is as wide as what's in
+    it, and one that only scrolls across as tall.
+*/
+private void fromOwnSize(Widget child, bool fitted) nothrow @nogc
+{
+    if (!fitted)
+        return;
+    YGNodeStyleSetFlexBasisAuto(child.node);
+    YGNodeStyleSetFlexShrink(child.node, 1);
 }

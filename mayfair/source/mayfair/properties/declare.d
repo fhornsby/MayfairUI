@@ -33,6 +33,15 @@ module mayfair.properties.declare;
 enum string declareProperty(T, string name, string initial, string changed = "") =
     declare!T(name, initial, changed, false, "", null, false);
 
+/*
+    The same, with the type spelt as `typeName` says, for a class template whose property's type is
+    one of its parameters: `declarePropertyOf!(T[], "T[]", "items", "null")`. The code this makes
+    names the type as text, and a type an app defines isn't visible by its own name from inside the
+    template's module, where its parameter's name is.
+*/
+enum string declarePropertyOf(T, string typeName, string name, string initial, string changed = "") =
+    declare!T(name, initial, changed, false, "", null, false, typeName);
+
 /// ditto
 enum string declareReadOnlyProperty(T, string name, string initial, string changed = "",
                                     string setterVisibility = "private") =
@@ -58,9 +67,9 @@ enum string declareStyleableProperty(T, string name, string css, string initial,
     declare!T(name, initial, changed, false, "", css, inherits);
 
 private string declare(T)(string name, string initial, string changed, bool readOnly, string setterVisibility,
-                          string css, bool inherits)
+                          string css, bool inherits, string typeName = null)
 {
-    const type = T.stringof;
+    const type = typeName.length ? typeName : T.stringof;
     const field = "_" ~ name;
     const object = "_" ~ name ~ "Property";
     const listener = "_" ~ name ~ "Invalidated";

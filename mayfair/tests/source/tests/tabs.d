@@ -8,8 +8,15 @@ import mayfair;
 private TabHeader[] headersOf(TabPane pane)
 {
     TabHeader[] found;
-    foreach (child; pane.children[0].children)
-        found ~= cast(TabHeader) child;
+    void walk(Widget w)
+    {
+        if (auto h = cast(TabHeader) w)
+            found ~= h;
+        else
+            foreach (child; w.children)
+                walk(cast() child);
+    }
+    walk(pane.children[0]);
     return found;
 }
 

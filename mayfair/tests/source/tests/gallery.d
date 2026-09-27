@@ -47,14 +47,21 @@ void navigation()
     }, (Driver d) {
         NavigationItem[] items;
         d.ui({
-            foreach (child; dock.left.children)
+            foreach (child; find!NavigationList(dock.left).children)
                 items ~= cast(NavigationItem) child;
-            d.expect(items.length, 11, "a page for each part of the kit");
+            d.expect(items.length, 12, "a page for each part of the kit");
         });
 
+        // Each brought into view first, as the sidebar scrolls in a short window
+        void open(NavigationItem item)
+        {
+            d.ui({ item.scrollIntoView(); });
+            d.settle();
+            d.click(item);
+        }
         foreach (item; items)
         {
-            d.click(item);
+            open(item);
             d.ui({ d.expect(shownPage(dock), item.text, "the page clicked on"); });
         }
 
@@ -81,12 +88,12 @@ void navigation()
 
         foreach (item; items)
         {
-            d.click(item);
+            open(item);
             d.ui({ d.expect(shownPage(dock), item.text, "still navigable after using a page: " ~ item.text); });
         }
 
         // The keypad, whose keys are made in a loop too: each says which it is
-        d.click(items[6]); // Layout
+        open(items[6]); // Layout
         Button five, zero;
         d.ui({
             foreach (b; buttonsIn(dock.centre))

@@ -9,6 +9,7 @@ import mayfair.widgets.buttonbase;
 import mayfair.widgets.icon;
 import mayfair.widgets.input;
 import mayfair.widgets.layouts;
+import mayfair.widgets.scrollpane;
 import mayfair.widgets.styling;
 import mayfair.widgets.widget;
 
@@ -24,7 +25,7 @@ import mayfair.widgets.widget;
     selected one, and Left and Right move along them; Ctrl+Page Down and Ctrl+Page Up go to the
     next and previous from anywhere in the pane, as they do in GNOME's apps. A closable tab has a
     close button, and Ctrl+W on it closes it too; closing the selected tab selects its
-    neighbour. More tabs than fit are cut off at the right, for now.
+    neighbour. More tabs than fit scroll sideways, and the selected one's kept in view.
 
     Only the selected tab's page is in the tree, so what's on the others isn't drawn, laid out, or
     reached by Tab or a screen reader, and keeps whatever state it had for when it's shown again.
@@ -42,9 +43,13 @@ public:
         YGNodeStyleSetFlexDirection(node, YGFlexDirectionColumn);
 
         _strip = new Row().alignment(Pos.bottomLeft).fillHeight(false);
-        _strip.styleClass.add("tab-header-area");
         _strip.setAccessibleRole(AccessibleRole.tabList);
-        adopt(_strip);
+        // Scrolling sideways when there are more tabs than fit, as tall as the tabs
+        _headerArea = new ScrollPane(_strip).fitToHeight(true);
+        _headerArea.setVbarPolicy(ScrollBarPolicy.never);
+        _headerArea.styleClass.add("tab-header-area");
+        _headerArea.setAccessibleHidden(true);
+        adopt(_headerArea);
 
         _body = new Stack();
         _body.styleClass.add("tab-content-area");
@@ -153,6 +158,7 @@ protected:
 private:
     Tab[] _tabs;
     Row _strip;
+    ScrollPane _headerArea;
     Stack _body;
     Widget _shown; // the page in the body
 
