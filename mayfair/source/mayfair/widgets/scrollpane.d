@@ -1,6 +1,7 @@
 module mayfair.widgets.scrollpane;
 
 import core.stdc.math : roundf;
+import core.time : dur;
 import mayfair.accessibility;
 import mayfair.animation;
 import mayfair.layout;
@@ -36,7 +37,14 @@ enum ScrollBarPolicy
 
     It scrolls by the wheel or a touchpad (see ScrollEvent) -- sideways with Shift, or by
     itself for a touchpad -- and by Page Up and Page Down from anything inside it that doesn't use
-    them. Tab moving focus to something out of view scrolls it into view. To a screen reader it's
+    them.
+
+    Scrolling moves smoothly. A wheel's notch, or a page, is eased into rather than jumped to, and
+    notches in quick succession add up to where it's heading. A touchpad follows the fingers
+    exactly, and when they lift, carries on at the speed they were going and slows to a stop, as
+    GNOME's does. Any scroll, or a press anywhere in the pane, takes over from a glide on its way.
+    SDL doesn't say when fingers lift, so a moment with no movement is taken to mean they have:
+    fingers resting on the pad start a glide, and moving again stops it at once. Tab moving focus to something out of view scrolls it into view. To a screen reader it's
     a scroll view, with its position and the actions to change it, and everything in it can be
     asked to scroll into view.
 
@@ -60,6 +68,11 @@ public:
         _show = fade(Theme.scroll_bar_fade_time, (t) { _shownAmount = t; invalidate(); });
         _widen = fade(Theme.scroll_bar_widen_time, (t) { _wideAmount = t; invalidate(); });
         _linger = new Timeline(KeyFrame(Theme.scroll_bar_linger_time, { lingerOver(); }));
+        _motion = new Motion(this);
+        _lift = new Timeline(KeyFrame(Theme.scroll_lift_time, { glide(); }));
+        // A press anywhere in it catches a glide, as a finger on a phone does -- whatever's pressed,
+        // and whether or not it takes the press itself
+        pressedProperty.addListener((bool was, bool now) { if (now) stopMotion(); });
         if (content)
             setContent(content);
     }
@@ -106,6 +119,7 @@ protected:
     {
         _dragging = _overBar = Axis.none;
         _barsUp = false;
+        stopMotion();
         _linger.stop();
         _show.stop();
         _widen.stop();
@@ -223,21 +237,13 @@ protected:
     override void handleScroll(ref ScrollEvent event)
     {
         // Only what it can scroll: a pane that only scrolls down leaves sideways to what's around it
-        bool used;
-        float x = scrollX, y = scrollY;
-        if (_max[0] > 0 && event.deltaX != 0)
-        {
-            x -= event.deltaX;
-            used = true;
-        }
-        if (_max[1] > 0 && event.deltaY != 0)
-        {
-            y -= event.deltaY;
-            used = true;
-        }
-        if (!used)
+        const dx = _max[0] > 0 ? -event.deltaX : 0, dy = _max[1] > 0 ? -event.deltaY : 0;
+        if (dx == 0 && dy == 0)
             return;
-        scrollTo(x, y);
+        if (event.device == ScrollDevice.touchpad)
+            follow(event.time, dx, dy);
+        else
+            easeBy(dx, dy);
         showBars();
         event.consume();
     }
@@ -247,9 +253,9 @@ protected:
         if (event.type != KeyEventType.pressed || _max[1] <= 0)
             return;
         if (event.code == KeyCode.pageDown)
-            scrollTo(scrollX, scrollY + page(_view_[1]));
+            easeBy(0, page(_view_[1]));
         else if (event.code == KeyCode.pageUp)
-            scrollTo(scrollX, scrollY - page(_view_[1]));
+            easeBy(0, -page(_view_[1]));
         else
             return;
         showBars();
@@ -258,6 +264,7 @@ protected:
 
     override void reveal(Bounds rect)
     {
+        stopMotion(); // focus going somewhere, or a screen reader: straight there
         // `rect` is from the pane's top left, and the content starts inside its padding
         const left = rect.minX - YGNodeLayoutGetPadding(node, YGEdgeLeft);
         const top = rect.minY - YGNodeLayoutGetPadding(node, YGEdgeTop);
@@ -283,6 +290,7 @@ protected:
 
     override bool executeAccessibleAction(AccessibleAction action, ref const AccessibleActionData data)
     {
+        stopMotion();
         const stepX = data.page ? page(_view_[0]) : Theme.scroll_step;
         const stepY = data.page ? page(_view_[1]) : Theme.scroll_step;
         switch (action)
@@ -314,6 +322,162 @@ private:
     // Where it's scrolled to in points, from the values, which are ahead of the last layout
     float scrollX() nothrow @nogc { return clamp01(_hvalue) * _max[0]; }
     float scrollY() nothrow @nogc { return clamp01(_vvalue) * _max[1]; }
+
+    /*
+        Smooth scrolling and momentum. One animation steps both, every frame while either's on
+        its way: easing towards `_target`, for a wheel or a page, or gliding at `_velocity`, which
+        dies away, after a touchpad's fingers lift. The touchpad's last few movements, with when
+        they came, are kept to work out how fast the fingers were going.
+    */
+    Motion _motion;
+    Timeline _lift;           // runs out when a touchpad's been still long enough to have been let go
+    bool _easing, _gliding;
+    float[2] _target = [0, 0], _velocity = [0, 0];
+    struct Sample { double time; float dx, dy; }
+    Sample[8] _samples;
+    size_t _sampleCount;
+
+    static final class Motion : Animation
+    {
+        ScrollPane pane;
+        this(ScrollPane pane)
+        {
+            this.pane = pane;
+            cycleDuration(dur!"seconds"(1));
+            cycleCount(indefinite);
+        }
+
+    protected:
+        override void step(double fraction) {}
+
+        override void moved(double from, double to, bool fresh)
+        {
+            pane.step(to - from);
+        }
+    }
+
+    /// A wheel's notch or a page: eased into, from where it's heading if it's on its way.
+    void easeBy(float dx, float dy)
+    {
+        if (!_easing)
+            _target = [scrollX, scrollY];
+        stopGlide();
+        _target[0] = clampTo(_target[0] + dx, _max[0]);
+        _target[1] = clampTo(_target[1] + dy, _max[1]);
+        _easing = true;
+        startMotion();
+    }
+
+    /// A touchpad: straight there, remembering how fast, in case the fingers lift.
+    void follow(double time, float dx, float dy)
+    {
+        _easing = _gliding = false;
+        scrollTo(scrollX + dx, scrollY + dy);
+        if (_sampleCount == _samples.length)
+        {
+            foreach (i; 1 .. _samples.length)
+                _samples[i - 1] = _samples[i];
+            _sampleCount--;
+        }
+        _samples[_sampleCount++] = Sample(time, dx, dy);
+        _lift.playFromStart();
+    }
+
+    /// The fingers lifted: carry on at the speed they were going over the last tenth of a second.
+    void glide()
+    {
+        import std.math : sqrt;
+        if (_sampleCount < 2)
+            return;
+        const last = _samples[_sampleCount - 1].time;
+        size_t first = _sampleCount - 1;
+        while (first > 0 && last - _samples[first - 1].time <= 0.1)
+            first--;
+        const span = last - _samples[first].time;
+        float x = 0, y = 0;
+        foreach (ref sample; _samples[first + 1 .. _sampleCount]) // each came at the end of its interval
+        {
+            x += sample.dx;
+            y += sample.dy;
+        }
+        _sampleCount = 0;
+        if (span <= 0)
+            return;
+        float vx = x / span, vy = y / span;
+        const speed = sqrt(vx * vx + vy * vy);
+        if (speed < Theme.scroll_glide_min_speed)
+            return;
+        if (speed > Theme.scroll_glide_max_speed)
+        {
+            vx *= Theme.scroll_glide_max_speed / speed;
+            vy *= Theme.scroll_glide_max_speed / speed;
+        }
+        _velocity = [vx, vy];
+        _gliding = true;
+        startMotion();
+    }
+
+    void step(double dt)
+    {
+        import std.math : abs, exp, sqrt;
+        float x = scrollX, y = scrollY;
+        if (_easing)
+        {
+            const k = cast(float)(1 - exp(-dt / Theme.scroll_ease_time));
+            x += (_target[0] - x) * k;
+            y += (_target[1] - y) * k;
+            if (abs(_target[0] - x) < 0.25f && abs(_target[1] - y) < 0.25f)
+            {
+                x = _target[0];
+                y = _target[1];
+                _easing = false;
+            }
+        }
+        else if (_gliding)
+        {
+            x += _velocity[0] * dt;
+            y += _velocity[1] * dt;
+            const decay = cast(float) exp(-dt / Theme.scroll_glide_time);
+            _velocity[0] *= decay;
+            _velocity[1] *= decay;
+            // Stopped by the end it runs into
+            if (x <= 0 || x >= _max[0]) _velocity[0] = 0;
+            if (y <= 0 || y >= _max[1]) _velocity[1] = 0;
+            if (sqrt(_velocity[0] * _velocity[0] + _velocity[1] * _velocity[1]) < 10)
+                _gliding = false;
+        }
+        scrollTo(x, y);
+        if (_easing || _gliding)
+            showBars();
+        else
+            _motion.stop();
+    }
+
+    void startMotion()
+    {
+        if (_motion.status != Status.running)
+            _motion.play();
+    }
+
+    void stopGlide() nothrow @nogc
+    {
+        _gliding = false;
+        _sampleCount = 0;
+        _lift.stop();
+    }
+
+    /// Wherever it is now, it stays: something else is moving it.
+    void stopMotion() nothrow @nogc
+    {
+        _easing = false;
+        stopGlide();
+        _motion.stop();
+    }
+
+    static float clampTo(float v, float max) nothrow @nogc
+    {
+        return v < 0 ? 0 : v > max ? max : v;
+    }
 
     /// Scrolls to `x`, `y` points from the content's top left, as far as it goes.
     void scrollTo(float x, float y)

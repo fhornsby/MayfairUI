@@ -30,6 +30,7 @@ void main(string[] args)
     tests.scrolling.wheel();
     tests.scrolling.keyboard();
     tests.scrolling.bars();
+    tests.scrolling.momentum();
     tests.styling.cascade();
     tests.styling.states();
     tests.styling.lookups();

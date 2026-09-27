@@ -369,7 +369,7 @@ package(mayfair):
 
     /// The wheel or a touchpad scrolled by `dx`, `dy` points with the pointer at `x`, `y`. It goes
     /// to what's under the pointer and bubbles up. See ScrollEvent.
-    void scrolled(float x, float y, float dx, float dy)
+    void scrolled(float x, float y, float dx, float dy, ScrollDevice device = ScrollDevice.wheel, double time = 0)
     {
         pointAt(x, y);
         hoverOver(_root.pick(x, y));
@@ -381,6 +381,8 @@ package(mayfair):
         event.alt = heldAlt;
         event.meta = heldMeta;
         event.target = hovered;
+        event.device = device;
+        event.time = time;
         for (auto w = hovered; w && !event.consumed;)
         {
             auto next = w.parent;

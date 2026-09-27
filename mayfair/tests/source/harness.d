@@ -3,7 +3,7 @@ module harness;
 import core.sync.mutex : Mutex;
 import core.sync.semaphore : Semaphore;
 import core.thread : Thread;
-import core.time : msecs, seconds;
+import core.time : Duration, msecs, seconds;
 import std.conv : to;
 import std.format : format;
 public import sdl;   // tests name keys and events by SDL's names
@@ -152,6 +152,44 @@ final class Driver
         e.wheel.mouse_x = x * pointsToWindow;
         e.wheel.mouse_y = y * pointsToWindow;
         SDL_PushEvent(&e);
+        settle();
+        // A wheel's notch is eased into, and a touchpad may glide: wait for it to come to rest
+        Thread.sleep(400.msecs);
+        settle();
+    }
+
+    /// A wheel turned `dy` notches at `x`, `y`, without waiting for anything: for watching it ease.
+    void wheel(float x, float y, float dy)
+    {
+        SDL_Event e;
+        e.type = SDL_EventType.SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.windowID = windowID;
+        e.wheel.which = harnessDevice;
+        e.wheel.y = dy;
+        e.wheel.mouse_x = x * pointsToWindow;
+        e.wheel.mouse_y = y * pointsToWindow;
+        SDL_PushEvent(&e);
+    }
+
+    /*
+        Fingers moving on a touchpad: `count` movements of `dy` (in SDL's touchpad units, a tenth
+        of a notch's worth each) `interval` apart, then lifted. Returns straight away, with any
+        glide still on its way.
+    */
+    void swipe(float x, float y, float dy, int count, Duration interval = 16.msecs)
+    {
+        foreach (i; 0 .. count)
+        {
+            SDL_Event e;
+            e.type = SDL_EventType.SDL_EVENT_MOUSE_WHEEL;
+            e.wheel.windowID = windowID;
+            e.wheel.which = harnessDevice;
+            e.wheel.y = dy;
+            e.wheel.mouse_x = x * pointsToWindow;
+            e.wheel.mouse_y = y * pointsToWindow;
+            SDL_PushEvent(&e);
+            Thread.sleep(interval);
+        }
         settle();
     }
 

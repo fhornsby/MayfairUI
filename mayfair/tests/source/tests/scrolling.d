@@ -1,6 +1,8 @@
 module tests.scrolling;
 
 import std.format : format;
+import core.thread : Thread;
+import core.time : msecs;
 import std.math : abs;
 import harness;
 import mayfair;
@@ -57,8 +59,7 @@ void wheel()
         d.ui({ d.check(abs(items[0].boundsInScene.minY - (before - 3)) <= 0.5, "a touchpad scrolls by its movement"); });
 
         // As far as it goes, and no further
-        foreach (i; 0 .. 30)
-            d.scroll(p.centreX, p.centreY, -1);
+        d.scroll(p.centreX, p.centreY, -30);
         d.ui({
             d.expect(pane.vvalue, 1f, "all the way down");
             d.expect(items[19].boundsInScene.maxY, p.maxY, "the last item at the bottom");
@@ -160,5 +161,69 @@ void bars()
             d.check(pane.hvalue > 0, "scrolling sideways");
             d.expect(wide.boundsInScene.minX, p.minX - 40, "by a notch");
         });
+    });
+}
+
+/// Smooth scrolling and momentum: a wheel's notch eased into, notches adding up, a touchpad
+/// gliding on after the fingers lift and slowing to a stop, and a press catching a glide.
+void momentum()
+{
+    ScrollPane pane;
+    Column list;
+    run("scroll pane: smooth and momentum", {
+        list = new Column();
+        foreach (i; 0 .. 200)
+            list.add(new Button(format!"Item %d"(i)).maxWidth(float.infinity));
+        pane = new ScrollPane(list).fitToWidth(true).prefSize(300, 300);
+        return cast(Widget) new Column().padding(20).fillWidth(false).add(pane);
+    }, (Driver d) {
+        Bounds p;
+        float scrolled() { return pane.vvalue * (list.boundsInScene.height - p.height); }
+        d.ui({ p = pane.boundsInScene; });
+
+        // A notch: on its way shortly after, there once it's settled
+        d.wheel(p.centreX, p.centreY, -1);
+        d.ui({});
+        float partWay;
+        d.ui({ partWay = scrolled; });
+        d.check(partWay > 0 && partWay < 39.5f, format!"eased into, not jumped: %s of 40"(partWay));
+        Thread.sleep(400.msecs);
+        d.ui({ d.check(abs(scrolled - 40) < 0.5f, format!"and there in the end: %s"(scrolled)); });
+
+        // Notches in quick succession add up to where it's heading
+        foreach (i; 0 .. 3)
+            d.wheel(p.centreX, p.centreY, -1);
+        Thread.sleep(400.msecs);
+        d.ui({ d.check(abs(scrolled - 160) < 0.5f, format!"three more notches: 160, got %s"(scrolled)); });
+
+        // A swipe: 6 movements of 13 points, 16 ms apart, then lifted
+        float lifted;
+        d.ui({ pane.setVvalue(0); });
+        d.settle();
+        d.swipe(p.centreX, p.centreY, -1.3f, 6);
+        d.ui({ lifted = scrolled; });
+        Thread.sleep(600.msecs);
+        float glided;
+        d.ui({ glided = scrolled; });
+        d.check(glided > lifted + 40, format!"it glides on after the fingers lift: %s, then %s"(lifted, glided));
+        Thread.sleep(1500.msecs);
+        float rest, later;
+        d.ui({ rest = scrolled; });
+        Thread.sleep(200.msecs);
+        d.ui({ later = scrolled; });
+        d.check(abs(later - rest) < 0.5f, format!"and comes to a stop: %s, then %s"(rest, later));
+
+        // A press catches a glide on its way
+        d.ui({ pane.setVvalue(0); });
+        d.settle();
+        d.swipe(p.centreX, p.centreY, -1.3f, 6);
+        Thread.sleep(100.msecs);
+        d.press(p.maxX - 30, p.centreY);
+        d.release(p.maxX - 30, p.centreY);
+        float caught, after;
+        d.ui({ caught = scrolled; });
+        Thread.sleep(300.msecs);
+        d.ui({ after = scrolled; });
+        d.check(abs(after - caught) < 0.5f, format!"a press stops it where it is: %s, then %s"(caught, after));
     });
 }

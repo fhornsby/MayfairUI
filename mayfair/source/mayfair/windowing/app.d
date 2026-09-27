@@ -356,11 +356,16 @@ int toWindow(float points) nothrow @nogc {
     and a fraction of a notch at most. If SDL ever says which it is, this is the place to use it.
 */
 float wheelPoints(float amount) nothrow @nogc {
-    import std.math : abs, round;
-    const eighths = amount * 8;
-    if (abs(eighths - round(eighths)) < 1e-4f)
+    if (fromWheel(amount))
         return amount * Theme.scroll_step;
     return amount * 10; // SDL's tenth of a notch was 10 pixels, which on a touchpad are points
+}
+
+/// Whether one of SDL's amounts is a wheel's, as wheelPoints() tells: whole eighths of a notch.
+bool fromWheel(float amount) nothrow @nogc {
+    import std.math : abs, round;
+    const eighths = amount * 8;
+    return abs(eighths - round(eighths)) < 1e-4f;
 }
 
 void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
@@ -381,6 +386,7 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
                                  mouseButton(event.button.button), event.button.clicks);
             break;
         case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
+            const device = fromWheel(event.wheel.x) && fromWheel(event.wheel.y) ? ScrollDevice.wheel : ScrollDevice.touchpad;
             float dx = wheelPoints(event.wheel.x), dy = wheelPoints(event.wheel.y);
             // Shift turns the wheel sideways, as it does everywhere else on the desktop
             if ((mods & SDL_Keymod.KMOD_SHIFT) && dx == 0) {
@@ -388,7 +394,8 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
                 dy = 0;
             }
             // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
-            _scene.scrolled(toPoints(event.wheel.mouse_x), toPoints(event.wheel.mouse_y), -dx, dy);
+            _scene.scrolled(toPoints(event.wheel.mouse_x), toPoints(event.wheel.mouse_y), -dx, dy, device,
+                            event.wheel.timestamp / 1e9);
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
             _scene.mouseLeft();
