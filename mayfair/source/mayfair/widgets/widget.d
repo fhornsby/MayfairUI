@@ -46,8 +46,8 @@ struct Bounds
 
     float maxX() const nothrow @nogc { return minX + width; }
     float maxY() const nothrow @nogc { return minY + height; }
-    float centerX() const nothrow @nogc { return minX + width / 2; }
-    float centerY() const nothrow @nogc { return minY + height / 2; }
+    float centreX() const nothrow @nogc { return minX + width / 2; }
+    float centreY() const nothrow @nogc { return minY + height / 2; }
 
     bool contains(float x, float y) const nothrow @nogc
     {
@@ -110,6 +110,10 @@ public:
     {
         if (node)
             retireNode(node);
+        // Retired after the node, so freed before it -- the list is last in, first out -- which lets
+        // the cell go while the node it holds is still there to be cut loose
+        if (cellNode)
+            retireNode(cellNode);
     }
 
     /// The widgets below this one, in order.
@@ -136,7 +140,17 @@ public:
         if (index > _children.length)
             index = _children.length;
         _children = _children[0 .. index] ~ child ~ _children[index .. $];
-        YGNodeInsertChild(node, child.node, index);
+        if (placesChildren)
+        {
+            // Not in this one's Yoga tree but in a cell of its own, which this one sizes and places
+            child.cellNode = YGNodeNewWithConfig(scene ? scene.config : cast(YGConfigRef) YGConfigGetDefault());
+            YGNodeInsertChild(child.cellNode, child.node, 0);
+            YGNodeSetContext(child.cellNode, cast(void*) this);
+            YGNodeSetDirtiedFunc(child.cellNode, &cellDirtied);
+            childLayoutChanged();
+        }
+        else
+            YGNodeInsertChild(node, child.node, index);
         placeChild(child);
         invalidateAccessible(); // its list of children changed
         child.refreshDisabled(); // it's disabled now if this is
@@ -164,12 +178,22 @@ public:
                 scene.forget(child);
                 child.unmount();
             }
-            YGNodeRemoveChild(node, child.node);
+            if (child.cellNode)
+            {
+                YGNodeRemoveChild(child.cellNode, child.node);
+                YGNodeFree(child.cellNode);
+                child.cellNode = null;
+                child.cellX = child.cellY = 0;
+                childLayoutChanged();
+            }
+            else
+                YGNodeRemoveChild(node, child.node);
             _children = _children[0 .. i] ~ _children[i + 1 .. $];
             child.parent = null;
             child.placeInParent(); // on its own again, so nothing of this one's placing applies
             child.refreshDisabled(); // no longer disabled by this
             invalidateAccessible();
+            childRemoved(child);
             break;
         }
         return this;
@@ -484,6 +508,8 @@ public:
         this.layer = layer;
         markCssDirty(this, true); // new to this scene's stylesheets
         YGNodeSetConfig(node, scene.config);
+        if (cellNode)
+            YGNodeSetConfig(cellNode, scene.config);
         // New to this tree, as far as assistive technology is concerned, even if it's been in it before
         accessibleDirty = true;
         scene.accessibilityChanged = true;
@@ -647,6 +673,17 @@ protected:
         itself and wouldn't lay children out in. As JavaFX's controls aren't Panes.
     */
     bool takesChildren() const nothrow @nogc { return true; }
+
+    /*
+        Whether this widget places its children itself, rather than leaving them to flexbox: a
+        Stack or a Grid, which flexbox has no way to say. See CustomLayout, which is how to write
+        one. Each child is then laid out in a Yoga tree of its own, in a cell this widget sizes and
+        places, so the child's own layout -- a label's text, a row's children -- is Yoga's as ever.
+    */
+    bool placesChildren() const nothrow @nogc { return false; }
+
+    /// Called when `child` has been taken out from below this widget.
+    void childRemoved(Widget child) {}
 
     /*
         Something to do in the next update, when it's safe to allocate and change properties: for
@@ -859,6 +896,18 @@ package:
     bool cssDirty = true, cssBelow, cssChildDirty; // to restyle: it, what's below it, something below it
     bool updateRequested;                          // see requestUpdate()
     final void runUpdate() { update(); }
+    YGNodeRef cellNode;                // the cell it's in, if its parent places its children
+    float cellX = 0, cellY = 0;        // where in its parent that cell is
+    bool arrangeNeeded = true;         // for a widget that places its children: they need placing again
+
+    /// Something about the children of a widget that places them has changed: measure and place again.
+    final void childLayoutChanged() nothrow @nogc
+    {
+        arrangeNeeded = true;
+        if (YGNodeHasMeasureFunc(node)) // as a CustomLayout's has: Yoga marks no other node dirty by hand
+            YGNodeMarkDirty(node);
+        invalidate();
+    }
     final void runRestyled() { restyled(); }
     final void unmountTree() { unmount(); } // for a Scene letting go of its canvas: see Scene.detach
     ulong pseudoClasses;          // its states, a PseudoClass bit each
@@ -1254,9 +1303,11 @@ private:
         import core.stdc.math : roundf;
         if (across == 0 || !parent)
             return 0;
-        const inside = parentSize(parent.node)
-                     - YGNodeLayoutGetPadding(parent.node, start) - YGNodeLayoutGetPadding(parent.node, end)
-                     - YGNodeLayoutGetBorder(parent.node, start) - YGNodeLayoutGetBorder(parent.node, end);
+        // What it's laid out in: its parent's node, or the cell its parent put it in
+        auto container = cellNode ? cellNode : parent.node;
+        const inside = parentSize(container)
+                     - YGNodeLayoutGetPadding(container, start) - YGNodeLayoutGetPadding(container, end)
+                     - YGNodeLayoutGetBorder(container, start) - YGNodeLayoutGetBorder(container, end);
         const left = inside - size - YGNodeLayoutGetMargin(node, start) - YGNodeLayoutGetMargin(node, end);
         const scale = scene ? YGConfigGetPointScaleFactor(scene.config) : 1;
         return roundf(left * across * scale) / scale;
@@ -1315,13 +1366,13 @@ private:
     // Where the layout put this widget in its parent, with any nudge its alignment gives it (see place())
     float layoutX() nothrow @nogc
     {
-        return YGNodeLayoutGetLeft(node) + shortfall(_acrossX, YGNodeLayoutGetWidth(node), YGEdgeLeft,
+        return cellX + YGNodeLayoutGetLeft(node) + shortfall(_acrossX, YGNodeLayoutGetWidth(node), YGEdgeLeft,
                                                      YGEdgeRight, &YGNodeLayoutGetWidth);
     }
 
     float layoutY() nothrow @nogc
     {
-        return YGNodeLayoutGetTop(node) + shortfall(_acrossY, YGNodeLayoutGetHeight(node), YGEdgeTop,
+        return cellY + YGNodeLayoutGetTop(node) + shortfall(_acrossY, YGNodeLayoutGetHeight(node), YGEdgeTop,
                                                     YGEdgeBottom, &YGNodeLayoutGetHeight);
     }
 
@@ -1332,6 +1383,8 @@ private:
             child.unmount();
         // Off the scene's config, which the scene frees when it's done while this node lives on
         YGNodeSetConfig(node, cast(YGConfigRef) YGConfigGetDefault());
+        if (cellNode)
+            YGNodeSetConfig(cellNode, cast(YGConfigRef) YGConfigGetDefault());
         foreach (p; extraPaints)
             tvg_scene_remove(layer, p); // and with a clip, its layer, now empty
         extraPaints = null;
@@ -1449,10 +1502,19 @@ private void applyAxis(alias setSize, alias setAuto, alias setMin, alias setMax)
     setMax(node, isFinite(max) ? max : float.nan);
 }
 
+/// A cell's child changed its layout: its parent, which places it, has to measure and place again.
+private extern(C) void cellDirtied(YGNodeConstRef cell) nothrow @nogc
+{
+    if (auto parent = cast(Widget) YGNodeGetContext(cell))
+        parent.childLayoutChanged();
+}
+
 /// Puts every node in the tree under `w` back on Yoga's default config, so the scene's can be freed.
 package void releaseConfig(Widget w) nothrow @nogc
 {
     YGNodeSetConfig(w.node, cast(YGConfigRef) YGConfigGetDefault());
+    if (w.cellNode)
+        YGNodeSetConfig(w.cellNode, cast(YGConfigRef) YGConfigGetDefault());
     foreach (child; w._children)
         releaseConfig(child);
 }

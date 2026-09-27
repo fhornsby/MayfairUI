@@ -4,6 +4,7 @@ import mayfair.accessibility;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.widgets.buttonbase;
+import mayfair.widgets.layouts : Pos;
 import mayfair.widgets.input;
 import mayfair.widgets.styling;
 import mayfair.widgets.widget;
@@ -30,9 +31,7 @@ public:
         super(text);
         styleClass.add("button");
         setAccessibleRole(AccessibleRole.button);
-        // Centring its text is how a button lays out, not a setting, so it's Yoga's directly
-        YGNodeStyleSetJustifyContent(node, YGJustifyCenter);
-        YGNodeStyleSetAlignItems(node, YGAlignCenter);
+        setAlignment(Pos.centre); // its text in the middle, as a button's is
     }
 
     /// Whether this is the button Enter presses, wherever focus is. The theme draws it in the accent colour.

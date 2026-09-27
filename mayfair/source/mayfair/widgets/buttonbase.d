@@ -9,6 +9,7 @@ import mayfair.text;
 import mayfair.theme;
 import mayfair.widgets.input;
 import mayfair.widgets.label;
+import mayfair.widgets.layouts : Pos, placeChildren, horizontal, vertical;
 import mayfair.widgets.styling;
 import mayfair.widgets.widget;
 
@@ -46,6 +47,7 @@ public:
         adopt(_label);
         // Any graphic beside the text, not above it: JavaFX's default contentDisplay, LEFT
         YGNodeStyleSetFlexDirection(node, YGFlexDirectionRow);
+        placeChildren(node, horizontal(_alignment), vertical(_alignment));
         YGNodeStyleSetGap(node, YGGutterAll, _graphicTextGap);
         setFocusTraversable(true);
 
@@ -89,6 +91,11 @@ public:
     /// Space between the graphic, a check box's box or a radio button's ring, and the text. JavaFX's graphicTextGap.
     mixin(declareStyleableProperty!(float, "graphicTextGap", "graphic-text-gap", "4",
                                     q{ YGNodeStyleSetGap(node, YGGutterAll, _graphicTextGap); }));
+
+    /// Where its graphic and text sit, when it's bigger than they are: at the left, in the middle
+    /// down, unless it's a button, whose are in the middle both ways.
+    mixin(declareStyleableProperty!(Pos, "alignment", "alignment", "Pos.centreLeft",
+                                    q{ placeChildren(node, horizontal(_alignment), vertical(_alignment)); }));
 
     /// What to do when it fires. JavaFX's setOnAction.
     final void setOnAction(void delegate() handler) nothrow @nogc

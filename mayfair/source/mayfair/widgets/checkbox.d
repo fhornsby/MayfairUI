@@ -29,9 +29,7 @@ public:
         super(text);
         styleClass.add("check-box");
         setAccessibleRole(AccessibleRole.checkBox);
-        // The box, then the text, side by side
-        YGNodeStyleSetFlexDirection(node, YGFlexDirectionRow);
-        YGNodeStyleSetAlignItems(node, YGAlignCenter);
+        // The box, then the text, side by side from the left
         auto box = new Widget().styleClass("box").accessibleHidden(true);
         box.add(new Widget().styleClass("mark").accessibleHidden(true));
         setIndicator(box);

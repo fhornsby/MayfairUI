@@ -72,15 +72,15 @@ void states()
     }, (Driver d) {
         Bounds b;
         d.ui({ b = item.boundsInScene; });
-        d.move(b.centerX, b.centerY);
+        d.move(b.centreX, b.centreY);
         d.ui({ d.expect(item.textFill, red, ":hover while the pointer's over it"); });
-        d.move(b.maxX + 300, b.centerY);
+        d.move(b.maxX + 300, b.centreY);
         d.ui({ d.expect(item.textFill, Theme.text_colour, "and not after"); });
 
         d.ui({ b = box.boundsInScene; });
         d.move(b.minX + 3, b.minY + 3); // over the box, not the label
         d.ui({ d.expect(inner.textFill, blue, "a state of an ancestor's, in a descendant selector"); });
-        d.move(b.maxX + 300, b.centerY);
+        d.move(b.maxX + 300, b.centreY);
         d.ui({ d.expect(inner.textFill, Theme.text_colour, "and off again"); });
     });
 }
@@ -152,17 +152,17 @@ void theme()
 
         Bounds b;
         d.ui({ b = plain.boundsInScene; });
-        d.move(b.centerX, b.centerY);
+        d.move(b.centreX, b.centreY);
         done();
         d.ui({ d.expect(fill(plain), Colour(0x47, 0x55, 0x69), ":hover"); });
-        d.press(b.centerX, b.centerY);
+        d.press(b.centreX, b.centreY);
         done();
         d.ui({
             d.expect(fill(plain), Colour(0x1e, 0x29, 0x3b), ":armed");
             d.expect(plain.scaleX, 0.96f, "and pushed in");
         });
-        d.release(b.centerX, b.centerY);
-        d.move(b.maxX + 300, b.centerY);
+        d.release(b.centreX, b.centreY);
+        d.move(b.maxX + 300, b.centreY);
         done();
         d.ui({ d.expect(plain.scaleX, 1f, "and back out"); });
 
@@ -205,7 +205,7 @@ void transitions()
         });
         Bounds b;
         d.ui({ b = item.boundsInScene; });
-        d.move(b.centerX, b.centerY);
+        d.move(b.centreX, b.centreY);
         d.ui({
             d.check(item.textFill.r < 200, "a transition starts on its way, not there");
             d.expect(item.opacity, 1f, "a property with no transition changes at once");
@@ -221,7 +221,7 @@ void transitions()
         d.ui({ d.expect(item.textFill, Colour(255, 255, 255), "and there at the end"); });
 
         // Back again, and code setting it part way cuts the transition off
-        d.move(b.maxX + 300, b.centerY);
+        d.move(b.maxX + 300, b.centreY);
         Thread.sleep(100.msecs);
         d.ui({ item.setTextFill(Colour(255, 0, 0)); });
         Thread.sleep(400.msecs);
@@ -248,7 +248,7 @@ void colourSchemes()
             d.expect(label.textFill, Colour(0xe2, 0xe8, 0xf0), "");
             d.expect(button.scene.root.background.fills[0].fill, Colour(0x0f, 0x17, 0x2a), "and the root's background");
         });
-        d.ui({ button.scene.setColorScheme(ColorScheme.light); });
+        d.ui({ button.scene.setColourScheme(ColourScheme.light); });
         Thread.sleep(200.msecs); // the button's colours transition
         d.settle();
         d.ui({

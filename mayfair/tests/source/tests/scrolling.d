@@ -33,7 +33,7 @@ void wheel()
         d.ui({
             p = pane.boundsInScene;
             first = items[0].boundsInScene;
-            yBelow = items[5].boundsInScene.centerY;
+            yBelow = items[5].boundsInScene.centreY;
             d.expect(first.minY, p.minY, "the list starts at the top of the pane");
             d.check(yBelow > p.maxY && yBelow < 480, format!"and goes on below it, in the window: %s"(yBelow));
             d.expect(list.boundsInScene.width, p.width, "fitToWidth: the list as wide as the pane");
@@ -44,7 +44,7 @@ void wheel()
         d.ui({ d.expect(clicked.length, 0, "what's scrolled out of view can't be clicked"); });
 
         // A notch towards the user scrolls down by JavaFX's 40 points
-        d.scroll(p.centerX, p.centerY, -1);
+        d.scroll(p.centreX, p.centreY, -1);
         d.ui({
             d.expect(items[0].boundsInScene.minY, first.minY - 40, "a notch is 40 points");
             d.check(pane.vvalue > 0, "and vvalue follows");
@@ -53,12 +53,12 @@ void wheel()
         // A touchpad follows the fingers: SDL's 0.3 of a notch is 3 points
         float before;
         d.ui({ before = items[0].boundsInScene.minY; });
-        d.scroll(p.centerX, p.centerY, -0.3f);
+        d.scroll(p.centreX, p.centreY, -0.3f);
         d.ui({ d.check(abs(items[0].boundsInScene.minY - (before - 3)) <= 0.5, "a touchpad scrolls by its movement"); });
 
         // As far as it goes, and no further
         foreach (i; 0 .. 30)
-            d.scroll(p.centerX, p.centerY, -1);
+            d.scroll(p.centreX, p.centreY, -1);
         d.ui({
             d.expect(pane.vvalue, 1f, "all the way down");
             d.expect(items[19].boundsInScene.maxY, p.maxY, "the last item at the bottom");
@@ -140,8 +140,8 @@ void bars()
         d.ui({ p = pane.boundsInScene; });
 
         // The bars come up when the pointer moves over the pane; then the right edge is the bar's
-        d.move(p.centerX, p.centerY);
-        d.move(p.centerX + 1, p.centerY);
+        d.move(p.centreX, p.centreY);
+        d.move(p.centreX + 1, p.centreY);
         const x = p.maxX - 4;
         d.press(x, p.minY + 10);
         d.move(x, p.maxY + 100); // past the end: as far as it goes
@@ -149,13 +149,13 @@ void bars()
         d.ui({ d.expect(pane.vvalue, 1f, "dragging the thumb to the bottom"); });
 
         // Pressing on the bar away from the thumb jumps the thumb's middle to there
-        d.move(p.centerX, p.centerY);
-        d.press(x, p.centerY);
-        d.release(x, p.centerY);
+        d.move(p.centreX, p.centreY);
+        d.press(x, p.centreY);
+        d.release(x, p.centreY);
         d.ui({ d.check(abs(pane.vvalue - 0.5) < 0.1, format!"pressing mid-bar jumps to the middle: %s"(pane.vvalue)); });
 
         // Sideways, and a press on the bar isn't a press on the content
-        d.scroll(p.centerX, p.centerY, 0, 1);
+        d.scroll(p.centreX, p.centreY, 0, 1);
         d.ui({
             d.check(pane.hvalue > 0, "scrolling sideways");
             d.expect(wide.boundsInScene.minX, p.minX - 40, "by a notch");

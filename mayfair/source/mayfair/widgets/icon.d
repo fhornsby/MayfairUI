@@ -21,7 +21,7 @@ import mayfair.widgets.widget;
     on Ubuntu. See IconTheme for how the name is found.
 
     Symbolic icons -- the monochrome outlines GNOME uses on its buttons, named "...-symbolic" --
-    are drawn in `iconColor`, as GTK draws them in the text colour. That's what keeps an icon
+    are drawn in `iconColour`, as GTK draws them in the text colour. That's what keeps an icon
     legible on a dark theme, on a default button's accent, and faded with its disabled button. An
     icon of the app's own is taken to be one of those, as an icon on a control nearly always is; a
     full-colour one, as a named one without "-symbolic" is, keeps its colours. `symbolic` says
@@ -49,7 +49,7 @@ public:
         applySize();
     }
 
-    /// The app's own icon, drawn in `iconColor`.
+    /// The app's own icon, drawn in `iconColour`.
     this(Image image)
     {
         super(image);
@@ -66,9 +66,9 @@ public:
     mixin(declareStyleableProperty!(float, "iconSize", "icon-size", "16", q{ applySize(); }));
 
     /// The colour a symbolic icon is drawn in: the text's, as the theme has it.
-    mixin(declareStyleableProperty!(Colour, "iconColor", "icon-colour", "Theme.text_colour", q{ recolour(); }));
+    mixin(declareStyleableProperty!(Colour, "iconColour", "icon-colour", "Theme.text_colour", q{ recolour(); }));
 
-    /// Whether it's drawn in iconColor, rather than its own colours. See above.
+    /// Whether it's drawn in iconColour, rather than its own colours. See above.
     mixin(declareProperty!(bool, "symbolic", "false", q{ reload(); }));
 
 protected:
@@ -134,7 +134,7 @@ private:
     }
 
     /*
-        Draws it in iconColor, if it's symbolic. A shape keeps its alpha -- a symbolic icon's
+        Draws it in iconColour, if it's symbolic. A shape keeps its alpha -- a symbolic icon's
         fainter parts are drawn with less of it -- and the colour's own alpha goes on the picture
         as a whole, so recolouring again, to another colour, starts from the same place.
     */
@@ -147,12 +147,12 @@ private:
         if (!_symbolic)
             return; // in its own colours, as it was loaded
         auto accessor = tvg_accessor_new();
-        Recolouring r = Recolouring(_iconColor);
+        Recolouring r = Recolouring(_iconColour);
         tvg_accessor_set(accessor, p, &recolourShape, &r);
         tvg_accessor_del(accessor);
-        tvg_paint_set_opacity(p, _iconColor.a);
+        tvg_paint_set_opacity(p, _iconColour.a);
         if (!r.shapes) // a bitmap: nothing to recolour but the pixels themselves
-            tvg_scene_add_effect_fill(holder, _iconColor.r, _iconColor.g, _iconColor.b, 255);
+            tvg_scene_add_effect_fill(holder, _iconColour.r, _iconColour.g, _iconColour.b, 255);
         invalidate();
     }
 }

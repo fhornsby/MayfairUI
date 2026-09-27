@@ -9,6 +9,10 @@
 		}
 	},
 	"stringImportPaths": [
-		"assets"
+		"assets",
+		"../../mayfair_test_app/assets"
+	],
+	"sourceFiles": [
+		"../../mayfair_test_app/source/gallery.d"
 	]
 }

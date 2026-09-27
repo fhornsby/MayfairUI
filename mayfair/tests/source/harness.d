@@ -172,7 +172,7 @@ final class Driver
     {
         Bounds b;
         ui({ b = w.boundsInScene; });
-        click(dx == dx ? b.minX + dx : b.centerX, b.centerY, clicks, button);
+        click(dx == dx ? b.minX + dx : b.centreX, b.centreY, clicks, button);
     }
 
     /// The test's window, for asking SDL about it. Only from inside ui().
@@ -229,7 +229,7 @@ void run(string name, Widget delegate() build, void delegate(Driver) script)
 
     auto app = new App(name);
     app.scene = new Scene(build());
-    app.scene.setColorScheme(ColorScheme.dark); // the same colours whatever the desktop's set to
+    app.scene.setColourScheme(ColourScheme.dark); // the same colours whatever the desktop's set to
 
     auto driver = new Thread({
         scope(exit)

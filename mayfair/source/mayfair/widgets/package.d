@@ -3,6 +3,7 @@ module mayfair.widgets;
 public import mayfair.widgets.widget;
 public import mayfair.widgets.scene;
 public import mayfair.widgets.layouts;
+public import mayfair.widgets.grid;
 public import mayfair.widgets.label;
 public import mayfair.widgets.buttonbase;
 public import mayfair.widgets.button;

@@ -44,7 +44,7 @@ enum ValueKind : ubyte
 {
     number,
     colour,
-    identifier, /// A keyword -- `center`, `bold` -- or a variable's name inside var(), like `--base`
+    identifier, /// A keyword -- `centre`, `bold` -- or a variable's name inside var(), like `--base`
     text,       /// A quoted string
     function_,  /// A call: `derive(var(--base), 20%)`, with the arguments as items
     list,       /// Values separated by spaces: `8 16`

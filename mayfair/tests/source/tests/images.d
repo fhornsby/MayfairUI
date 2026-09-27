@@ -110,7 +110,7 @@ void icons()
         return cast(Widget) root;
     }, (Driver d) {
         // Light, where a default button's text is a different colour from the rest
-        d.ui({ plain.scene.setColorScheme(ColorScheme.light); });
+        d.ui({ plain.scene.setColourScheme(ColourScheme.light); });
         d.ui({
             d.expect(plain.boundsInScene.width, 16f, "16 points, as GNOME's are");
             auto colours = coloursOf(plain.probe);
@@ -137,7 +137,7 @@ void icons()
             auto text = withIcon.children[1];
             d.check(icon is onDefault, "the graphic comes first");
             d.expect(text.boundsInScene.minX - icon.boundsInScene.maxX, 4f, "graphicTextGap between them");
-            d.check(abs(icon.boundsInScene.centerY - withIcon.boundsInScene.centerY) <= 0.5,
+            d.check(abs(icon.boundsInScene.centreY - withIcon.boundsInScene.centreY) <= 0.5,
                     format!"centred on the button: %s in %s"(icon.boundsInScene, withIcon.boundsInScene));
             d.expect(iconOnly.boundsInScene.width, 16f + 32f, "no text: only the icon, in the padding");
         });
@@ -258,12 +258,12 @@ void lottieSlots()
 
         d.ui({
             view.setStyle("--lottie-square: var(--accent);");
-            view.scene.setColorScheme(ColorScheme.light);
+            view.scene.setColourScheme(ColourScheme.light);
         });
         d.settle();
         expectColour(Colour(0x02, 0x84, 0xc7), "its own, looked up: the light accent");
 
-        d.ui({ view.scene.setColorScheme(ColorScheme.dark); });
+        d.ui({ view.scene.setColourScheme(ColourScheme.dark); });
         d.settle();
         expectColour(Colour(0x38, 0xbd, 0xf8), "and the dark one when the scheme changes");
 

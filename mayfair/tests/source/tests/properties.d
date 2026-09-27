@@ -120,12 +120,12 @@ void layout()
             d.expect(b.minX, 10f, "a margin moves it in");
         });
 
-        d.ui({ row.setAlignment(Pos.center); row.setPadding(Insets(0, 0, 0, 0)); });
+        d.ui({ row.setAlignment(Pos.centre); row.setPadding(Insets(0, 0, 0, 0)); });
         d.settle();
         d.ui({
             const r = row.boundsInScene, c = child.boundsInScene;
-            d.expect(c.centerX, r.centerX, "centred across the row");
-            d.expect(c.centerY, r.centerY, "and down it");
+            d.expect(c.centreX, r.centreX, "centred across the row");
+            d.expect(c.centreY, r.centreY, "and down it");
         });
 
         d.ui({ row.setAlignment(Pos.bottomRight); });
@@ -171,7 +171,7 @@ void preferredSizes()
         filler = new Widget().prefWidth(10);
         short_ = new Widget().prefWidth(10).maxHeight(30);
         narrow = new Widget().prefHeight(10).maxWidth(100);
-        row = new Row().prefHeight(80).alignment(Pos.centerLeft);
+        row = new Row().prefHeight(80).alignment(Pos.centreLeft);
         row.add(inRow).add(growing).add(growingWide).add(filler).add(short_);
         root.add(button).add(wide).add(label).add(field).add(plain).add(row).add(narrow);
         return cast(Widget) root;
@@ -189,14 +189,14 @@ void preferredSizes()
 
             const rb = row.boundsInScene, b = inRow.boundsInScene;
             d.check(b.height < rb.height, "a button keeps its own height in a row");
-            d.check(abs(b.centerY - rb.centerY) <= 0.5, "at the row's alignment, to the pixel");
+            d.check(abs(b.centreY - rb.centreY) <= 0.5, "at the row's alignment, to the pixel");
             d.expect(filler.boundsInScene.height, rb.height, "while a plain widget fills it");
             d.check(growing.boundsInScene.width < 150, "a growing button stays its width");
             d.check(growingWide.boundsInScene.width > 200, "unless its max is raised");
 
             const s = short_.boundsInScene;
             d.expect(s.height, 30f, "stretching stops at the max");
-            d.check(abs(s.centerY - rb.centerY) <= 0.5, "and it sits at the row's alignment");
+            d.check(abs(s.centreY - rb.centreY) <= 0.5, "and it sits at the row's alignment");
             d.expect(narrow.boundsInScene.width, 100f, "the same down a column");
             d.expect(narrow.boundsInScene.minX, r.minX, "at its start");
         });
@@ -240,13 +240,13 @@ void readOnly()
     }, (Driver d) {
         Bounds bb;
         d.ui({ bb = b.boundsInScene; });
-        d.move(bb.centerX, bb.centerY);
+        d.move(bb.centreX, bb.centreY);
         d.move(bb.maxX + 50, bb.maxY + 50);
         d.ui({ d.expect(hovers, [true, false], "hover heard going on and off"); });
-        d.move(bb.centerX, bb.centerY);
-        d.press(bb.centerX, bb.centerY);
+        d.move(bb.centreX, bb.centreY);
+        d.press(bb.centreX, bb.centreY);
         d.ui({ d.check(b.armed && b.armedProperty.get, "armed while held down"); });
-        d.release(bb.centerX, bb.centerY);
+        d.release(bb.centreX, bb.centreY);
         d.ui({ d.check(!b.armed, "not once let go"); });
     });
 }

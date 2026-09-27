@@ -28,13 +28,13 @@ void sliders()
         const thumb = 18f;
         float xOf(float fraction) { return b.minX + thumb / 2 + fraction * (b.width - thumb); }
 
-        d.click(xOf(0.8), b.centerY);
+        d.click(xOf(0.8), b.centreY);
         d.ui({ d.check(abs(h.value - 80) < 1, format!"a press on the track jumps there: %s"(h.value)); });
 
-        d.press(xOf(0.8), b.centerY);
-        d.move(b.maxX + 100, b.centerY);
+        d.press(xOf(0.8), b.centreY);
+        d.move(b.maxX + 100, b.centreY);
         d.ui({ d.check(h.valueChanging, "changing while it's dragged"); });
-        d.release(b.maxX + 100, b.centerY);
+        d.release(b.maxX + 100, b.centreY);
         d.ui({
             d.expect(h.value, 100.0, "dragged past the end: as far as it goes");
             d.check(!h.valueChanging, "and settled when it's let go");
@@ -48,7 +48,7 @@ void sliders()
         d.ui({ d.expect(h.value, 100.0, "End: the maximum"); });
 
         d.ui({ b = snapping.boundsInScene; });
-        d.click(xOf(0.3), b.centerY);
+        d.click(xOf(0.3), b.centreY);
         d.ui({
             // Ticks every 25 / (3 + 1) = 6.25
             const ticks = snapping.value / 6.25;
@@ -56,7 +56,7 @@ void sliders()
         });
 
         d.ui({ b = v.boundsInScene; });
-        d.click(b.centerX, b.minY + thumb / 2);
+        d.click(b.centreX, b.minY + thumb / 2);
         d.ui({ d.expect(v.value, 10.0, "a vertical slider's top is its maximum"); });
     });
 }

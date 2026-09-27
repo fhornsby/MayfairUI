@@ -11,7 +11,7 @@ module mayfair.images.lottie;
 
         {"ty": "fl", "c": {"a": 0, "k": [0.2, 0.4, 0.8, 1], "sid": "ring"}, ...}
 
-    The scan is a JSON tokenizer and nothing more -- it doesn't build the document, which for a
+    The scan is a JSON tokeniser and nothing more -- it doesn't build the document, which for a
     big animation would be megabytes of objects to find a handful of strings -- tracking only the
     key each object is under.
 */

@@ -108,7 +108,7 @@ void mouse()
             two = left + line.xAt(5);
             three = left + line.xAt(10);
         });
-        const y = b.centerY;
+        const y = b.centreY;
 
         d.click(two, y, 1);
         d.move(two, y);

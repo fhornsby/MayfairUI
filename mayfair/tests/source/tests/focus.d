@@ -69,7 +69,7 @@ void keyboardDisableRemove()
 
         Bounds bb;
         d.ui({ bb = b.boundsInScene; });
-        d.move(bb.centerX, bb.centerY);                    // over B
+        d.move(bb.centreX, bb.centreY);                    // over B
         d.ui({ root.remove(spacer); });                    // B slides up from under the pointer, C in
         d.settle();
         d.settle();

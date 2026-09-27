@@ -11,9 +11,9 @@ import mayfair.widgets.widget;
 import mayfair.widgets.input;
 import mayfair.widgets.styling;
 
-/// Light or dark, as a desktop's preference or a scene's own choice. JavaFX's ColorScheme, and
+/// Light or dark, as a desktop's preference or a scene's own choice. JavaFX's ColourScheme, and
 /// `system` for following the desktop's.
-enum ColorScheme { system, light, dark }
+enum ColourScheme { system, light, dark }
 
 /*
     A Scene is what a window shows: one widget, the tree hanging off it, and the colour behind it.
@@ -58,12 +58,12 @@ public:
 
     /// Whether stylesheets' @media (prefers-colour-scheme) rules see it as light or dark: the
     /// desktop's choice, unless it's given one of its own.
-    mixin(declareProperty!(ColorScheme, "colorScheme", "ColorScheme.system", q{ restyleAll(); }));
+    mixin(declareProperty!(ColourScheme, "colourScheme", "ColourScheme.system", q{ restyleAll(); }));
 
     /// Light or dark, as the scene is styled now.
-    ColorScheme effectiveColorScheme() const nothrow @nogc
+    ColourScheme effectiveColourScheme() const nothrow @nogc
     {
-        return _colorScheme == ColorScheme.system ? platformColorScheme : _colorScheme;
+        return _colourScheme == ColourScheme.system ? platformColourScheme : _colourScheme;
     }
 
     /*
@@ -216,7 +216,7 @@ package:
     }
 
 package(mayfair):
-    ColorScheme platformColorScheme = ColorScheme.light; // the desktop's, as the App last heard it
+    ColourScheme platformColourScheme = ColourScheme.light; // the desktop's, as the App last heard it
 
     /// Everything to be restyled: a stylesheet or the colour scheme changed.
     void restyleAll() nothrow @nogc

@@ -21,7 +21,7 @@ void clicking()
     }, (Driver d) {
         Bounds bb;
         d.ui({ bb = b.boundsInScene; });
-        const x = bb.centerX, y = bb.centerY;
+        const x = bb.centreX, y = bb.centreY;
 
         d.click(x, y);
         d.ui({ d.expect(actions, 1, "a click fires"); });

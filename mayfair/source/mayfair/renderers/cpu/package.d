@@ -51,15 +51,15 @@ private:
             return false;
         }
 
-        Tvg_Colorspace colorspace;
+        Tvg_Colorspace colourSpace;
         switch (surface.format) {
             case SDL_PixelFormat.SDL_PIXELFORMAT_XRGB8888:
             case SDL_PixelFormat.SDL_PIXELFORMAT_ARGB8888:
-                colorspace = TVG_COLORSPACE_ARGB8888;
+                colourSpace = TVG_COLORSPACE_ARGB8888;
                 break;
             case SDL_PixelFormat.SDL_PIXELFORMAT_XBGR8888:
             case SDL_PixelFormat.SDL_PIXELFORMAT_ABGR8888:
-                colorspace = TVG_COLORSPACE_ABGR8888;
+                colourSpace = TVG_COLORSPACE_ABGR8888;
                 break;
             default:
                 fprintf(stderr, "Unsupported window buffer format 0x%08x\n", surface.format);
@@ -71,7 +71,7 @@ private:
             return true;
         pixels = cast(uint*) surface.pixels;
         stride = surface.pitch / 4;
-        if (tvg_swcanvas_set_target(_canvas, pixels, stride, width, height, colorspace) != TVG_RESULT_SUCCESS) {
+        if (tvg_swcanvas_set_target(_canvas, pixels, stride, width, height, colourSpace) != TVG_RESULT_SUCCESS) {
             fprintf(stderr, "tvg_swcanvas_set_target failed for %ux%u\n", width, height);
             return false;
         }

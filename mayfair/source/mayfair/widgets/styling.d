@@ -198,7 +198,7 @@ bool convert(const Value v, ref StyleContext c, out Insets result)
     return true;
 }
 
-/// An enum member, by its name in CSS's style: `center-left` for Pos.centerLeft.
+/// An enum member, by its name in CSS's style: `centre-left` for Pos.centreLeft.
 bool convert(E)(const Value v, ref StyleContext c, out E result) if (is(E == enum))
 {
     if (v.kind != ValueKind.identifier)
@@ -457,7 +457,7 @@ T interpolateStyle(T)(T a, T b, double t)
     }
 }
 
-/// `centerLeft` as CSS writes it: `center-left`. A trailing _, for a D keyword, goes.
+/// An enum member's name as CSS writes it: `centreLeft` as `centre-left`. A trailing _, for a D keyword, goes.
 string kebab(string name) pure nothrow @safe
 {
     string out_;
@@ -475,7 +475,7 @@ string kebab(string name) pure nothrow @safe
 
 unittest
 {
-    static assert(kebab("centerLeft") == "center-left" && kebab("default_") == "default");
+    static assert(kebab("centreLeft") == "centre-left" && kebab("default_") == "default");
 }
 
 /*
@@ -846,7 +846,7 @@ bool restyle(Scene scene, Widget w)
 {
     Candidate[] found;
     uint sheetOrder;
-    const scheme = scene.effectiveColorScheme;
+    const scheme = scene.effectiveColourScheme;
     void from(Stylesheet sheet, StyleOrigin origin)
     {
         if (sheet)
@@ -914,15 +914,15 @@ bool restyle(Scene scene, Widget w)
     return changed;
 }
 
-void gather(Stylesheet sheet, StyleOrigin origin, uint sheetOrder, Widget w, ColorScheme scheme, ref Candidate[] found)
+void gather(Stylesheet sheet, StyleOrigin origin, uint sheetOrder, Widget w, ColourScheme scheme, ref Candidate[] found)
 {
     void consider(const(Stylesheet.Entry)[] entries)
     {
         foreach (ref e; entries)
         {
             const rule = &sheet.data.rules[e.rule];
-            if ((rule.media == Media.dark && scheme != ColorScheme.dark)
-                || (rule.media == Media.light && scheme != ColorScheme.light))
+            if ((rule.media == Media.dark && scheme != ColourScheme.dark)
+                || (rule.media == Media.light && scheme != ColourScheme.light))
                 continue;
             const selector = &rule.selectors[e.selector];
             if (!matches(*selector, e.pseudo, selector.parts.length - 1, w))

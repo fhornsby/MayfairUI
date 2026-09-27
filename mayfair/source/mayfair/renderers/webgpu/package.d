@@ -386,16 +386,16 @@ private:
         WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
         scope(exit) wgpuPipelineLayoutRelease(pipelineLayout);
 
-        WGPUColorTargetState colorTarget;
-        colorTarget.format = surfaceFormat; // must match what the render pass attaches
-        colorTarget.writeMask = WGPUColorWriteMask_All;
+        WGPUColorTargetState colourTarget;
+        colourTarget.format = surfaceFormat; // must match what the render pass attaches
+        colourTarget.writeMask = WGPUColorWriteMask_All;
         WGPUFragmentState fragment;
         // WGPUFragmentState's field is called `module`, which is a D keyword, so it can't be
         // written as fragment.module. getMember reaches it by name instead.
         __traits(getMember, fragment, "module") = shaderModule;
         fragment.entryPoint = WGPUStringView("fs".ptr, 2);
         fragment.targetCount = 1;
-        fragment.targets = &colorTarget;
+        fragment.targets = &colourTarget;
 
         WGPURenderPipelineDescriptor pipelineDesc;
         pipelineDesc.layout = pipelineLayout;

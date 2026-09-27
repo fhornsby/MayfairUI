@@ -4,6 +4,7 @@ import mayfair.accessibility;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.widgets.buttonbase;
+import mayfair.widgets.layouts : Pos;
 import mayfair.widgets.input;
 import mayfair.widgets.styling;
 import mayfair.widgets.widget;
@@ -112,8 +113,7 @@ public:
         super(text);
         styleClass.add("toggle-button");
         setAccessibleRole(AccessibleRole.toggleButton);
-        YGNodeStyleSetJustifyContent(node, YGJustifyCenter);
-        YGNodeStyleSetAlignItems(node, YGAlignCenter);
+        setAlignment(Pos.centre); // its text in the middle, as a button's is
     }
 
     /// Whether it's in.
@@ -208,9 +208,7 @@ public:
         styleClass.remove("toggle-button");
         styleClass.add("radio-button");
         setAccessibleRole(AccessibleRole.radioButton);
-        // The mark, then the text, side by side
-        YGNodeStyleSetFlexDirection(node, YGFlexDirectionRow);
-        YGNodeStyleSetJustifyContent(node, YGJustifyFlexStart);
+        setAlignment(Pos.centreLeft); // the mark, then the text, from the left: not a toggle button's middle
         auto radio = new Widget().styleClass("radio").accessibleHidden(true);
         radio.add(new Widget().styleClass("dot").accessibleHidden(true));
         setIndicator(radio);

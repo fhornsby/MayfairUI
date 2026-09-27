@@ -167,9 +167,9 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
     switch (event.type) {
         case SDL_EventType.SDL_EVENT_SYSTEM_THEME_CHANGED:
             // The desktop went light or dark: restyled in the next update, if the scene follows it
-            const scheme = systemColorScheme();
-            if (scheme != _scene.platformColorScheme) {
-                _scene.platformColorScheme = scheme;
+            const scheme = systemColourScheme();
+            if (scheme != _scene.platformColourScheme) {
+                _scene.platformColourScheme = scheme;
                 _scene.restyleAll();
             }
             break;
@@ -335,8 +335,8 @@ void updateCursor() {
 
 /// The desktop's light or dark preference, which SDL reads from the XDG portal on Linux. Light
 /// when there's none to read, as JavaFX's default is.
-ColorScheme systemColorScheme() nothrow @nogc {
-    return SDL_GetSystemTheme() == SDL_SystemTheme.SDL_SYSTEM_THEME_DARK ? ColorScheme.dark : ColorScheme.light;
+ColourScheme systemColourScheme() nothrow @nogc {
+    return SDL_GetSystemTheme() == SDL_SystemTheme.SDL_SYSTEM_THEME_DARK ? ColourScheme.dark : ColourScheme.light;
 }
 
 /// Points back to SDL's window coordinates, the opposite of toPoints().
@@ -568,7 +568,7 @@ public:
             _scene = new Scene(new Widget); // nothing to show, but everything below still works
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();
-        _scene.platformColorScheme = systemColorScheme();
+        _scene.platformColourScheme = systemColourScheme();
         applyCss(_scene); // styled before it's first laid out
         updateScale(); // needs both the window and the scene, so it goes after the two of them
         updateRefreshRate();

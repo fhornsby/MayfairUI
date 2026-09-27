@@ -91,6 +91,12 @@ protected:
 
     override void paint(float x, float y, float w, float h) nothrow @nogc
     {
+        // The text goes inside the padding, which Yoga added round what measureLabel said
+        const l = YGNodeLayoutGetPadding(node, YGEdgeLeft), t = YGNodeLayoutGetPadding(node, YGEdgeTop);
+        x += l;
+        y += t;
+        w -= l + YGNodeLayoutGetPadding(node, YGEdgeRight);
+        h -= t + YGNodeLayoutGetPadding(node, YGEdgeBottom);
         // The width the layout settled on was measured from these lines, but rounded to the pixel
         // grid since, so a line that fitted it before rounding still does
         const lines = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
@@ -99,7 +105,7 @@ protected:
         foreach (ref line; lines)
         {
             float left = x;
-            if (_textAlignment == TextAlignment.center)
+            if (_textAlignment == TextAlignment.centre)
                 left += (w - line.width) / 2;
             else if (_textAlignment == TextAlignment.right)
                 left += w - line.width;
@@ -137,7 +143,7 @@ private:
 }
 
 /// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.
-enum TextAlignment { left, center, right, justify }
+enum TextAlignment { left, centre, right, justify }
 
 /*
     Yoga measuring a leaf. It runs inside YGNodeCalculateLayout, so it must not allocate or throw --
