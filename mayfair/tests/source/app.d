@@ -2,7 +2,7 @@ import core.stdc.stdlib : exit;
 import std.format : format;
 import std.stdio : writefln;
 import harness;
-static import tests.buttons, tests.focus, tests.textinput, tests.textfield, tests.properties, tests.scrolling, tests.styling, tests.wrapping, tests.toggles, tests.controls, tests.images, tests.containers, tests.gallery;
+static import tests.buttons, tests.focus, tests.textinput, tests.textfield, tests.properties, tests.scrolling, tests.styling, tests.wrapping, tests.toggles, tests.controls, tests.images, tests.containers, tests.gallery, tests.tabs;
 
 /*
     Runs every end-to-end test, one window at a time, and exits non-zero if any failed.
@@ -51,6 +51,8 @@ void main(string[] args)
     tests.containers.stacks();
     tests.containers.docks();
     tests.containers.grids();
+    tests.tabs.tabPanes();
+    tests.tabs.navigationLists();
     tests.gallery.navigation();
 
     writefln("%s passed, %s failed checks", passedCount, failedChecks);
@@ -72,7 +74,9 @@ void accessibilityApp()
     auto pane = new ScrollPane(rows).fitToWidth(true).prefSize(200, 120);
     root.add(status).add(button).add(disabled).add(new TextField("abc שלום def")).add(pane)
         .add(new CheckBox("Tick me").selected(true)).add(new RadioButton("Pick me"))
-        .add(new TextArea("one\ntwo\nthree").prefRowCount(3)).add(new Slider(0, 100, 30)).add(new ProgressBar(0.5));
+        .add(new TextArea("one\ntwo\nthree").prefRowCount(3)).add(new Slider(0, 100, 30)).add(new ProgressBar(0.5))
+        .add(new TabPane().add(new Tab("Alpha", new Label("Alpha's page"))).add(new Tab("Beta", new Label("Beta's page"))))
+        .add(new NavigationList().add("Home").add("Away"));
     auto app = new App("accessibility check");
     app.scene = new Scene(root);
     app.run();

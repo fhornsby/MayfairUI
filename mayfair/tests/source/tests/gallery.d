@@ -45,11 +45,11 @@ void navigation()
         dock = buildGallery();
         return cast(Widget) dock;
     }, (Driver d) {
-        ToggleButton[] items;
+        NavigationItem[] items;
         d.ui({
             foreach (child; dock.left.children)
-                items ~= cast(ToggleButton) child;
-            d.expect(items.length, 9, "a page for each part of the kit");
+                items ~= cast(NavigationItem) child;
+            d.expect(items.length, 10, "a page for each part of the kit");
         });
 
         foreach (item; items)
@@ -86,7 +86,7 @@ void navigation()
         }
 
         // The keypad, whose keys are made in a loop too: each says which it is
-        d.click(items[6]);
+        d.click(items[6]); // Layout
         Button five, zero;
         d.ui({
             foreach (b; buttonsIn(dock.centre))

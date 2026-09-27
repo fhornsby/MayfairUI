@@ -48,6 +48,10 @@
 
     --thumb: #0f172a66;
     --thumb-hover: #0f172a99;
+
+    --row-hover: #0f172a0f;          /* a list's entry under the pointer */
+    --row-selected: #0284c726;       /* and the one chosen, tinted with the accent */
+    --divider: #cbd5e1;              /* a line between parts */
 }
 
 @media (prefers-colour-scheme: dark) {
@@ -75,6 +79,10 @@
 
         --thumb: #e2e8f06e;
         --thumb-hover: #e2e8f0aa;
+
+        --row-hover: #e2e8f014;
+        --row-selected: #38bdf833;
+        --divider: #334155;
     }
 }
 
@@ -345,4 +353,89 @@
 .progress-bar > .bar {
     background-colour: var(--accent);
     background-radius: 3;
+}
+
+/*
+    Tab panes: the tabs along the top over a line, the selected one underlined in the accent, as
+    GNOME's are. The underline is the first of two background layers, the second -- the colour
+    behind it -- inset from the bottom to leave a strip of the first showing.
+*/
+.tab-pane > .tab-header-area {
+    background-colour: var(--divider), var(--background);
+    background-insets: 0, 0 0 1 0;
+}
+
+.tab {
+    padding: 8 14;
+    graphic-text-gap: 6;
+    colour: var(--text);
+    opacity: 0.7;
+    background-colour: transparent;
+    transition: background-colour 150ms ease-out, opacity 150ms ease-out;
+}
+
+.tab:hover {
+    opacity: 1;
+    background-colour: var(--row-hover);
+}
+
+.tab:selected {
+    opacity: 1;
+    background-colour: var(--accent), var(--background);
+    background-insets: 0, 0 0 3 0;
+}
+
+.tab:focus-visible {
+    border-colour: var(--focus);
+    border-width: 2;
+    border-radius: 6;
+}
+
+.tab-close-button {
+    padding: 3;
+    background-colour: transparent;
+    background-radius: 12;
+}
+
+.tab-close-button:hover {
+    background-colour: var(--row-hover);
+}
+
+.tab-close-button > .icon {
+    icon-colour: var(--text);
+}
+
+.tab-pane > .tab-content-area {
+    padding: 0;
+}
+
+/*
+    Navigation lists: a sidebar's places, the one you're at tinted with the accent.
+*/
+.navigation-list {
+    padding: 6;
+    gap: 2;
+}
+
+.navigation-item {
+    padding: 8 12;
+    graphic-text-gap: 10;
+    background-colour: transparent;
+    background-radius: 6;
+    colour: var(--text);
+    transition: background-colour 120ms ease-out;
+}
+
+.navigation-item:hover {
+    background-colour: var(--row-hover);
+}
+
+.navigation-item:selected {
+    background-colour: var(--row-selected);
+}
+
+.navigation-item:focus-visible {
+    border-colour: var(--focus);
+    border-width: 2;
+    border-radius: 6;
 }

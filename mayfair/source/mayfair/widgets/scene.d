@@ -155,6 +155,9 @@ public:
         _root.paintTree(0, 0);
     }
 
+    /// The widget with focus, whether or not the window has it right now; null for none. JavaFX's focusOwner.
+    Widget focusedWidget() nothrow @nogc { return focusOwner; }
+
 package:
     // What a widget needs from its scene, and nothing user code has any business touching.
     YGConfigRef config;

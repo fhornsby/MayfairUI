@@ -131,5 +131,20 @@ if slider:
     time.sleep(0.4)
     check(value_of(slider) == 70, f"a screen reader sets the slider: {value_of(slider)}")
 
+# Tabs and a navigation list: their roles, and which one's selected
+SELECTED = 23
+PAGE_TAB, PAGE_TAB_LIST, LIST_ITEM, LIST_BOX = 37, 38, 32, 98   # AT-SPI roles
+def role_name(n):
+    return {PAGE_TAB: "page tab", PAGE_TAB_LIST: "page tab list", LIST_ITEM: "list item", LIST_BOX: "list box"}.get(n["role"], n["role"])
+alpha, beta = by_name("Alpha"), by_name("Beta")
+check(alpha and role_name(alpha) == "page tab" and alpha["state"] >> SELECTED & 1, "the selected tab, a page tab, selected")
+check(beta and role_name(beta) == "page tab" and not beta["state"] >> SELECTED & 1, "the other tab, not")
+check(any(role_name(n) == "page tab list" for n in nodes), "the tabs in a page tab list")
+check(by_name("Beta's page") is None, "only the selected tab's page is there")
+home, away = by_name("Home"), by_name("Away")
+check(home and role_name(home) == "list item" and home["state"] >> SELECTED & 1, "the navigation list's first entry, a list item, selected")
+check(away and not away["state"] >> SELECTED & 1, "the other, not")
+check(any(role_name(n) == "list box" for n in nodes), "the entries in a list box")
+
 print(f"{len(failures)} failed")
 sys.exit(1 if failures else 0)

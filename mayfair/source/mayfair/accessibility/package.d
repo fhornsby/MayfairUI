@@ -38,7 +38,11 @@ enum AccessibleRole
     listItem,
     slider,
     progressIndicator,
-    tab,
+    tab,               /// One of a tab list's tabs; whether it's the one shown goes in AccessibleNode.selected
+    tabList,           /// The row of a tab pane's tabs
+    tabPanel,          /// What the selected tab shows
+    listBox,           /// A list to choose from, such as a navigation sidebar
+    listBoxOption,     /// One of a list box's choices; whether it's chosen goes in AccessibleNode.selected
     menu,
     menuItem,
     textRun,           /// A stretch of a text field's text, with its characters laid out: see TextField
@@ -147,6 +151,12 @@ struct AccessibleNode
     void toggled(bool on) nothrow @nogc
     {
         accesskit_node_set_toggled(node, on ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
+    }
+
+    /// Whether a tab, or a list's choice, is the one selected.
+    void selected(bool on) nothrow @nogc
+    {
+        accesskit_node_set_selected(node, on);
     }
 
     /// What a text field shows when it's empty, as a hint to what goes in it.
@@ -269,6 +279,10 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.slider:            return ACCESSKIT_ROLE_SLIDER;
         case AccessibleRole.progressIndicator: return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
         case AccessibleRole.tab:               return ACCESSKIT_ROLE_TAB;
+        case AccessibleRole.tabList:           return ACCESSKIT_ROLE_TAB_LIST;
+        case AccessibleRole.tabPanel:          return ACCESSKIT_ROLE_TAB_PANEL;
+        case AccessibleRole.listBox:           return ACCESSKIT_ROLE_LIST_BOX;
+        case AccessibleRole.listBoxOption:     return ACCESSKIT_ROLE_LIST_BOX_OPTION;
         case AccessibleRole.menu:              return ACCESSKIT_ROLE_MENU;
         case AccessibleRole.menuItem:          return ACCESSKIT_ROLE_MENU_ITEM;
         case AccessibleRole.textRun:           return ACCESSKIT_ROLE_TEXT_RUN;

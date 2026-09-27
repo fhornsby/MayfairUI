@@ -27,29 +27,25 @@ Dock buildGallery(string start = null)
         Page("Images & icons", "image-x-generic-symbolic", imagesPage()),
         Page("Animation", "media-playback-start-symbolic", animationPage(&report)),
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
+        Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
     ];
 
     // Each page scrolls on its own, down only: fitToWidth keeps it the width of the window
     auto dock = new Dock();
-    auto sidebar = new Column().spacing(4).padding(8);
+    auto sidebar = new NavigationList();
     sidebar.style("background-colour: var(--field);");
-    auto choice = new ToggleGroup;
+    ScrollPane[] panes;
     foreach (page; pages)
     {
-        auto pane = new ScrollPane(page.content).fitToWidth(true);
-        auto item = new ToggleButton(page.name).graphic(new Icon(page.icon)).toggleGroup(choice)
-            .maxWidth(float.infinity);
-        item.setAlignment(Pos.centreLeft);
-        item.setOnAction(show(dock, pane));
-        sidebar.add(item);
-        if (!dock.centre || page.name == start)
-        {
-            item.setSelected(true);
-            dock.setCentre(pane);
-        }
+        sidebar.add(page.name, page.icon);
+        panes ~= new ScrollPane(page.content).fitToWidth(true);
+        if (page.name == start)
+            sidebar.setSelectedIndex(cast(int) panes.length - 1);
     }
+    dock.setCentre(panes[sidebar.selectedIndex]);
+    sidebar.selectedIndexProperty.addListener((int was, int now) { dock.setCentre(panes[now]); });
 
     // Light or dark: the desktop's until the switch is used
     auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"));
@@ -74,13 +70,8 @@ alias Report = void delegate(string);
 /*
     Actions made in a loop are made here, a call each. A delegate made in a loop's body shares
     that body's variables with every other made there, so they'd all see the last iteration's --
-    every page's button showing the last page. Made in a function of its own, each has its own.
+    every key reporting the last key. Made in a function of its own, each has its own.
 */
-void delegate() show(Dock dock, Widget page)
-{
-    return { dock.setCentre(page); };
-}
-
 void delegate() reportKey(Report report, string key)
 {
     return { report("Key " ~ key); };
@@ -348,6 +339,50 @@ Widget layoutPage(Report report)
         .add(section("Dock", window))
         .add(section("Grid: a form", form))
         .add(section("Grid: spans", keypad));
+}
+
+Widget tabsPage(Report report)
+{
+    // A document per tab, each closable, and a button that opens another
+    auto documents = new TabPane().prefHeight(220);
+    int opened;
+    Tab document(string name)
+    {
+        auto editor = new TextArea("This is " ~ name ~ ". Each tab keeps its own text while another is shown.")
+            .wrapText(true);
+        editor.margin(Insets(12));
+        return new Tab(name, editor).graphic(new Icon("text-x-generic-symbolic")).closable(true)
+            .onClosed(reportClosed(report, name));
+    }
+    documents.add(document("notes.txt")).add(document("todo.txt")).add(document("ideas.txt"));
+    auto open = new Button("New tab").graphic(new Icon("tab-new-symbolic")).onAction({
+        opened++;
+        auto tab = document(format!"untitled %d.txt"(opened));
+        documents.add(tab);
+        documents.select(tab);
+        report("Opened " ~ tab.text);
+    });
+
+    // Settings-style tabs: fixed pages, with icons
+    auto settings = new TabPane().prefHeight(160);
+    settings.add(new Tab("General", new Label("General settings would go here.").padding(16))
+                     .graphic(new Icon("preferences-system-symbolic")))
+        .add(new Tab("Appearance", new Row().spacing(12).padding(16)
+                     .add(new CheckBox("Dark style")).add(new CheckBox("Large text")))
+                     .graphic(new Icon("applications-graphics-symbolic")))
+        .add(new Tab("About", new Label("Mayfair, a UI kit in D.").padding(16))
+                     .graphic(new Icon("help-about-symbolic")));
+
+    return page("Tabs", "A tab pane shows one page at a time, with a tab for each. Click a tab, or from the "
+                ~ "keyboard use Left and Right on the tabs, or Ctrl+Page Up and Ctrl+Page Down from anywhere "
+                ~ "in the pane. A closable tab closes with its button or Ctrl+W.")
+        .add(section("Documents", new Column().spacing(8).add(row(open)).add(documents)))
+        .add(section("Settings", settings));
+}
+
+void delegate() reportClosed(Report report, string name)
+{
+    return { report("Closed " ~ name); };
 }
 
 Widget stylingPage(Report report)
