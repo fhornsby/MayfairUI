@@ -129,6 +129,7 @@ public:
         tvg_canvas_sync(_canvas);
         const afterSync = traceNow();
         SDL_UpdateWindowSurface(window);
+        snapshot(pixels, stride, width, height);
         trace("cpu   present  update+draw %.2f  sync %.2f  update window %.2f ms",
               traceMs(start, afterDraw), traceMs(afterDraw, afterSync), traceMs(afterSync, traceNow()));
     }
@@ -157,4 +158,117 @@ private struct SDL_SurfaceFields
     void* pixels;
     int refcount;
     void* reserved;
+}
+
+/*
+    A developer's tool: with MAYFAIR_SNAPSHOT set to a file name, every frame drawn is also written
+    there as a PNG, alpha and all -- what the window hands the compositor, shadow included, which a
+    screenshot of the desktop can't show on Wayland. Uncompressed, so it needs nothing but stdio.
+*/
+private void snapshot(const(uint)* pixels, uint stride, uint w, uint h) nothrow @nogc
+{
+    import core.stdc.stdio : FILE, fclose, fopen, fwrite;
+    import core.stdc.stdlib : getenv;
+    const path = getenv("MAYFAIR_SNAPSHOT");
+    if (!path || !*path || !pixels || !w || !h)
+        return;
+    auto f = fopen(path, "wb");
+    if (!f)
+        return;
+    scope (exit) fclose(f);
+
+    static uint[256] table;
+    static bool tabled;
+    if (!tabled)
+    {
+        foreach (uint n; 0 .. 256)
+        {
+            uint c = n;
+            foreach (k; 0 .. 8)
+                c = c & 1 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+            table[n] = c;
+        }
+        tabled = true;
+    }
+    static uint crc(uint c, const(ubyte)[] data) { foreach (b; data) c = table[(c ^ b) & 0xFF] ^ (c >> 8); return c; }
+    static void be32(ubyte* p, uint v) { p[0] = cast(ubyte)(v >> 24); p[1] = cast(ubyte)(v >> 16); p[2] = cast(ubyte)(v >> 8); p[3] = cast(ubyte) v; }
+
+    // A chunk is written in pieces, the CRC running over its type and data as they go
+    uint running;
+    void begin(string type, uint length)
+    {
+        ubyte[8] head;
+        be32(head.ptr, length);
+        head[4 .. 8] = cast(const(ubyte)[]) type;
+        fwrite(head.ptr, 1, 8, f);
+        running = crc(0xFFFFFFFF, head[4 .. 8]);
+    }
+    void data(const(ubyte)[] bytes)
+    {
+        fwrite(bytes.ptr, 1, bytes.length, f);
+        running = crc(running, bytes);
+    }
+    void end()
+    {
+        ubyte[4] tail;
+        be32(tail.ptr, running ^ 0xFFFFFFFF);
+        fwrite(tail.ptr, 1, 4, f);
+    }
+
+    static immutable ubyte[8] signature = [0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    fwrite(signature.ptr, 1, 8, f);
+    ubyte[13] ihdr;
+    be32(ihdr.ptr, w);
+    be32(ihdr.ptr + 4, h);
+    ihdr[8] = 8;  // bits
+    ihdr[9] = 6;  // RGBA
+    begin("IHDR", 13);
+    data(ihdr[]);
+    end();
+
+    // Stored (uncompressed) deflate blocks: each row is a filter byte and its pixels, one block a row
+    const rowBytes = 1 + w * 4;
+    const blocks = h;
+    const length = 2 + blocks * (5 + rowBytes) + 4;
+    begin("IDAT", cast(uint) length);
+    static immutable ubyte[2] zlibHeader = [0x78, 0x01];
+    data(zlibHeader[]);
+    uint a = 1, b = 0; // adler-32
+    ubyte[4096 * 4 + 1] row;
+    if (rowBytes > row.length)
+        return;
+    foreach (y; 0 .. h)
+    {
+        ubyte[5] block;
+        block[0] = y + 1 == h ? 1 : 0;
+        block[1] = cast(ubyte) rowBytes;
+        block[2] = cast(ubyte)(rowBytes >> 8);
+        block[3] = cast(ubyte) ~rowBytes;
+        block[4] = cast(ubyte)(~rowBytes >> 8);
+        data(block[]);
+        row[0] = 0;
+        foreach (x; 0 .. w)
+        {
+            const p = pixels[y * stride + x];
+            const al = p >> 24;
+            // Premultiplied, as ThorVG draws, to straight, as PNG keeps it
+            uint un(uint c) { return al ? (c * 255 + al / 2) / al : 0; }
+            row[1 + x * 4] = cast(ubyte) un((p >> 16) & 0xFF);
+            row[2 + x * 4] = cast(ubyte) un((p >> 8) & 0xFF);
+            row[3 + x * 4] = cast(ubyte) un(p & 0xFF);
+            row[4 + x * 4] = cast(ubyte) al;
+        }
+        data(row[0 .. rowBytes]);
+        foreach (v; row[0 .. rowBytes])
+        {
+            a = (a + v) % 65521;
+            b = (b + a) % 65521;
+        }
+    }
+    ubyte[4] adler;
+    be32(adler.ptr, (b << 16) | a);
+    data(adler[]);
+    end();
+    begin("IEND", 0);
+    end();
 }

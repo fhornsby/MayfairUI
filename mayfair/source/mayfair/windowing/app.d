@@ -3,6 +3,7 @@ import std.stdio;
 import sdl;
 import sdl.hints;
 import sdl.error;
+import sdl.surface;
 import core.stdc.stdio : fprintf, stderr;
 import core.stdc.stdlib : getenv;
 import core.stdc.string : strcmp, strlen;
@@ -215,7 +216,14 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
                 if (event.type != SDL_EventType.SDL_EVENT_WINDOW_SHOWN && event.type != SDL_EventType.SDL_EVENT_WINDOW_MOVED
                     && event.type != SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
                     queueInputEvent(event);
+                if (event.type == SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
+                    frameChanged = true; // its shape, for the new size
             }
+            break;
+        case SDL_EventType.SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+        case SDL_EventType.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+            if (event.window.windowID == SDL_GetWindowID(window))
+                frameChanged = true;
             break;
         case SDL_EventType.SDL_EVENT_KEY_DOWN:
         case SDL_EventType.SDL_EVENT_KEY_UP:
@@ -269,6 +277,10 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
 */
 void update() {
     freeRetiredNodes();
+    if (frameChanged) {
+        frameChanged = false;
+        applyFrame();
+    }
     if (repickPending) {
         repickPending = false;
         _scene.repick();
@@ -410,9 +422,11 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_MAXIMIZED:
             _scene.windowMaximised(true);
+            frameChanged = true;
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_RESTORED:
             _scene.windowMaximised(false);
+            frameChanged = true;
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_LOST:
             _scene.windowFocus(false);
@@ -553,6 +567,45 @@ final class Controls : WindowControls {
 }
 
 bool drawsDecorations; // Mayfair draws the title bar and edges, rather than the desktop
+bool frameChanged;     // maximised, restored, fullscreen or resized: the frame and shape to see to
+
+/*
+    The frame round a window drawing its own decorations: a margin with its shadow in, and rounded
+    corners -- unless it's maximised or fullscreen, when its edges are the screen's. And the
+    window's shape to match: the shadow beyond the band just outside the edge that sizes it lets
+    clicks through to what's underneath, as it would if the desktop had drawn it.
+*/
+void applyFrame() {
+    if (!drawsDecorations)
+        return;
+    const flat = (SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN)) != 0;
+    _scene.setFrame(flat ? 0 : Theme.window_margin, flat ? 0 : Theme.window_radius);
+    needsLayout = true;
+    updateShape(flat);
+}
+
+void updateShape(bool flat) {
+    import core.stdc.string : strcmp;
+    // Only for a renderer SDL doesn't draw through: SDL applies a shape's alpha to what it draws
+    // itself, which would cut the CPU renderer's shadow off where the shape does
+    if (strcmp(renderer.name(), "webgpu") != 0)
+        return;
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    if (w <= 0 || h <= 0)
+        return;
+    auto shape = SDL_CreateSurface(w, h, SDL_PixelFormat.SDL_PIXELFORMAT_ARGB8888);
+    if (!shape)
+        return;
+    scope(exit) SDL_DestroySurface(shape);
+    // Maximised or fullscreen, all of it takes clicks. (Not a null shape, which is how SDL says to
+    // remove one, as SDL 3.4 crashes on it under Wayland.)
+    SDL_FillSurfaceRect(shape, null, 0);
+    const inset = flat ? 0 : toWindow(Theme.window_margin - Theme.window_resize_band);
+    auto solid = SDL_Rect(inset, inset, w - 2 * inset, h - 2 * inset);
+    SDL_FillSurfaceRect(shape, &solid, 0xFFFFFFFF);
+    SDL_SetWindowShape(window, shape);
+}
 
 /*
     Where on the window a press is, for the window system, when Mayfair draws its decorations: an
@@ -561,9 +614,17 @@ bool drawsDecorations; // Mayfair draws the title bar and edges, rather than the
     moves, which is how the pointer gets its resizing shapes at the edges.
 */
 SDL_HitTestResult hitTestAt(float x, float y) nothrow @nogc {
-    enum edge = 6;   // points in from the window's edge that size it
+    enum inside = 4;  // points in from the window's visible edge that size it, as well as the band outside
     enum corner = 16; // and along it from a corner that size both ways
-    const w = viewWidth / scale, h = viewHeight / scale;
+    // Measured from the visible edge, inside the frame's margin
+    const m = _scene ? _scene.frameMargin : 0;
+    const band = m > 0 ? Theme.window_resize_band : 0;
+    x -= m - band;
+    y -= m - band;
+    const edge = band + inside;
+    const w = viewWidth / scale - 2 * (m - band), h = viewHeight / scale - 2 * (m - band);
+    if (x < 0 || y < 0 || x >= w || y >= h)
+        return SDL_HitTestResult.SDL_HITTEST_NORMAL; // out in the shadow
     const sized = !(SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN));
     if (sized) {
         const left = x < edge, right = x >= w - edge, top = y < edge, bottom = y >= h - edge;
@@ -584,7 +645,8 @@ SDL_HitTestResult hitTestAt(float x, float y) nothrow @nogc {
     foreach (p; _scene.popups)
         if (p.autoHide || p.modal)
             return SDL_HitTestResult.SDL_HITTEST_NORMAL;
-    return bar.dragsWindowAt(x, y) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE : SDL_HitTestResult.SDL_HITTEST_NORMAL;
+    return bar.dragsWindowAt(x + m - band, y + m - band) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE
+                                                         : SDL_HitTestResult.SDL_HITTEST_NORMAL;
 }
 
 public:
@@ -638,9 +700,12 @@ public:
 
         // Without HIGH_PIXEL_DENSITY the drawable stays at 1x and the compositor upscales it
         auto flags = SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        // Drawing its own frame, it's transparent, and bigger by the margin its shadow's in, so
+        // what's inside is the size asked for
+        const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
         if (drawsDecorations)
-            flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS;
-        window = SDL_CreateWindow(title.toStringz(), width, height, flags);
+            flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
+        window = SDL_CreateWindow(title.toStringz(), width + 2 * margin, height + 2 * margin, flags);
         if (drawsDecorations && wayland)
         {
             quietStderr(false);
@@ -651,6 +716,12 @@ public:
             return;
         }
         scope(exit) SDL_DestroyWindow(window);
+        {
+            int cw, ch;
+            SDL_GetWindowSize(window, &cw, &ch);
+            trace("window %dx%d asked %dx%d, decorations %s, flags %llx", cw, ch, width + 2 * margin,
+                  height + 2 * margin, drawsDecorations ? "ours".ptr : "the desktop's".ptr, SDL_GetWindowFlags(window));
+        }
 
         renderer = chooseRenderer();
         // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
@@ -672,6 +743,7 @@ public:
                 _scene.titleBar.setTitle(title);
             _scene.windowControls = new Controls;
             SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
+            applyFrame();
         }
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();

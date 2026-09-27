@@ -48,6 +48,7 @@ private:
     WGPUTexture offscreen;
     WGPUTextureView offscreenView;
     WGPUSampler sampler;
+    WGPUCompositeAlphaMode alphaMode = WGPUCompositeAlphaMode_Auto; // premultiplied, for a transparent window
     WGPURenderPipeline downsamplePipeline;
     WGPUBindGroupLayout downsampleLayout;
     WGPUBindGroup downsampleBind;
@@ -124,6 +125,12 @@ public:
             }
             if (!found && capabilities.formatCount > 0)
                 surfaceFormat = capabilities.formats[0];
+            // A transparent window -- one drawing its own shadow round it -- is composited with the
+            // alpha it's drawn with. ThorVG's colours are premultiplied, as compositors expect.
+            if (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_TRANSPARENT)
+                foreach (i; 0 .. capabilities.alphaModeCount)
+                    if (capabilities.alphaModes[i] == WGPUCompositeAlphaMode_Premultiplied)
+                        alphaMode = WGPUCompositeAlphaMode_Premultiplied;
             wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         }
         trace("gpu   surface format %d", cast(int) surfaceFormat);
@@ -250,6 +257,7 @@ public:
         config.width = w;
         config.height = h;
         config.presentMode = presentMode;
+        config.alphaMode = alphaMode;
         wgpuSurfaceConfigure(surface, &config);
 
         if (!createDownsampleBindGroup())

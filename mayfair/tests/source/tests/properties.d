@@ -117,7 +117,7 @@ void layout()
         d.ui({
             const b = box.boundsInScene;
             d.expect(b.width, 150f, "a new width, while it's showing");
-            d.expect(b.minX, 10f, "a margin moves it in");
+            d.expect(b.minX - box.parent.boundsInScene.minX, 10f, "a margin moves it in");
         });
 
         d.ui({ row.setAlignment(Pos.centre); row.setPadding(Insets(0, 0, 0, 0)); });

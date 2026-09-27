@@ -80,8 +80,22 @@ public:
     */
     void attach(Tvg_Canvas canvas) nothrow
     {
+        // The shadow a window casts when it draws its own frame goes under everything, and the
+        // outline round it over everything (see setFrame)
+        frameShadow = tvg_scene_new();
+        foreach (ref ring; frameShadowRings)
+        {
+            ring = tvg_shape_new();
+            tvg_shape_set_fill_rule(ring, TVG_FILL_RULE_EVEN_ODD); // a ring: the window's own rect is a hole
+            tvg_scene_add(frameShadow, ring);
+        }
+        tvg_canvas_add(canvas, frameShadow);
+
         paints = tvg_scene_new();
         tvg_canvas_add(canvas, paints);
+
+        frameOutline = tvg_shape_new();
+        tvg_canvas_add(canvas, frameOutline);
 
         // One config for every node in the tree: Yoga reads the point scale factor from each node's
         // own config when it rounds to the pixel grid, and a child doesn't inherit its parent's.
@@ -147,6 +161,11 @@ public:
         _scale = scale;
         YGConfigSetPointScaleFactor(config, scale);
         tvg_paint_scale(paints, scale * renderScale);
+        tvg_paint_scale(frameShadow, scale * renderScale);
+        tvg_paint_scale(frameOutline, scale * renderScale);
+        paintScale = scale * renderScale;
+        if (frameClip)
+            tvg_paint_scale(frameClip, paintScale);
 
         // Anything grid-fitted was fitted to the old pixel grid. A widget drawing plain geometry
         // wouldn't care, but hinted glyph outlines are baked for one scale, and paintTree skips a
@@ -156,16 +175,25 @@ public:
     }
 
     /// Sizes and positions the whole tree for a window `w` x `h` points.
-    void layout(float w, float h) nothrow @nogc
+    void layout(float windowWidth, float windowHeight) nothrow @nogc
     {
+        // Inside the frame's margin, where there is one: the window's shadow is round the outside
+        const m = frameMargin;
+        const w = windowWidth - 2 * m > 0 ? windowWidth - 2 * m : 0;
+        const h = windowHeight - 2 * m > 0 ? windowHeight - 2 * m : 0;
+        contentWidth = w;
+        contentHeight = h;
         // The title bar along the top at its own height, and the root in what's below it
         float top = 0;
         if (_titleBar)
         {
             YGNodeCalculateLayout(_titleBar.node, w, float.nan, YGDirectionLTR);
+            _titleBar.cellX = m;
+            _titleBar.cellY = m;
             top = YGNodeLayoutGetHeight(_titleBar.node);
         }
-        _root.cellY = top;
+        _root.cellX = m;
+        _root.cellY = m + top;
         YGNodeCalculateLayout(_root.node, w, h - top > 0 ? h - top : 0, YGDirectionLTR);
         // Each popup as big as it asks, but inside the window, with a margin if there's room for one
         foreach (p; popups)
@@ -178,7 +206,7 @@ public:
             YGNodeStyleSetMaxWidth(p.node, room(w, p.maxWidth));
             YGNodeStyleSetMaxHeight(p.node, room(h, p.maxHeight));
             YGNodeCalculateLayout(p.node, float.nan, float.nan, YGDirectionLTR);
-            p.place(w, h);
+            p.place(m, m, w, h);
         }
         popupsMoved = false;
     }
@@ -195,10 +223,13 @@ public:
     }
 
     /// Updates every shape to match the layout.
-    void paint(float w, float h) nothrow @nogc
+    void paint(float windowWidth, float windowHeight) nothrow @nogc
     {
+        const m = frameMargin, r = frameRadius;
+        const w = contentWidth, h = contentHeight;
         tvg_shape_reset(background);
-        tvg_shape_append_rect(background, 0, 0, w, h, 0, 0, true);
+        tvg_shape_append_rect(background, m, m, w, h, 0, 0, true);
+        paintFrame(m, r, w, h);
         _root.paintTree(0, 0);
         if (_titleBar)
             _titleBar.paintTree(0, 0);
@@ -609,6 +640,8 @@ package(mayfair):
     void windowFocus(bool focused)
     {
         windowFocused = focused;
+        shadeFrame();
+        paintRequested = true;
         if (_titleBar)
             _titleBar.windowFocused(focused);
         if (focusOwner)
@@ -616,6 +649,31 @@ package(mayfair):
     }
 
 package(mayfair):
+    /*
+        The frame a window draws round itself when it draws its own decorations: its content inset
+        by `margin` points, with rounded corners of `radius`, a shadow in the margin -- lighter
+        while the window hasn't focus -- and a faint outline, so its edge can be seen against a
+        window of the same colour behind it. No margin for a maximised window, which has no edges
+        to show. See the App, which says which.
+    */
+    void setFrame(float margin, float radius) nothrow @nogc
+    {
+        if (margin == frameMargin && radius == frameRadius)
+            return;
+        frameMargin = margin;
+        frameRadius = radius;
+        shadeFrame();
+        if (_root)
+            _root.invalidateTree();
+        if (_titleBar)
+            _titleBar.invalidateTree();
+        popupsMoved = true; // lays everything out again, in the new content area
+        paintRequested = true;
+    }
+
+    float frameMargin = 0, frameRadius = 0;
+    float contentWidth = 0, contentHeight = 0; // as of the last layout
+
     WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
     bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
 
@@ -714,6 +772,92 @@ private:
     float _scale = 1.0f;
     Widget _root;
     TitleBar _titleBar;
+    Tvg_Paint frameShadow, frameOutline, frameClip;
+    Tvg_Paint[16] frameShadowRings;
+    float paintScale = 1; // the scene's scale, device pixels to the point and any render scale
+
+    void paintFrame(float m, float r, float w, float h) nothrow @nogc
+    {
+        // Only when something about it changed: it's a dozen shapes, the same every frame otherwise
+        const dark = effectiveColourScheme == ColourScheme.dark;
+        const key = FrameKey(m, r, w, h, windowFocused, dark);
+        if (key == paintedFrame)
+            return;
+        paintedFrame = key;
+
+        tvg_shape_reset(frameOutline);
+        foreach (ring; frameShadowRings)
+            tvg_shape_reset(ring);
+        if (m <= 0)
+        {
+            if (frameClip)
+            {
+                tvg_paint_set_mask_method(paints, null, TVG_MASK_METHOD_NONE);
+                frameClip = null;
+            }
+            return;
+        }
+
+        /*
+            The shadow: rings round the window, each a little bigger than the last and faint, so
+            that where more of them overlap -- near the window -- it's darker, fading to nothing at
+            the outside. Close to a blur, for a dozen flat shapes rather than blurring the window's
+            area every frame -- which, under the clip below, costs ThorVG's GPU engine 20 ms a frame.
+        */
+        const s = windowFocused ? Theme.window_shadow : Theme.window_shadow_backdrop;
+        const spread = (windowFocused ? Theme.window_shadow_blur : Theme.window_shadow_blur * 0.7f) * 1.3f;
+        const down = windowFocused ? Theme.window_shadow_offset : Theme.window_shadow_offset / 2;
+        enum n = frameShadowRings.length;
+        // Each ring's own alpha, such that all of them over each other come to the shadow's
+        import std.math : pow;
+        const each = cast(ubyte)((1 - pow(1 - s.a / 255.0, 1.0 / n)) * 255 + 0.5);
+        foreach (i, ring; frameShadowRings)
+        {
+            const t = (i + 1.0f) / n;
+            const e = spread * t * t; // closer together near the window, where it's darkest
+            tvg_shape_append_rect(ring, m - e, m - e + down, w + 2 * e, h + 2 * e, r + e, r + e, true);
+            tvg_shape_append_rect(ring, m, m, w, h, r, r, true);
+            tvg_shape_set_fill_color(ring, 0, 0, 0, each);
+        }
+
+        /*
+            The content, rounded at the corners: masked by a rounded rectangle, not clipped. A clip
+            on the whole scene, with the clips inside it that scroll panes make, takes ThorVG's GPU
+            engine over a second a frame; a mask costs it a few milliseconds. The mask is in the
+            space of what it's on's parent -- the canvas -- so it's scaled as the scene is.
+        */
+        if (!frameClip)
+        {
+            frameClip = tvg_shape_new();
+            tvg_paint_scale(frameClip, paintScale);
+            tvg_paint_set_mask_method(paints, frameClip, TVG_MASK_METHOD_ALPHA);
+        }
+        tvg_shape_reset(frameClip);
+        tvg_shape_append_rect(frameClip, m, m, w, h, r, r, true);
+        tvg_shape_set_fill_color(frameClip, 255, 255, 255, 255); // a mask goes by its pixels' alpha
+        // A hairline round it, half a point in, so it's all inside the window
+        tvg_shape_append_rect(frameOutline, m + 0.5f, m + 0.5f, w - 1, h - 1, r - 0.5f, r - 0.5f, true);
+        const c = dark ? Theme.window_outline_dark : Theme.window_outline;
+        tvg_shape_set_fill_color(frameOutline, 0, 0, 0, 0);
+        tvg_shape_set_stroke_width(frameOutline, 1);
+        tvg_shape_set_stroke_color(frameOutline, c.tupleof);
+    }
+
+    /// The shadow's strength follows focus, as GNOME's does: drawn again on the next paint.
+    void shadeFrame() nothrow @nogc
+    {
+        paintedFrame = FrameKey.init;
+        paintRequested = true;
+    }
+
+    // What the frame was last drawn for
+    struct FrameKey
+    {
+        float margin = -1, radius = 0, width = 0, height = 0;
+        bool focused, dark;
+    }
+    FrameKey paintedFrame;
+
     StylesheetList _stylesheets;
     Tvg_Paint background;
 

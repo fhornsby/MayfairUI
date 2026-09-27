@@ -42,6 +42,15 @@ struct Theme
     enum float popup_shadow_blur         = 10;   // points
     enum float popup_shadow_offset       = 3;    // points down
     enum float popup_margin              = 8;    // points a popup keeps from the window's edges, if it can
+    enum float window_margin             = 24;   // points round a window drawing its own frame, for its shadow
+    enum float window_radius             = 12;   // points: its corners
+    enum float window_resize_band        = 8;    // points outside its edge that take hold of it to size it
+    enum Colour window_shadow            = Colour(0, 0, 0, 115);
+    enum Colour window_shadow_backdrop   = Colour(0, 0, 0, 50); // without focus
+    enum float window_shadow_blur        = 14;    // points
+    enum float window_shadow_offset      = 5;    // points down
+    enum Colour window_outline           = Colour(0, 0, 0, 36);
+    enum Colour window_outline_dark      = Colour(255, 255, 255, 28);
     enum Duration tooltip_delay          = 500.msecs;  // resting on something before its tooltip shows
     enum Duration tooltip_browse_time    = 800.msecs;  // after one hides, the next shows at once for this long
     enum float tooltip_max_width         = 320;  // points: longer tooltips wrap

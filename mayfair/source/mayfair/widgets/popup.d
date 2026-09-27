@@ -132,10 +132,12 @@ package:
     bool _focusShownBefore;    // and whether that focus was shown
     double _shownAmount = 0;   // how far it's faded in
 
-    /// Puts it where it goes, now its size and the window's are known.
-    void place(float windowWidth, float windowHeight) nothrow @nogc
+    /// Puts it where it goes, now its size is known, inside the window's content: `originX`, `originY`,
+    /// `windowWidth` by `windowHeight` -- inside any shadow the window draws round itself.
+    void place(float originX, float originY, float windowWidth, float windowHeight) nothrow @nogc
     {
         const w = YGNodeLayoutGetWidth(node), h = YGNodeLayoutGetHeight(node);
+        // Worked out from the content's top left, and moved there at the end
         float x = 0, y = 0;
         final switch (_placement)
         {
@@ -144,13 +146,14 @@ package:
                 y = (windowHeight - h) / 2;
                 break;
             case Placement.at:
-                x = _atX;
-                y = _atY;
-                if (x + w > windowWidth) x = _atX - w;   // to the left of the point, rather than off the edge
-                if (y + h > windowHeight) y = _atY - h;  // or above it
+                x = _atX - originX;
+                y = _atY - originY;
+                if (x + w > windowWidth) x = x - w;   // to the left of the point, rather than off the edge
+                if (y + h > windowHeight) y = y - h;  // or above it
                 break;
             case Placement.beside:
-                const o = _owner ? _owner.boundsIn(null) : Bounds(0, 0, 0, 0);
+                const b = _owner ? _owner.boundsIn(null) : Bounds(0, 0, 0, 0);
+                const o = Bounds(b.minX - originX, b.minY - originY, b.width, b.height);
                 final switch (_side)
                 {
                     case Side.below, Side.above:
@@ -179,8 +182,8 @@ package:
         if (y < 0) y = 0;
         const scale = scene ? scene.scale : 1.0f;
         import std.math : round;
-        cellX = round(x * scale) / scale;
-        cellY = round(y * scale) / scale;
+        cellX = round((originX + x) * scale) / scale;
+        cellY = round((originY + y) * scale) / scale;
     }
 
     void opened()
