@@ -800,24 +800,31 @@ private:
 
         /*
             The shadow: rings round the window, each a little bigger than the last and faint, so
-            that where more of them overlap -- near the window -- it's darker, fading to nothing at
-            the outside. Close to a blur, for a dozen flat shapes rather than blurring the window's
-            area every frame -- which, under the clip below, costs ThorVG's GPU engine 20 ms a frame.
+            where more of them overlap -- near the window -- it's darker. Each ring's alpha is
+            worked out so that, stacked, they follow the edge of a Gaussian blur: half the
+            shadow's strength at the window's edge, fading smoothly to nothing three blur widths
+            out. A blur's look, for a few flat shapes rather than blurring the window's area every
+            frame -- which, under the corners' mask, costs ThorVG's GPU engine 20 ms a frame.
         */
+        import std.mathspecial : erfc;
         const s = windowFocused ? Theme.window_shadow : Theme.window_shadow_backdrop;
-        const spread = (windowFocused ? Theme.window_shadow_blur : Theme.window_shadow_blur * 0.7f) * 1.3f;
+        const sigma = windowFocused ? Theme.window_shadow_blur : Theme.window_shadow_blur * 0.75f;
         const down = windowFocused ? Theme.window_shadow_offset : Theme.window_shadow_offset / 2;
         enum n = frameShadowRings.length;
-        // Each ring's own alpha, such that all of them over each other come to the shadow's
-        import std.math : pow;
-        const each = cast(ubyte)((1 - pow(1 - s.a / 255.0, 1.0 / n)) * 255 + 0.5);
-        foreach (i, ring; frameShadowRings)
+        const spread = 3 * sigma;
+        // How dark the shadow is at `d` points out from the window's edge
+        double shadowAt(double d) { return s.a / 255.0 * 0.5 * erfc(d / (sigma * 1.41421356)); }
+        // Band k lies between rings k-1 and k, and is covered by rings k to n. Seen through them it
+        // should be as dark as the shadow at its middle, which fixes each ring's alpha in turn.
+        foreach (k, ring; frameShadowRings)
         {
-            const t = (i + 1.0f) / n;
-            const e = spread * t * t; // closer together near the window, where it's darkest
-            tvg_shape_append_rect(ring, m - e, m - e + down, w + 2 * e, h + 2 * e, r + e, r + e, true);
+            const inner = spread * k / n, outer = spread * (k + 1) / n;
+            const here = shadowAt((inner + outer) / 2);
+            const next = k + 1 < n ? shadowAt((outer + spread * (k + 2) / n) / 2) : 0.0;
+            const alpha = 1 - (1 - here) / (1 - next);
+            tvg_shape_append_rect(ring, m - outer, m - outer + down, w + 2 * outer, h + 2 * outer, r + outer, r + outer, true);
             tvg_shape_append_rect(ring, m, m, w, h, r, r, true);
-            tvg_shape_set_fill_color(ring, 0, 0, 0, each);
+            tvg_shape_set_fill_color(ring, 0, 0, 0, cast(ubyte)(alpha * 255 + 0.5));
         }
 
         /*
