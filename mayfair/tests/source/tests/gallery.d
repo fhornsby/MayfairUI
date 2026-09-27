@@ -49,7 +49,7 @@ void navigation()
         d.ui({
             foreach (child; dock.left.children)
                 items ~= cast(NavigationItem) child;
-            d.expect(items.length, 10, "a page for each part of the kit");
+            d.expect(items.length, 11, "a page for each part of the kit");
         });
 
         foreach (item; items)

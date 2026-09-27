@@ -44,6 +44,8 @@ enum AccessibleRole
     listBox,           /// A list to choose from, such as a navigation sidebar
     listBoxOption,     /// One of a list box's choices; whether it's chosen goes in AccessibleNode.selected
     menu,
+    comboBox,          /// A drop-down to choose one of a list from; its choice goes in AccessibleNode.value
+    dialog,            /// A dialog over the window, named by its title
     menuItem,
     textRun,           /// A stretch of a text field's text, with its characters laid out: see TextField
     scrollPane,        /// Something that scrolls what's in it; its position goes in AccessibleNode.scroll
@@ -151,6 +153,12 @@ struct AccessibleNode
     void toggled(bool on) nothrow @nogc
     {
         accesskit_node_set_toggled(node, on ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
+    }
+
+    /// Whether what it opens -- a menu button's menu, a drop-down's list -- is showing.
+    void expanded(bool on) nothrow @nogc
+    {
+        accesskit_node_set_expanded(node, on);
     }
 
     /// Whether a tab, or a list's choice, is the one selected.
@@ -279,6 +287,8 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.slider:            return ACCESSKIT_ROLE_SLIDER;
         case AccessibleRole.progressIndicator: return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
         case AccessibleRole.tab:               return ACCESSKIT_ROLE_TAB;
+        case AccessibleRole.comboBox:          return ACCESSKIT_ROLE_COMBO_BOX;
+        case AccessibleRole.dialog:            return ACCESSKIT_ROLE_DIALOG;
         case AccessibleRole.tabList:           return ACCESSKIT_ROLE_TAB_LIST;
         case AccessibleRole.tabPanel:          return ACCESSKIT_ROLE_TAB_PANEL;
         case AccessibleRole.listBox:           return ACCESSKIT_ROLE_LIST_BOX;

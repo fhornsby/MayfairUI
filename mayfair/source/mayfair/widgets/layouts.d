@@ -5,6 +5,9 @@ import mayfair.css;
 import mayfair.properties;
 import mayfair.widgets.widget;
 
+/// Where along one line something sits: a grid's column or row, a popup against what it's for.
+enum Alignment { start, centre, end }
+
 /// Where children sit in a container with room to spare. JavaFX's Pos.
 enum Pos
 {

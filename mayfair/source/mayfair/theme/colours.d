@@ -36,4 +36,13 @@ struct Theme
     enum Duration scroll_lift_time       = 45.msecs; // no touchpad movement for this long: the fingers lifted
     enum float scroll_glide_min_speed    = 120;   // points a second: slower than this, lifting just stops
     enum float scroll_glide_max_speed    = 8000;  // points a second: the fastest a glide starts
+    enum Duration popup_fade_time        = 120.msecs; // a popup fading in
+    enum Colour popup_scrim              = Colour(0, 0, 0, 90); // over the window behind a modal popup
+    enum Colour popup_shadow             = Colour(0, 0, 0, 70);
+    enum float popup_shadow_blur         = 10;   // points
+    enum float popup_shadow_offset       = 3;    // points down
+    enum float popup_margin              = 8;    // points a popup keeps from the window's edges, if it can
+    enum Duration tooltip_delay          = 500.msecs;  // resting on something before its tooltip shows
+    enum Duration tooltip_browse_time    = 800.msecs;  // after one hides, the next shows at once for this long
+    enum float tooltip_max_width         = 320;  // points: longer tooltips wrap
 }

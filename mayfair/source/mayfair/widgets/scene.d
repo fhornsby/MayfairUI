@@ -10,6 +10,11 @@ import mayfair.css;
 import mayfair.widgets.widget;
 import mayfair.widgets.input;
 import mayfair.widgets.styling;
+import mayfair.widgets.popup;
+import mayfair.widgets.label : Label;
+import mayfair.widgets.layouts : Alignment;
+import mayfair.animation;
+import core.time : MonoTime;
 
 /// Light or dark, as a desktop's preference or a scene's own choice. JavaFX's ColourScheme, and
 /// `system` for following the desktop's.
@@ -108,7 +113,11 @@ public:
     void detach() nothrow
     {
         try
+        {
+            while (popups.length)
+                hidePopup(popups[$ - 1]);
             _root.unmountTree();
+        }
         catch (Exception) {}
         releaseConfig(_root);
         YGConfigFree(config);
@@ -145,6 +154,31 @@ public:
     void layout(float w, float h) nothrow @nogc
     {
         YGNodeCalculateLayout(_root.node, w, h, YGDirectionLTR);
+        // Each popup as big as it asks, but inside the window, with a margin if there's room for one
+        foreach (p; popups)
+        {
+            float room(float window, float own)
+            {
+                const inside = window > 4 * Theme.popup_margin ? window - 2 * Theme.popup_margin : window;
+                return own == own && own < inside ? own : inside;
+            }
+            YGNodeStyleSetMaxWidth(p.node, room(w, p.maxWidth));
+            YGNodeStyleSetMaxHeight(p.node, room(h, p.maxHeight));
+            YGNodeCalculateLayout(p.node, float.nan, float.nan, YGDirectionLTR);
+            p.place(w, h);
+        }
+        popupsMoved = false;
+    }
+
+    /// Whether anything needs laying out again: the tree, a popup, or which popups there are.
+    bool layoutNeeded() nothrow @nogc
+    {
+        if (popupsMoved || YGNodeIsDirty(_root.node))
+            return true;
+        foreach (p; popups)
+            if (YGNodeIsDirty(p.node))
+                return true;
+        return false;
     }
 
     /// Updates every shape to match the layout.
@@ -153,7 +187,20 @@ public:
         tvg_shape_reset(background);
         tvg_shape_append_rect(background, 0, 0, w, h, 0, 0, true);
         _root.paintTree(0, 0);
+        foreach (p; popups)
+        {
+            if (p._scrim)
+            {
+                tvg_shape_reset(p._scrim);
+                tvg_shape_append_rect(p._scrim, 0, 0, w, h, 0, 0, true);
+                tvg_paint_set_opacity(p._scrim, cast(ubyte)(p._shownAmount * 255));
+            }
+            p.paintTree(0, 0, 0, 0, p._shownAmount);
+        }
     }
+
+    /// The popups showing, from the bottom up: menus, drop-down lists, tooltips, dialogs.
+    const(Popup)[] showingPopups() const nothrow @nogc { return popups; }
 
     /// The widget with focus, whether or not the window has it right now; null for none. JavaFX's focusOwner.
     Widget focusedWidget() nothrow @nogc { return focusOwner; }
@@ -200,7 +247,15 @@ package:
     /// Lets go of everything the scene knows about the tree under `gone`, which is being removed.
     void forget(Widget gone)
     {
+        foreach_reverse (p; popups.dup)
+            if (p !is gone && p._showingIn && isWithin(p.owner, gone))
+                hidePopup(p);
         forgetFocusWithin(gone);
+        if (isWithin(tooltipFor, gone))
+        {
+            hideTooltip();
+            tooltipFor = null;
+        }
         if (isWithin(grabbed, gone))
         {
             // The press is over, for the ancestors too: there's nothing left for it to be released on
@@ -227,6 +282,8 @@ package(mayfair):
         if (!_root)
             return;
         markCssDirty(_root, true);
+        foreach (p; popups)
+            markCssDirty(p, true);
         cssRequested = true;
     }
 
@@ -250,19 +307,24 @@ package(mayfair):
             accesskit_tree_info_set_toolkit_name_with_length(info, toolkit.ptr, toolkit.length);
             accesskit_tree_update_set_tree_info(update, info);
         }
-        if (full || pointsToWindow != sentPointsToWindow)
+        if (full || pointsToWindow != sentPointsToWindow || windowChildrenChanged)
         {
             sentPointsToWindow = pointsToWindow;
+            windowChildrenChanged = false;
             auto window = accesskit_node_new(ACCESSKIT_ROLE_WINDOW);
             accesskit_node_set_label_with_length(window, title.ptr, title.length);
             accesskit_node_set_transform(window, accesskit_affine_scale(pointsToWindow));
-            if (_root.accessibleHidden)
-                _root.pushAccessibleChildren(window);
-            else
-                accesskit_node_push_child(window, _root.accessibleId);
+            foreach (top; topLevel)
+            {
+                if (top.accessibleHidden)
+                    top.pushAccessibleChildren(window);
+                else
+                    accesskit_node_push_child(window, top.accessibleId);
+            }
             accesskit_tree_update_push_node(update, windowNodeId, window);
         }
-        pushChanged(update, _root, full);
+        foreach (top; topLevel)
+            pushChanged(update, top, full);
         accessibilityChanged = false;
         return update;
     }
@@ -270,7 +332,7 @@ package(mayfair):
     /// Whether buildAccessibilityUpdate() would have anything to say.
     bool accessibilityPending(double pointsToWindow) const nothrow @nogc
     {
-        return accessibilityChanged || pointsToWindow != sentPointsToWindow;
+        return accessibilityChanged || windowChildrenChanged || pointsToWindow != sentPointsToWindow;
     }
 
     /*
@@ -283,8 +345,12 @@ package(mayfair):
         AccessibleAction action;
         if (!fromAccessKit(requested, action))
             return;
-        if (auto w = findAccessible(_root, target))
-            w.performAccessibleAction(action, data);
+        foreach (top; topLevel)
+            if (auto w = findAccessible(top, target))
+            {
+                w.performAccessibleAction(action, data);
+                return;
+            }
     }
 
     /// The pointer shape for where the pointer is: the first widget up from the one it's over
@@ -321,7 +387,7 @@ package(mayfair):
     void mouseMoved(float x, float y)
     {
         pointAt(x, y);
-        hoverOver(_root.pick(x, y));
+        hoverOver(pickAt(x, y));
         if (grabbed)
             bubble(grabbed, MouseEventType.dragged, MouseButton.none, 0);
         else if (hovered)
@@ -331,7 +397,12 @@ package(mayfair):
     void mousePressed(float x, float y, MouseButton button, int clicks)
     {
         pointAt(x, y);
-        hoverOver(_root.pick(x, y));
+        hoverOver(pickAt(x, y));
+        // A press outside the popups that hide on one hides them, and does nothing else. On a popup
+        // lower down -- a menu under its submenu -- it hides those over it.
+        hideTooltip();
+        if (!grabbed && hidePopupsOver(hovered))
+            return;
         if (!grabbed)
             grabbed = hovered;
         if (!grabbed)
@@ -341,12 +412,14 @@ package(mayfair):
             for (auto w = grabbed; w; w = w.parent)
                 w._setPressed(true);
         bubble(grabbed, MouseEventType.pressed, button, clicks);
+        if (button == MouseButton.secondary)
+            showContextMenu(hovered, pointerX, pointerY);
     }
 
     void mouseReleased(float x, float y, MouseButton button, int clicks)
     {
         pointAt(x, y);
-        hoverOver(_root.pick(x, y));
+        hoverOver(pickAt(x, y));
         if (!grabbed)
             return;
         auto target = grabbed;
@@ -374,8 +447,9 @@ package(mayfair):
     /// to what's under the pointer and bubbles up. See ScrollEvent.
     void scrolled(float x, float y, float dx, float dy, ScrollDevice device = ScrollDevice.wheel, double time = 0)
     {
+        hideTooltip();
         pointAt(x, y);
-        hoverOver(_root.pick(x, y));
+        hoverOver(pickAt(x, y));
         if (!hovered)
             return;
         auto event = ScrollEvent(dx, dy, pointerX, pointerY);
@@ -420,7 +494,7 @@ package(mayfair):
     void repick()
     {
         if (pointerInside)
-            hoverOver(_root.pick(pointerX, pointerY));
+            hoverOver(pickAt(pointerX, pointerY));
     }
 
     /*
@@ -430,23 +504,39 @@ package(mayfair):
     */
     void keyPressed(KeyEvent event)
     {
+        hideTooltip();
         bubble(event);
         if (event.consumed)
             return;
+        if (event.code == KeyCode.application || event.code == KeyCode.menu
+            || (event.code == KeyCode.f10 && event.shift))
+        {
+            if (focusOwner)
+            {
+                const b = focusOwner.boundsIn(null);
+                showContextMenu(focusOwner, b.minX, b.maxY);
+            }
+            return;
+        }
+        if (event.code == KeyCode.escape && popups.length && popups[$ - 1].autoHide && !popups[$ - 1].modal)
+        {
+            hidePopup(popups[$ - 1]);
+            return;
+        }
         // Ctrl+Tab too, for getting out of something that takes Tab itself, as a text area does
         if (event.code == KeyCode.tab && !event.alt && !event.meta)
         {
             traverse(event.shift ? -1 : 1);
             return;
         }
-        _root.offerShortcut(event);
+        focusScope.offerShortcut(event);
     }
 
     void keyReleased(KeyEvent event)
     {
         bubble(event);
         if (!event.consumed)
-            _root.offerShortcut(event);
+            focusScope.offerShortcut(event);
     }
 
     /// Text typed into the widget with focus, bubbling up from it.
@@ -481,6 +571,82 @@ package(mayfair):
             refreshFocus(focusOwner);
     }
 
+package(mayfair):
+    Popup[] popups;             // showing, bottom to top
+    bool popupsMoved;           // one's been shown or hidden, so layout has to run
+    bool windowChildrenChanged; // the window's accessibility node has to list them again
+
+    /// Shows `p`, which Popup.show() has placed and given an owner, over everything else.
+    void showPopup(Popup p)
+    {
+        // A layer of its own, over everything before it: the dimming behind a modal one, then
+        // the popup in a scene of its own, which is what casts the shadow
+        p._showingIn = this;
+        p._layer = tvg_scene_new();
+        if (p.modal)
+        {
+            p._scrim = tvg_shape_new();
+            tvg_shape_set_fill_color(p._scrim, Theme.popup_scrim.tupleof);
+            tvg_scene_add(p._layer, p._scrim);
+        }
+        auto inner = tvg_scene_new();
+        const s = Theme.popup_shadow;
+        tvg_scene_add_effect_drop_shadow(inner, s.r, s.g, s.b, s.a, 90, Theme.popup_shadow_offset,
+                                         Theme.popup_shadow_blur, 50);
+        tvg_scene_add(p._layer, inner);
+        tvg_scene_add(paints, p._layer);
+        popups ~= p;
+        p.mount(this, inner);
+        markCssDirty(p, true);
+        popupsMoved = windowChildrenChanged = true;
+        paintRequested = accessibilityChanged = true;
+        if (p.takesFocus)
+        {
+            p._focusBefore = focusOwner;
+            p._focusShownBefore = focusShown;
+            Widget[] order;
+            p.collectTraversable(order);
+            setFocus(order.length ? order[0] : p, focusShown);
+        }
+        p.opened();
+    }
+
+    /// Hides `p`, and every popup shown over it since.
+    void hidePopup(Popup p)
+    {
+        ptrdiff_t at = -1;
+        foreach (i, q; popups)
+            if (q is p)
+                at = i;
+        if (at < 0)
+            return;
+        while (popups.length > at + 1)
+            hidePopup(popups[$ - 1]);
+        const hadFocus = isWithin(focusOwner, p);
+        forget(p);
+        p.unmountTree();
+        tvg_scene_remove(paints, p._layer); // and everything in it
+        p._layer = p._scrim = null;
+        popups = popups[0 .. at] ~ popups[at + 1 .. $];
+        p._showingIn = null;
+        // Focus back where it was, if it went into the popup and that's still here to have it
+        if (hadFocus && p._focusBefore && p._focusBefore.scene is this && !p._focusBefore.disabled)
+            setFocus(p._focusBefore, p._focusShownBefore);
+        p._focusBefore = null;
+        popupsMoved = windowChildrenChanged = true;
+        paintRequested = accessibilityChanged = true;
+        p.closed();
+    }
+
+    /// The root, and each popup: the tops of what's in the window.
+    Widget[] topLevel() nothrow
+    {
+        Widget[] all = [_root];
+        foreach (p; popups)
+            all ~= p;
+        return all;
+    }
+
 private:
     float _scale = 1.0f;
     Widget _root;
@@ -508,6 +674,124 @@ private:
         return event;
     }
 
+    /*
+        What's at `x`, `y`: the topmost popup there, or the tree -- unless a popup that hides on a
+        press elsewhere, or a modal one, is showing, when the rest of the window is out of reach.
+        A popup the pointer passes through, like a tooltip, is never what's there.
+    */
+    Widget pickAt(float x, float y) nothrow @nogc
+    {
+        bool blocked;
+        foreach_reverse (p; popups)
+        {
+            if (p.pointerTransparent)
+                continue;
+            if (auto hit = p.pick(x, y))
+                return hit;
+            blocked = blocked || p.autoHide || p.modal;
+        }
+        return blocked ? null : _root.pick(x, y);
+    }
+
+    /*
+        A press landed on `target`, which may be nothing: hides the popups over it that hide on a
+        press outside them, down to a modal one or the one it's in. Whether that's all the press
+        does -- it was outside any popup, so there's nothing for it to go to.
+    */
+    bool hidePopupsOver(Widget target)
+    {
+        bool hid;
+        for (ptrdiff_t i = cast(ptrdiff_t) popups.length - 1; i >= 0; i--)
+        {
+            auto p = popups[i];
+            if (p.pointerTransparent)
+                continue; // a tooltip over a menu doesn't stop the menu going
+            if (p.modal || !p.autoHide || isWithin(target, p))
+                break;
+            hidePopup(p); // and anything over it
+            hid = true;
+            i = cast(ptrdiff_t) popups.length; // from the top again, as it's shorter now
+        }
+        return hid && !target;
+    }
+
+    /*
+        Tooltips. Resting on a widget with one -- or on something inside it without one of its own
+        -- shows it after a moment, below it and in the middle. Moving to another soon after one
+        was showing shows the next straight away, so running the pointer along a toolbar reads
+        each in turn. A press, a key or a scroll puts it away.
+    */
+    Popup tooltip;
+    Label tooltipText;
+    Widget tooltipFor;       // what the pointer's resting on that has one
+    Timeline tooltipDelay;
+    MonoTime tooltipHiddenAt;
+
+    void tooltipHover(Widget leaf)
+    {
+        Widget w = leaf;
+        while (w && !w.tooltip.length)
+            w = w.parent;
+        if (w is tooltipFor)
+            return;
+        const wasShowing = tooltip && tooltip.showing;
+        hideTooltip();
+        tooltipFor = w;
+        if (!w || w.disabled)
+            return;
+        if (!tooltipDelay)
+            tooltipDelay = new Timeline(KeyFrame(Theme.tooltip_delay, { showTooltip(); }));
+        const recently = wasShowing || MonoTime.currTime - tooltipHiddenAt < Theme.tooltip_browse_time;
+        if (recently)
+            showTooltip();
+        else
+            tooltipDelay.playFromStart();
+    }
+
+    void showTooltip()
+    {
+        if (!tooltipFor || tooltipFor.scene !is this || !tooltipFor.tooltip.length)
+            return;
+        if (!tooltip)
+        {
+            tooltipText = new Label("").wrapText(true).maxWidth(Theme.tooltip_max_width);
+            tooltip = new Popup(tooltipText).autoHide(false).takesFocus(false).pointerTransparent(true);
+            tooltip.styleClass.add("tooltip");
+            tooltip.setAccessibleHidden(true); // the widget's description says it already
+        }
+        tooltipText.setText(tooltipFor.tooltip);
+        tooltip.show(tooltipFor, Side.below, 6, Alignment.centre);
+    }
+
+    void hideTooltip()
+    {
+        if (tooltipDelay)
+            tooltipDelay.stop();
+        if (tooltip && tooltip.showing)
+        {
+            tooltip.hide();
+            tooltipHiddenAt = MonoTime.currTime;
+        }
+    }
+
+    /// Shows the context menu of `w`, or of the nearest widget round it with one, at `x`, `y`.
+    void showContextMenu(Widget w, float x, float y)
+    {
+        while (w && !w.contextMenu)
+            w = w.parent;
+        if (w && !w.disabled)
+            w.contextMenu.showAt(w, x, y);
+    }
+
+    /// Where Tab moves and shortcuts go: the topmost popup that has focus, or the whole tree.
+    Widget focusScope() nothrow @nogc
+    {
+        foreach_reverse (p; popups)
+            if (p.modal || (p.takesFocus && isWithin(focusOwner, p)))
+                return p;
+        return _root;
+    }
+
     void pointAt(float x, float y)
     {
         pointerX = x;
@@ -519,7 +803,7 @@ private:
     void traverse(int direction)
     {
         Widget[] order;
-        _root.collectTraversable(order);
+        focusScope.collectTraversable(order);
         if (!order.length)
             return;
         ptrdiff_t at = -1;
@@ -555,6 +839,7 @@ private:
         }
         hovered = leaf;
         enter(leaf);
+        tooltipHover(leaf);
     }
 
     void enter(Widget w)
@@ -618,6 +903,8 @@ private:
 
     void pushChanged(accesskit_tree_update* update, Widget w, bool full)
     {
+        if (!w.visible)
+            return; // nor is anything under it; it'll all be sent again when it's shown
         if ((full || w.accessibleDirty) && !w.accessibleHidden)
         {
             auto n = w.buildAccessible(update);

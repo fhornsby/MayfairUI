@@ -53,10 +53,11 @@ struct StyleContext
     float em = Theme.text_size;
     bool animate; // whether a change can transition: not the first time a widget's styled
 
-    /// The declared value of `name` for the widget, or the nearest ancestor that declares it.
+    /// The declared value of `name` for the widget, or the nearest ancestor that declares it --
+    /// for a popup, the ancestors of what it's shown for (see styleParent).
     const(Value)* lookup(string name)
     {
-        for (auto w = widget; w; w = w.parent)
+        for (auto w = widget; w; w = styleParent(w))
             if (auto d = find(w.declared, name))
                 return d.value;
         return null;
@@ -120,6 +121,17 @@ void styleValue(T)(Widget w, ref StyleContext c, const(string)[] names, T curren
         }
     }
     set(target);
+}
+
+/*
+    Where `w` takes its variables and inherited properties from: its parent, or for a popup, which
+    has none, the widget it's shown for. So a menu opened from a card with its own --accent has
+    it too, and everything in a popup follows the colour scheme as the window does. Selectors
+    still go by the real tree: a popup isn't inside what opened it, as far as `.card .item` goes.
+*/
+Widget styleParent(Widget w) nothrow @nogc
+{
+    return w.parent ? w.parent : w.styleOwner;
 }
 
 /// Stops the transition of `w`'s property `name`, if one's running: code set it, and that's final.
@@ -652,6 +664,8 @@ void applyCss(Scene scene)
         return;
     scene.cssRequested = false;
     restyleTree(scene, scene.root, false);
+    foreach (p; scene.popups)
+        restyleTree(scene, p, false);
 }
 
 private:
@@ -891,7 +905,7 @@ bool restyle(Scene scene, Widget w)
         {
             auto d = find(declared, name);
             if (!d && property.inherits)
-                for (auto a = w.parent; a && !d; a = a.parent)
+                for (auto a = styleParent(w); a && !d; a = styleParent(a))
                     d = find(a.declared, name);
             if (d)
             {

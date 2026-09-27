@@ -163,6 +163,8 @@ enum KeyCode : uint
     f10 = 0x40000043,
     f11 = 0x40000044,
     f12 = 0x40000045,
+    application = 0x40000065, /// The Menu key, between the right Windows key and Ctrl
+    menu = 0x40000076,        /// A Menu key, on the keyboards that have one by that name
 }
 
 /*

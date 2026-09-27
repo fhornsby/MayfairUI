@@ -28,6 +28,7 @@ Dock buildGallery(string start = null)
         Page("Animation", "media-playback-start-symbolic", animationPage(&report)),
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
+        Page("Popups", "view-more-symbolic", popupsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
     ];
@@ -48,7 +49,8 @@ Dock buildGallery(string start = null)
     sidebar.selectedIndexProperty.addListener((int was, int now) { dock.setCentre(panes[now]); });
 
     // Light or dark: the desktop's until the switch is used
-    auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"));
+    auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"))
+        .tooltip("Switch between light and dark");
     auto header = new Row().spacing(12).padding(Insets(10, 16)).alignment(Pos.centreLeft)
         .add(new Icon(Image.fromData(import("tick-symbolic.svg"), "mayfair.svg")).iconSize(24))
         .add(new Label("Mayfair").style("font-size: 18px; font-weight: bold;"))
@@ -121,8 +123,10 @@ Widget buttonsPage(Report report)
             new Button("Save").graphic(new Icon("document-save-symbolic")).onAction({ report("Save"); }),
             new Button("Copy").graphic(new Icon("edit-copy-symbolic")).onAction({ report("Copy"); }),
             new Button("Delete").graphic(new Icon("user-trash-symbolic")).disable(true),
-            new Button().graphic(new Icon("edit-find-symbolic")).accessibleText("Search").onAction({ report("Search"); }),
-            new Button().graphic(new Icon("open-menu-symbolic")).accessibleText("Menu").onAction({ report("Menu"); }))))
+            new Button().graphic(new Icon("edit-find-symbolic")).accessibleText("Search").tooltip("Search")
+                .onAction({ report("Search"); }),
+            new Button().graphic(new Icon("open-menu-symbolic")).accessibleText("Menu").tooltip("Menu")
+                .onAction({ report("Menu"); }))))
         .add(section("Toggle buttons", row(
             new ToggleButton("Bold").graphic(new Icon("format-text-bold-symbolic"))
                 .onAction({ report("Bold toggled"); }),
@@ -383,6 +387,74 @@ Widget tabsPage(Report report)
 void delegate() reportClosed(Report report, string name)
 {
     return { report("Closed " ~ name); };
+}
+
+Widget popupsPage(Report report)
+{
+    // A menu from a button, as GNOME's main menus are
+    auto wrap = new CheckMenuItem("Word wrap", { report("Word wrap toggled"); }).selected(true);
+    auto appMenu = new ContextMenu()
+        .add(new MenuItem("New window", { report("New window"); }).accelerator("Ctrl+N"))
+        .add(new MenuItem("Open…", { report("Open"); }).accelerator("Ctrl+O").graphic(new Icon("document-open-symbolic")))
+        .add(new MenuItem("Save", { report("Save"); }).accelerator("Ctrl+S").graphic(new Icon("document-save-symbolic")))
+        .add(new MenuSeparator())
+        .add(wrap)
+        .add(new MenuItem("Print", { report("Print"); }).disable(true))
+        .add(new MenuSeparator())
+        .add(new MenuItem("About Mayfair", { report("About"); }));
+    auto menuButton = new MenuButton().graphic(new Icon("open-menu-symbolic")).menu(appMenu)
+        .accessibleText("Main menu").tooltip("Main menu");
+    auto menuWithText = new MenuButton("File").menu(appMenu);
+
+    // A right click anywhere in the box
+    auto area = new Stack().prefSize(320, 100);
+    area.style("background-colour: var(--field-border), var(--field); background-insets: 0, 1; background-radius: 8, 7;");
+    area.add(new Label("Right-click here, or focus the button and press the Menu key"));
+    area.contextMenu(new ContextMenu()
+        .add(new MenuItem("Cut", { report("Cut"); }).accelerator("Ctrl+X"))
+        .add(new MenuItem("Copy", { report("Copy"); }).accelerator("Ctrl+C").graphic(new Icon("edit-copy-symbolic")))
+        .add(new MenuItem("Paste", { report("Paste"); }).accelerator("Ctrl+V").graphic(new Icon("edit-paste-symbolic"))));
+
+    // Drop-downs
+    auto size = new ComboBox(["Small", "Medium", "Large", "Extra large"]).selectedIndex(1);
+    size.selectedIndexProperty.addListener((int was, int now) { report("Size: " ~ size.value); });
+    auto country = new ComboBox(["France", "Germany", "Italy", "Spain", "United Kingdom"]).promptText("Choose a country");
+    country.selectedIndexProperty.addListener((int was, int now) { report("Country: " ~ country.value); });
+
+    // Dialogs
+    auto confirm = new Button("Delete…").styleClass("danger");
+    confirm.setOnAction({
+        new Dialog("Delete “notes.txt”?")
+            .text("It will be gone for good. This can't be undone.")
+            .addButton("Cancel", { report("Kept it"); }, ButtonKind.cancel)
+            .addButton("Delete", { report("Deleted (not really)"); }, ButtonKind.default_)
+            .show(confirm);
+    });
+    auto rename = new Button("Rename…");
+    rename.setOnAction({
+        auto name = new TextField("notes.txt");
+        auto d = new Dialog("Rename");
+        d.extra(name)
+            .addButton("Cancel", null, ButtonKind.cancel)
+            .addButton("Rename", { report("Renamed to " ~ name.text); }, ButtonKind.default_)
+            .show(rename);
+    });
+    auto sheet = stylesheet!(`.danger { --base: #dc2626; --hover-base: #ef4444; --pressed-base: #b91c1c; colour: white; }`);
+
+    auto result = page("Popups", "Menus, drop-downs, tooltips and dialogs show over the window. A menu or "
+                       ~ "drop-down goes with a click outside it or Escape; a dialog dims the window until it's "
+                       ~ "answered. Rest the pointer on a button with a tooltip to see it.")
+        .add(section("Menu buttons", row(menuButton, menuWithText)))
+        .add(section("A context menu", area))
+        .add(section("Drop-downs", row(new Label("Size"), size, new Label("Country"), country)))
+        .add(section("Dialogs", row(confirm, rename)))
+        .add(section("Tooltips", row(
+            new Button().graphic(new Icon("edit-undo-symbolic")).accessibleText("Undo").tooltip("Undo the last change"),
+            new Button().graphic(new Icon("edit-redo-symbolic")).accessibleText("Redo").tooltip("Redo what was undone"),
+            new Button().graphic(new Icon("help-about-symbolic")).accessibleText("About")
+                .tooltip("A longer tooltip wraps once it's wider than a comfortable line, so it never runs off the window"))));
+    result.stylesheets.add(sheet);
+    return result;
 }
 
 Widget stylingPage(Report report)

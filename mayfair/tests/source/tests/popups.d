@@ -1,0 +1,300 @@
+module tests.popups;
+
+import core.thread : Thread;
+import core.time : msecs;
+import std.format : format;
+import std.math : abs;
+import harness;
+import mayfair;
+
+private bool near(float a, float b) { return abs(a - b) <= 0.5f; }
+
+/// Popups: placed below what they're for, or above without room; a press outside hides them and
+/// does nothing else; Escape hides them; focus goes in and comes back; they take their variables
+/// from what they're for; and they go when that does.
+void placing()
+{
+    Button owner, low, under;
+    Popup popup;
+    Label inside;
+    TextField field;
+    Column root, themed;
+    int underClicks;
+    run("popups: placing and hiding", {
+        root = new Column().padding(20).spacing(10).fillWidth(false);
+        field = new TextField("focused");
+        owner = new Button("Owner");
+        under = new Button("Under").onAction({ underClicks++; });
+        themed = new Column().style("--edge: #ff0000;");
+        themed.add(owner);
+        low = new Button("Low");
+        inside = new Label("In the popup").style("colour: var(--edge);");
+        popup = new Popup(new Column().padding(12).add(inside).add(new Button("Inside")));
+        // `under` above the owner, where the popup below the owner doesn't cover it
+        root.add(field).add(under).add(themed).add(new Widget().prefHeight(2000)).add(low);
+        return cast(Widget) root;
+    }, (Driver d) {
+        d.click(field);
+        d.ui({ popup.show(owner); });
+        d.settle();
+        Bounds p, o;
+        d.ui({
+            p = popup.boundsInScene;
+            o = owner.boundsInScene;
+            d.check(popup.showing, "showing");
+            d.expect(p.minX, o.minX, "lined up with its owner");
+            d.expect(p.minY, o.maxY + 4, "below it");
+            d.expect(owner.scene.showingPopups.length, 1);
+            d.check(!field.focused, "focus went into it");
+            d.expect(inside.textFill, Colour(255, 0, 0), "its variables from its owner's ancestors");
+        });
+
+        // The rest of the window waits: a press on another button hides the popup and that's all
+        d.click(under);
+        d.ui({
+            d.check(!popup.showing, "a press outside hides it");
+            d.expect(underClicks, 0, "and reaches nothing else");
+            d.check(field.focused, "focus back where it was");
+        });
+
+        d.ui({ popup.show(owner); });
+        d.settle();
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({ d.check(!popup.showing, "Escape hides it"); });
+
+        // Near the bottom of the window: above instead
+        d.ui({ low.scrollIntoView(); });
+        d.ui({ popup.show(low); });
+        d.settle();
+        d.ui({
+            d.check(popup.boundsInScene.maxY <= low.boundsInScene.minY, "no room below: above it");
+            popup.hide();
+        });
+
+        // What it's for going takes it too
+        d.ui({ popup.show(owner); });
+        d.settle();
+        d.ui({ themed.remove(owner); });
+        d.ui({ d.check(!popup.showing, "gone with its owner"); });
+    });
+}
+
+/// Menus: from a menu button, by the keys and the pointer; separators and disabled items skipped;
+/// a check item switched; a context menu from a right click and the Menu key.
+void menus()
+{
+    MenuButton button;
+    ContextMenu menu, context;
+    MenuItem open, save;
+    CheckMenuItem wrap;
+    Stack area;
+    string[] done;
+    run("popups: menus", {
+        open = new MenuItem("Open", { done ~= "open"; }).accelerator("Ctrl+O");
+        save = new MenuItem("Save", { done ~= "save"; });
+        wrap = new CheckMenuItem("Wrap", { done ~= "wrap"; });
+        menu = new ContextMenu().add(open).add(new MenuSeparator()).add(new MenuItem("Print").disable(true))
+            .add(save).add(wrap);
+        button = new MenuButton("Menu").menu(menu);
+        area = new Stack().prefSize(200, 100);
+        context = new ContextMenu().add(new MenuItem("Copy", { done ~= "copy"; }));
+        area.contextMenu(context);
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(button).add(area);
+    }, (Driver d) {
+        d.click(button);
+        d.ui({
+            d.check(menu.showing, "the button shows its menu");
+            d.check(menu.boundsInScene.minY >= button.boundsInScene.maxY, "below it");
+            d.check(open.focused, "the first item has focus");
+        });
+        d.key(SDL_Keycode.SDLK_DOWN);
+        d.ui({ d.check(save.focused, "Down: past the separator and what's disabled"); });
+        d.key(SDL_Keycode.SDLK_RETURN);
+        d.ui({
+            d.expect(done, ["save"], "Enter chooses it");
+            d.check(!menu.showing, "and the menu goes");
+            d.check(button.focused, "focus back on the button");
+        });
+
+        d.click(button);
+        d.click(wrap);
+        d.ui({
+            d.check(wrap.selected, "a check item, clicked, is on");
+            d.expect(done, ["save", "wrap"]);
+        });
+        d.key(SDL_Keycode.SDLK_RETURN); // on the button, which has focus again: Enter isn't its key
+        d.ui({ d.check(!menu.showing, "Enter on a menu button isn't a press"); });
+
+        // A right click on the area: its menu, at the pointer
+        Bounds a;
+        d.ui({ a = area.boundsInScene; });
+        d.click(a.minX + 30, a.minY + 40, 1, 3);
+        d.ui({
+            d.check(context.showing, "a right click shows the context menu");
+            d.check(near(context.boundsInScene.minX, a.minX + 30) && near(context.boundsInScene.minY, a.minY + 40),
+                    format!"at the pointer: %s"(context.boundsInScene));
+        });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({ button.requestFocus(); });
+        d.key(SDL_Keycode.SDLK_APPLICATION);
+        d.ui({ d.check(!context.showing, "the Menu key on something without a menu shows none"); });
+    });
+}
+
+/// Drop-downs: the list below, as wide at least, with the choice picked out; choosing from it;
+/// and Up and Down changing the choice without it.
+void comboBoxes()
+{
+    ComboBox combo;
+    int[] changes;
+    run("popups: drop-downs", {
+        combo = new ComboBox(["Small", "Medium", "Large"]).selectedIndex(1);
+        combo.selectedIndexProperty.addListener((int was, int now) { changes ~= now; });
+        return cast(Widget) new Column().padding(20).fillWidth(false).add(combo);
+    }, (Driver d) {
+        d.ui({ d.expect(combo.text, "Medium", "it shows the choice"); });
+        d.click(combo);
+        Popup list;
+        d.ui({
+            d.expect(combo.scene.showingPopups.length, 1, "a click drops the list down");
+            list = cast(Popup) combo.scene.showingPopups[0];
+            d.check(list.boundsInScene.width >= combo.boundsInScene.width, "at least as wide");
+            d.check(combo.showing, ":showing");
+        });
+        MenuItem large;
+        d.ui({ large = cast(MenuItem) (cast(ContextMenu) list).items[2]; });
+        d.click(large);
+        d.ui({
+            d.expect(combo.selectedIndex, 2, "choosing from the list chooses");
+            d.expect(combo.value, "Large");
+            d.check(!combo.showing, "and puts it away");
+        });
+        d.ui({ combo.requestFocus(); });
+        d.key(SDL_Keycode.SDLK_UP);
+        d.ui({
+            d.expect(combo.value, "Medium", "Up: the one before, without the list");
+            d.expect(combo.scene.showingPopups.length, 0);
+        });
+        d.key(SDL_Keycode.SDLK_RETURN);
+        d.ui({ d.check(combo.showing, "Enter drops it down"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({
+            d.check(!combo.showing, "Escape puts it away");
+            d.expect(changes, [2, 1]);
+        });
+    });
+}
+
+/// Dialogs: modal, so a click outside does nothing; Enter presses the default button and Escape the
+/// cancel one; and each closes it.
+void dialogs()
+{
+    Button open, under;
+    Dialog dialog;
+    string[] answers;
+    int underClicks;
+    run("popups: dialogs", {
+        open = new Button("Open");
+        under = new Button("Under").onAction({ underClicks++; });
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(open).add(under);
+    }, (Driver d) {
+        void show()
+        {
+            d.ui({
+                dialog = new Dialog("Delete it?").text("For good.")
+                    .addButton("Cancel", { answers ~= "cancel"; }, ButtonKind.cancel)
+                    .addButton("Delete", { answers ~= "delete"; }, ButtonKind.default_);
+                dialog.show(open);
+            });
+            d.settle();
+        }
+        show();
+        d.ui({
+            d.check(dialog.showing && dialog.modal, "showing, modal");
+            const b = dialog.boundsInScene, w = open.scene.root.boundsInScene;
+            d.check(near(b.centreX, w.centreX) && near(b.centreY, w.centreY), "in the middle of the window");
+        });
+        d.click(under);
+        d.ui({
+            d.check(dialog.showing, "a click outside doesn't close it");
+            d.expect(underClicks, 0, "or reach what's behind");
+        });
+        d.key(SDL_Keycode.SDLK_RETURN);
+        d.ui({
+            d.expect(answers, ["delete"], "Enter: the default button");
+            d.check(!dialog.showing, "which closes it");
+        });
+        show();
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({
+            d.expect(answers, ["delete", "cancel"], "Escape: the cancel button");
+            d.check(!dialog.showing, "which closes it too");
+        });
+    });
+}
+
+/// Tooltips: shown after resting on something, below it; gone when the pointer leaves or presses;
+/// the next shown at once, while one was just showing.
+void tooltips()
+{
+    Button first, second, plain;
+    run("popups: tooltips", {
+        first = new Button("First").tooltip("The first");
+        second = new Button("Second").tooltip("The second");
+        plain = new Button("Plain");
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(first).add(second).add(plain);
+    }, (Driver d) {
+        const(Popup)[] showing() { return first.scene.showingPopups; }
+        d.move(first.boundsInScene.centreX, first.boundsInScene.centreY);
+        d.ui({ d.expect(showing.length, 0, "not straight away"); });
+        Thread.sleep(700.msecs);
+        d.ui({
+            d.expect(showing.length, 1, "after resting on it");
+            d.check(showing.length && showing[0].boundsInScene.minY >= first.boundsInScene.maxY, "below it");
+            d.check(showing.length && showing[0].pointerTransparent, "and the pointer passes through it");
+        });
+        d.move(second.boundsInScene.centreX, second.boundsInScene.centreY);
+        d.ui({ d.expect(showing.length, 1, "the next at once, as one was showing"); });
+        d.move(plain.boundsInScene.centreX, plain.boundsInScene.centreY);
+        d.ui({ d.expect(showing.length, 0, "gone over something without one"); });
+        d.move(first.boundsInScene.centreX, first.boundsInScene.centreY);
+        Thread.sleep(700.msecs);
+        d.click(first);
+        d.ui({ d.expect(showing.length, 0, "a press puts it away"); });
+        d.ui({ second.setDisable(true); });
+        d.move(second.boundsInScene.centreX, second.boundsInScene.centreY);
+        Thread.sleep(1500.msecs);
+        d.ui({ d.expect(showing.length, 0, "none over something disabled"); });
+    });
+}
+
+/// Visible: a widget that isn't takes no room, can't be clicked or reached by Tab, and is back as it was.
+void visibility()
+{
+    Button a, b, c;
+    int clicks;
+    run("popups: visible", {
+        a = new Button("A");
+        b = new Button("B").onAction({ clicks++; });
+        c = new Button("C");
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(a).add(b).add(c);
+    }, (Driver d) {
+        Bounds where;
+        float cTop;
+        d.ui({
+            where = b.boundsInScene;
+            cTop = c.boundsInScene.minY;
+            b.setVisible(false);
+        });
+        d.settle();
+        d.ui({ d.expect(c.boundsInScene.minY, where.minY, "not visible: it takes no room"); });
+        d.click(where.centreX, where.centreY);
+        d.ui({ d.expect(clicks, 0, "and can't be clicked"); });
+        d.ui({ a.requestFocus(); });
+        d.key(SDL_Keycode.SDLK_TAB);
+        d.ui({ d.check(c.focused, "Tab goes past it"); });
+        d.ui({ b.setVisible(true); });
+        d.settle();
+        d.ui({ d.expect(c.boundsInScene.minY, cTop, "visible again: where it was"); });
+    });
+}

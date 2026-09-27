@@ -52,6 +52,9 @@
     --row-hover: #0f172a0f;          /* a list's entry under the pointer */
     --row-selected: #0284c726;       /* and the one chosen, tinted with the accent */
     --divider: #cbd5e1;              /* a line between parts */
+    --popup: #ffffff;                /* a menu's, a drop-down's, a dialog's surface */
+    --tooltip: #1e293bee;            /* a tooltip, dark in both schemes */
+    --tooltip-text: #f8fafc;
 }
 
 @media (prefers-colour-scheme: dark) {
@@ -83,6 +86,9 @@
         --row-hover: #e2e8f014;
         --row-selected: #38bdf833;
         --divider: #334155;
+        --popup: #1e293b;
+        --tooltip: #020617ee;
+        --tooltip-text: #e2e8f0;
     }
 }
 
@@ -438,4 +444,110 @@
     border-colour: var(--focus);
     border-width: 2;
     border-radius: 6;
+}
+
+/*
+    Popups: menus, drop-down lists and dialogs, on a surface of their own over the window, with a
+    thin edge -- the shadow round it is drawn for every popup, not styled.
+*/
+.popup {
+    background-colour: var(--field-border), var(--popup);
+    background-insets: 0, 1;
+    background-radius: 10, 9;
+}
+
+.tooltip {
+    background-colour: var(--tooltip);
+    background-insets: 0;
+    background-radius: 6;
+    padding: 5 9;
+}
+
+.tooltip .label {
+    colour: var(--tooltip-text);
+    font-size: 13px;
+}
+
+.menu {
+    padding: 6;
+}
+
+.menu-item {
+    padding: 6 10;
+    graphic-text-gap: 10;
+    background-colour: transparent;
+    background-radius: 6;
+    colour: var(--text);
+    min-width: 160;
+}
+
+.menu-item:hover, .menu-item:focus-visible {
+    background-colour: var(--row-hover);
+}
+
+.menu-item:disabled {
+    opacity: 0.4;
+}
+
+.menu-item > .accelerator {
+    colour: var(--prompt-text);
+    padding: 0 0 0 24;
+}
+
+.separator {
+    height: 13;
+    background-colour: var(--divider);
+    background-insets: 6 4;   /* a line across the middle */
+}
+
+.menu-button:showing {
+    --face: var(--pressed-base);
+}
+
+.combo-box {
+    --face: var(--field);
+    background-colour: var(--field-border), var(--face);
+    background-insets: 0, 1;
+    background-radius: 6, 5;
+    padding: 7 10;
+    colour: var(--text);
+    min-width: 140;
+    transition: background-colour 150ms ease-out;
+}
+
+.combo-box:hover {
+    background-colour: var(--field-hover-border), var(--face);
+}
+
+.combo-box:showing, .combo-box:focus-visible {
+    background-colour: var(--focus), var(--face);
+    background-insets: 0, 2;
+}
+
+.combo-box:prompt {
+    colour: var(--prompt-text);
+}
+
+.combo-box:disabled {
+    opacity: 0.4;
+}
+
+.dialog {
+    min-width: 320;
+    max-width: 480;
+}
+
+.dialog-box {
+    padding: 20;
+    gap: 12;
+}
+
+.dialog .title {
+    font-size: 17px;
+    font-weight: bold;
+}
+
+.dialog .buttons {
+    gap: 8;
+    padding: 8 0 0 0;
 }

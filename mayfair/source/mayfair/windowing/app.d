@@ -282,7 +282,7 @@ void update() {
 
     if (_scene.takePaintRequest())
         needsPaint = true;
-    if (YGNodeIsDirty(_scene.root.node))
+    if (_scene.layoutNeeded())
         needsLayout = true;
 }
 

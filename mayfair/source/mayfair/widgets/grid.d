@@ -357,8 +357,6 @@ private:
     }
 }
 
-/// Where in its cell something that doesn't fill it sits, along a column or down a row.
-enum Alignment { start, centre, end }
 
 /*
     One column's or row's settings, from Grid.column() or Grid.row(). Each returns the track, so

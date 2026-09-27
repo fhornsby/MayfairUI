@@ -20,6 +20,10 @@ public import mayfair.widgets.lottieview;
 public import mayfair.widgets.scrollpane;
 public import mayfair.widgets.tabpane;
 public import mayfair.widgets.navigationlist;
+public import mayfair.widgets.popup;
+public import mayfair.widgets.menu;
+public import mayfair.widgets.combobox;
+public import mayfair.widgets.dialog;
 public import mayfair.widgets.input;
 public import mayfair.widgets.styling;
 

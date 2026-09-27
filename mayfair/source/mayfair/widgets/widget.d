@@ -7,6 +7,7 @@ import mayfair.renderers.thorvg;
 import mayfair.layout;
 import mayfair.css;
 import mayfair.widgets.scene;
+import mayfair.widgets.popup : Popup;
 import mayfair.widgets.input;
 import mayfair.widgets.region;
 import mayfair.widgets.styling;
@@ -474,6 +475,21 @@ public:
     mixin(declareProperty!(string, "accessibleHelp", "null", q{ invalidateAccessible(); }));
 
     /*
+        Whether it's there at all: shown, laid out, clickable, reachable by Tab and a screen reader.
+        Not visible, it takes no room, as GNOME's widgets do -- a dialog without text leaves no gap
+        where the text would be. Everything below it goes with it. JavaFX's visible, with managed.
+    */
+    mixin(declareProperty!(bool, "visible", "true", q{ visibilityChanged(); }));
+
+    /// A short line about it, shown when the pointer rests on it, and read out by a screen reader
+    /// as its description if accessibleHelp doesn't say otherwise. JavaFX's tooltip.
+    mixin(declareProperty!(string, "tooltip", "null", q{ invalidateAccessible(); }));
+
+    /// A menu for it: shown where it's pressed with the secondary button, or below it by the Menu
+    /// key or Shift+F10 while it has focus. What's inside it without a menu of its own has its.
+    mixin(declareProperty!(Popup, "contextMenu", "null"));
+
+    /*
         Leaves this widget out of the accessibility tree, and puts its children where it would have
         been. For a widget that's part of how another is drawn rather than a thing in its own
         right: a button's text is its name, not a label inside it.
@@ -567,7 +583,7 @@ public:
 
         // Opacity and scale are the parent's times its own, for every paint of this widget's. Set
         // only when they change, and before paint(), which can then set its own opacities on top.
-        const opacity = parentOpacity * clamp01(_opacity);
+        const opacity = _visible ? parentOpacity * clamp01(_opacity) : 0; // not visible: drawn clear
         Tvg_Matrix matrix = parentMatrix;
         if (_scaleX != 1 || _scaleY != 1)
         {
@@ -896,6 +912,7 @@ package:
     bool cssDirty = true, cssBelow, cssChildDirty; // to restyle: it, what's below it, something below it
     bool updateRequested;                          // see requestUpdate()
     final void runUpdate() { update(); }
+    Widget styleOwner;                 // for a popup: what it's shown for, whose variables it takes
     YGNodeRef cellNode;                // the cell it's in, if its parent places its children
     float cellX = 0, cellY = 0;        // where in its parent that cell is
     bool arrangeNeeded = true;         // for a widget that places its children: they need placing again
@@ -1024,6 +1041,8 @@ package:
             described.label(_accessibleText);
         if (_accessibleHelp.length)
             described.description(_accessibleHelp);
+        else if (_tooltip.length)
+            described.description(_tooltip);
         return n;
     }
 
@@ -1045,6 +1064,8 @@ package:
     {
         foreach (child; _children)
         {
+            if (!child._visible)
+                continue;
             if (child._accessibleHidden)
                 child.pushAccessibleChildren(n);
             else
@@ -1102,7 +1123,7 @@ package:
     /// Adds this widget and those below it that Tab can move focus to, in tree order.
     final void collectTraversable(ref Widget[] into)
     {
-        if (_disable)
+        if (_disable || !_visible)
             return;
         if (_focusTraversable && isTabStop)
             into ~= this;
@@ -1117,6 +1138,8 @@ package:
     */
     final Widget pick(float x, float y) nothrow @nogc
     {
+        if (!_visible)
+            return null;
         // A widget that has never been painted has a NaN rectangle, which contains nothing
         const inside = x >= painted.x && x < painted.x + painted.w && y >= painted.y && y < painted.y + painted.h;
         if (inside && claimsPoint(x, y))
@@ -1413,6 +1436,17 @@ private:
         if that changed, tells the widget and goes on down to its children, whose depends on it.
         Called when `disable` is set and when the widget moves to a different parent.
     */
+    void visibilityChanged()
+    {
+        YGNodeStyleSetDisplay(node, _visible ? YGDisplayFlex : YGDisplayNone);
+        invalidate();
+        invalidateAccessibleTree(); // gone from what a screen reader sees, or back, with all it holds
+        if (parent)
+            parent.invalidateAccessible();
+        if (!_visible && scene)
+            scene.forgetFocusWithin(this);
+    }
+
     void refreshDisabled()
     {
         const now = _disable || (parent && parent.disabled);
