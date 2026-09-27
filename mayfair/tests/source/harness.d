@@ -139,6 +139,22 @@ final class Driver
         settle();
     }
 
+    /// The wheel or a touchpad, with the pointer at `x`, `y`, in SDL's amounts: notches of a
+    /// wheel, or tenths of one for a touchpad. `dy` is positive away from the user, `dx` to the right.
+    void scroll(float x, float y, float dy, float dx = 0)
+    {
+        SDL_Event e;
+        e.type = SDL_EventType.SDL_EVENT_MOUSE_WHEEL;
+        e.wheel.windowID = windowID;
+        e.wheel.which = harnessDevice;
+        e.wheel.x = dx;
+        e.wheel.y = dy;
+        e.wheel.mouse_x = x * pointsToWindow;
+        e.wheel.mouse_y = y * pointsToWindow;
+        SDL_PushEvent(&e);
+        settle();
+    }
+
     void press(float x, float y, ubyte clicks = 1, ubyte button = 1) { mouseButton(true, x, y, clicks, button); }
     void release(float x, float y, ubyte clicks = 1, ubyte button = 1) { mouseButton(false, x, y, clicks, button); }
 
@@ -213,6 +229,7 @@ void run(string name, Widget delegate() build, void delegate(Driver) script)
 
     auto app = new App(name);
     app.scene = new Scene(build());
+    app.scene.setColorScheme(ColorScheme.dark); // the same colours whatever the desktop's set to
 
     auto driver = new Thread({
         scope(exit)
@@ -300,7 +317,7 @@ extern(C) bool onlyHarnessInput(void* userdata, SDL_Event* e) nothrow @nogc
         case SDL_EventType.SDL_EVENT_MOUSE_MOTION: return e.motion.which == harnessDevice;
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP: return e.button.which == harnessDevice;
-        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL: return false;
+        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL: return e.wheel.which == harnessDevice;
         case SDL_EventType.SDL_EVENT_KEY_DOWN:
         case SDL_EventType.SDL_EVENT_KEY_UP: return e.key.which == harnessDevice;
         case SDL_EventType.SDL_EVENT_TEXT_INPUT: return e.text.reserved == harnessDevice;

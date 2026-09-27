@@ -42,6 +42,7 @@ enum AccessibleRole
     menu,
     menuItem,
     textRun,           /// A stretch of a text field's text, with its characters laid out: see TextField
+    scrollPane,        /// Something that scrolls what's in it; its position goes in AccessibleNode.scroll
 }
 
 /// Something assistive technology can ask a widget to do. JavaFX's AccessibleAction.
@@ -57,6 +58,12 @@ enum AccessibleAction
     setValue,            /// Replace all of its text with AccessibleActionData.value
     replaceSelectedText, /// Replace the selected text with AccessibleActionData.value
     setTextSelection,    /// Select what AccessibleActionData.anchor and .focus say
+    scrollUp,            /// Scroll by a step, or a page if AccessibleActionData.page says so
+    scrollDown,          /// ditto
+    scrollLeft,          /// ditto
+    scrollRight,         /// ditto
+    scrollIntoView,      /// Scroll whatever it's in so it shows. Every widget in something that scrolls can.
+    setScrollOffset,     /// Scroll to AccessibleActionData.scrollX and .scrollY, in points
 }
 
 /// A place in a text field's text, as assistive technology gives it: the text run it's in, by
@@ -74,6 +81,9 @@ struct AccessibleActionData
     string value;                  /// For setValue and replaceSelectedText
     AccessibleTextPosition anchor; /// For setTextSelection: where the selection starts,
     AccessibleTextPosition focus;  /// and where it ends, which is where the caret goes
+    bool page;                     /// For scrollUp and the rest: a page rather than a step
+    double number = double.nan;    /// For setValue on something numeric, like a slider; NaN if it gave text
+    float scrollX = 0, scrollY = 0;  /// For setScrollOffset
 }
 
 /// A new node id, for a node a widget adds below itself that isn't a widget of its own -- a text
@@ -116,6 +126,23 @@ struct AccessibleNode
         accesskit_node_add_action(node, toAccessKit(action));
     }
 
+    /// A number it stands for, and the range it's in: a slider's value, a progress bar's
+    /// progress. `step` is how far increment and decrement move it; 0 for none.
+    void numeric(double value, double min, double max, double step = 0) nothrow @nogc
+    {
+        accesskit_node_set_numeric_value(node, value);
+        accesskit_node_set_min_numeric_value(node, min);
+        accesskit_node_set_max_numeric_value(node, max);
+        if (step > 0)
+            accesskit_node_set_numeric_value_step(node, step);
+    }
+
+    /// That a check box is neither on nor off: some of what it stands for is, and some isn't.
+    void mixed() nothrow @nogc
+    {
+        accesskit_node_set_toggled(node, ACCESSKIT_TOGGLED_MIXED);
+    }
+
     /// Whether a toggle button or check box is on.
     void toggled(bool on) nothrow @nogc
     {
@@ -128,16 +155,33 @@ struct AccessibleNode
         accesskit_node_set_placeholder_with_length(node, text.ptr, text.length);
     }
 
+    /*
+        How far it's scrolled, in points: `x` and `y` from the top left of what it holds, and up to
+        `maxX` and `maxY` at most. An axis it doesn't scroll along has a max of 0.
+    */
+    void scroll(float x, float maxX, float y, float maxY) nothrow @nogc
+    {
+        accesskit_node_set_scroll_x(node, x);
+        accesskit_node_set_scroll_x_min(node, 0);
+        accesskit_node_set_scroll_x_max(node, maxX);
+        accesskit_node_set_scroll_y(node, y);
+        accesskit_node_set_scroll_y_min(node, 0);
+        accesskit_node_set_scroll_y_max(node, maxY);
+    }
+
     /// That its value can be read and selected but not changed.
     void readOnly() nothrow @nogc
     {
         accesskit_node_set_read_only(node);
     }
 
-    /// Where it is, in points from the window's top left. Widgets get theirs for nothing; this is
-    /// for nodes added with addChild().
+    /// Where it is, in the points its widget paints in: what paint() was given, which scrolling
+    /// has moved from where it's seen, and this moves back. Widgets get theirs for nothing; this
+    /// is for nodes added with addChild().
     void bounds(float x, float y, float w, float h) nothrow @nogc
     {
+        x += shiftX;
+        y += shiftY;
         accesskit_node_set_bounds(node, accesskit_rect(x, y, x + w, y + h));
     }
 
@@ -181,10 +225,21 @@ struct AccessibleNode
     */
     void addChild(ulong id, AccessibleRole role, scope void delegate(ref AccessibleNode child) describe)
     {
-        auto child = AccessibleNode(accesskit_node_new(toAccessKit(role)), update);
+        auto child = AccessibleNode(accesskit_node_new(toAccessKit(role)), update, shiftX, shiftY);
         describe(child);
         accesskit_tree_update_push_node(update, id, child.node); // which takes it over
         accesskit_node_push_child(node, id);
+    }
+
+    /// For a text run: the run after it on the same line, and the one before. A run with none
+    /// after it ends its line.
+    void nextOnLine(ulong id) nothrow @nogc { accesskit_node_set_next_on_line(node, id); }
+    void previousOnLine(ulong id) nothrow @nogc { accesskit_node_set_previous_on_line(node, id); } /// ditto
+
+    /// Its bounds in points from the window's top left, as they're seen: not moved as bounds() moves them.
+    void boundsInScene(float x, float y, float w, float h) nothrow @nogc
+    {
+        accesskit_node_set_bounds(node, accesskit_rect(x, y, x + w, y + h));
     }
 
     /// AccessKit's own node, for any of its properties without a name here.
@@ -193,6 +248,7 @@ struct AccessibleNode
 package(mayfair):
     accesskit_node* node;
     accesskit_tree_update* update; // the update it's going out in, which added children go in too
+    float shiftX = 0, shiftY = 0;  // from where the widget paints to where it's seen: see bounds()
 }
 
 package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
@@ -216,6 +272,7 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.menu:              return ACCESSKIT_ROLE_MENU;
         case AccessibleRole.menuItem:          return ACCESSKIT_ROLE_MENU_ITEM;
         case AccessibleRole.textRun:           return ACCESSKIT_ROLE_TEXT_RUN;
+        case AccessibleRole.scrollPane:        return ACCESSKIT_ROLE_SCROLL_VIEW;
     }
 }
 
@@ -233,6 +290,12 @@ package(mayfair) accesskit_action toAccessKit(AccessibleAction action) nothrow @
         case AccessibleAction.setValue:     return ACCESSKIT_ACTION_SET_VALUE;
         case AccessibleAction.replaceSelectedText: return ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT;
         case AccessibleAction.setTextSelection:    return ACCESSKIT_ACTION_SET_TEXT_SELECTION;
+        case AccessibleAction.scrollUp:            return ACCESSKIT_ACTION_SCROLL_UP;
+        case AccessibleAction.scrollDown:          return ACCESSKIT_ACTION_SCROLL_DOWN;
+        case AccessibleAction.scrollLeft:          return ACCESSKIT_ACTION_SCROLL_LEFT;
+        case AccessibleAction.scrollRight:         return ACCESSKIT_ACTION_SCROLL_RIGHT;
+        case AccessibleAction.scrollIntoView:      return ACCESSKIT_ACTION_SCROLL_INTO_VIEW;
+        case AccessibleAction.setScrollOffset:     return ACCESSKIT_ACTION_SET_SCROLL_OFFSET;
     }
 }
 

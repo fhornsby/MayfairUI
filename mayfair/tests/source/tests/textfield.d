@@ -99,10 +99,10 @@ void mouse()
         d.preserveClipboard();
         // Where each word is, from the field's own layout rather than guessed pixels
         Bounds b;
-        float two, three, one;
+        float two, three, one, left;
         d.ui({
             b = field.boundsInScene;
-            const left = b.minX + Theme.text_field_padding_x;
+            left = b.minX + field.padding.left; // the theme's
             auto line = editableLine(field.font, field.text);
             one = left + line.xAt(1);
             two = left + line.xAt(5);
@@ -118,7 +118,7 @@ void mouse()
         d.release(one, y, 2);
 
         d.ui({ Clipboard.primary = "PRIMARY"; field.setText("ab"); });
-        d.click(b.minX + Theme.text_field_padding_x, y, 1, 2); // middle button, before the "a"
+        d.click(left, y, 1, 2); // middle button, before the "a"
         expect("PRIMARYab|7 7 []", "a middle click pastes the primary selection where it's clicked");
     });
 }

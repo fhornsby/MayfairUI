@@ -11,6 +11,8 @@ import core.time : Duration, MonoTime;
 import mayfair.animation;
 import mayfair.renderers;
 import mayfair.widgets;
+import mayfair.widgets.styling : applyCss;
+import mayfair.theme : Theme;
 import mayfair.trace;
 import mayfair.accessibility;
 import mayfair.windowing.accessibility;
@@ -78,7 +80,7 @@ size_t inputTextUsed;
 Widget textInputWidget;
 SDL_Rect textInputRect;
 int textInputCursor;
-bool repickPending;        // the layout changed, so what's under the pointer may have too
+bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
 
 /*
     HiDPI. Layout and paint work in points; the scene transform turns those into device pixels, so
@@ -163,6 +165,14 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
               event.window.data1, event.window.data2, traceMs(event.common.timestamp, traceNow()));
 
     switch (event.type) {
+        case SDL_EventType.SDL_EVENT_SYSTEM_THEME_CHANGED:
+            // The desktop went light or dark: restyled in the next update, if the scene follows it
+            const scheme = systemColorScheme();
+            if (scheme != _scene.platformColorScheme) {
+                _scene.platformColorScheme = scheme;
+                _scene.restyleAll();
+            }
+            break;
         case SDL_EventType.SDL_EVENT_QUIT:
             running = false;
             break;
@@ -224,6 +234,10 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
             if (event.button.windowID == SDL_GetWindowID(window))
                 queueInputEvent(event);
             break;
+        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
+            if (event.wheel.windowID == SDL_GetWindowID(window))
+                queueInputEvent(event);
+            break;
         default:
             // AccessKit's requests, posted from its own thread, and Platform.runLater()'s tasks.
             // They're for the widgets, so they wait for update() like the rest of the input, and
@@ -261,6 +275,7 @@ void update() {
 
     lastUpdate = traceNow();
     pulseAnimations(MonoTime.currTime);
+    applyCss(_scene); // what the input and animations changed, restyled before layout
 
     updateTextInput();
     updateCursor();
@@ -318,9 +333,34 @@ void updateCursor() {
         SDL_SetCursor(cursors[wanted]);
 }
 
+/// The desktop's light or dark preference, which SDL reads from the XDG portal on Linux. Light
+/// when there's none to read, as JavaFX's default is.
+ColorScheme systemColorScheme() nothrow @nogc {
+    return SDL_GetSystemTheme() == SDL_SystemTheme.SDL_SYSTEM_THEME_DARK ? ColorScheme.dark : ColorScheme.light;
+}
+
 /// Points back to SDL's window coordinates, the opposite of toPoints().
 int toWindow(float points) nothrow @nogc {
     return cast(int)(points * scale / SDL_GetWindowPixelDensity(window) + 0.5f);
+}
+
+/*
+    How many points one of SDL's wheel amounts is. SDL gives a wheel in notches, and a touchpad in
+    tenths of a notch's worth of finger movement -- SDL divides the pixels Wayland gives it by ten
+    -- and doesn't say which it's giving. The difference matters: a notch wants JavaFX's 40
+    points, where a touchpad should follow the fingers.
+
+    The amounts tell them apart. A wheel moves in whole notches, or a high-resolution one in
+    eighths of one, where a touchpad's movement comes in 256ths of a pixel and is almost never
+    exactly that. When it is, a touchpad's step is taken for a wheel's -- one in a few hundred,
+    and a fraction of a notch at most. If SDL ever says which it is, this is the place to use it.
+*/
+float wheelPoints(float amount) nothrow @nogc {
+    import std.math : abs, round;
+    const eighths = amount * 8;
+    if (abs(eighths - round(eighths)) < 1e-4f)
+        return amount * Theme.scroll_step;
+    return amount * 10; // SDL's tenth of a notch was 10 pixels, which on a touchpad are points
 }
 
 void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
@@ -339,6 +379,16 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
             _scene.mouseReleased(toPoints(event.button.x), toPoints(event.button.y),
                                  mouseButton(event.button.button), event.button.clicks);
+            break;
+        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
+            float dx = wheelPoints(event.wheel.x), dy = wheelPoints(event.wheel.y);
+            // Shift turns the wheel sideways, as it does everywhere else on the desktop
+            if ((mods & SDL_Keymod.KMOD_SHIFT) && dx == 0) {
+                dx = dy;
+                dy = 0;
+            }
+            // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
+            _scene.scrolled(toPoints(event.wheel.mouse_x), toPoints(event.wheel.mouse_y), -dx, dy);
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
             _scene.mouseLeft();
@@ -427,6 +477,7 @@ void layout() nothrow @nogc {
 void paint() nothrow @nogc {
     _scene.paint(viewWidth / scale, viewHeight / scale);
     needsPresent = true;
+    repickPending = true; // scrolling moves things with no layout
 }
 
 /// 5. Present: the GPU draws the scene, and the frame is handed to the window.
@@ -517,6 +568,8 @@ public:
             _scene = new Scene(new Widget); // nothing to show, but everything below still works
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();
+        _scene.platformColorScheme = systemColorScheme();
+        applyCss(_scene); // styled before it's first laid out
         updateScale(); // needs both the window and the scene, so it goes after the two of them
         updateRefreshRate();
         trace("start video driver %s, renderer %s", SDL_GetCurrentVideoDriver(), renderer.name());

@@ -6,8 +6,14 @@ import mayfair.renderers.thorvg;
 import mayfair.trace;
 import mayfair.layout;
 import mayfair.theme;
+import mayfair.css;
 import mayfair.widgets.widget;
 import mayfair.widgets.input;
+import mayfair.widgets.styling;
+
+/// Light or dark, as a desktop's preference or a scene's own choice. JavaFX's ColorScheme, and
+/// `system` for following the desktop's.
+enum ColorScheme { system, light, dark }
 
 /*
     A Scene is what a window shows: one widget, the tree hanging off it, and the colour behind it.
@@ -39,6 +45,27 @@ public:
     /// The widget at the top of the tree.
     inout(Widget) root() inout nothrow @nogc { return _root; }
 
+    /// Stylesheets for everything in the scene, over the built-in theme. JavaFX's getStylesheets().
+    final StylesheetList stylesheets()
+    {
+        if (!_stylesheets)
+            _stylesheets = new StylesheetList(&restyleAll);
+        return _stylesheets;
+    }
+
+    /// A theme to use in place of the built-in one. JavaFX's Scene.userAgentStylesheet.
+    mixin(declareProperty!(Stylesheet, "userAgentStylesheet", "null", q{ restyleAll(); }));
+
+    /// Whether stylesheets' @media (prefers-colour-scheme) rules see it as light or dark: the
+    /// desktop's choice, unless it's given one of its own.
+    mixin(declareProperty!(ColorScheme, "colorScheme", "ColorScheme.system", q{ restyleAll(); }));
+
+    /// Light or dark, as the scene is styled now.
+    ColorScheme effectiveColorScheme() const nothrow @nogc
+    {
+        return _colorScheme == ColorScheme.system ? platformColorScheme : _colorScheme;
+    }
+
     /*
         Everything below goes in one ThorVG scene so that HiDPI is a single transform on it, and
         painting can work in points and never mention scale. A scene with no effects and full opacity
@@ -59,7 +86,8 @@ public:
         tvg_shape_set_fill_color(background, _fill.tupleof);
         tvg_scene_add(paints, background); // added first, so it's drawn behind the tree
 
-        _root.mount(this);
+        _root.styleClass.add("root"); // what a theme's .root rule, and its variables, are for
+        _root.mount(this, paints);
 
         // The root fills the window. It's in percentages so a resize doesn't have to restyle it:
         // layout() passes the window size for them to resolve against.
@@ -68,12 +96,20 @@ public:
     }
 
     /*
-        Lets go of the config. The nodes aren't the scene's to free -- each belongs to its widget,
-        which frees it when it goes -- so they're only moved off the config first. The paints belong
-        to the canvas, which releases them itself.
+        Lets go of the canvas and the config, as the window closes. The tree is unmounted first,
+        while the canvas is still there: the canvas frees every paint when it goes, and a widget
+        still holding one -- or still playing an animation that draws into one, as a LottieView
+        does -- would be left using freed memory. Unmounted, each widget has let go of its paints
+        and put anything under way back to rest, and could be shown again in another scene.
+
+        The nodes aren't the scene's to free -- each belongs to its widget, which frees it when it
+        goes -- so they're only moved off the config first.
     */
-    void detach() nothrow @nogc
+    void detach() nothrow
     {
+        try
+            _root.unmountTree();
+        catch (Exception) {}
         releaseConfig(_root);
         YGConfigFree(config);
     }
@@ -125,6 +161,7 @@ package:
     Tvg_Paint paints;
     bool paintRequested; // set by Widget.invalidate(), so the app knows to paint
     bool accessibilityChanged = true; // set by Widget.invalidateAccessible(), and by focus moving
+    bool cssRequested = true; // set by markCssDirty(), for the next style pass
 
 package:
     // What a widget asks of its scene.
@@ -142,6 +179,10 @@ package:
             refreshFocus(previous);
         if (w)
             refreshFocus(w);
+        // Tab to something scrolled out of view and it's scrolled into it. A click doesn't, as it
+        // would move what's being clicked out from under the pointer.
+        if (w && shown && w !is previous)
+            w.scrollIntoView();
     }
 
     bool focusOwnerIs(const Widget w) const nothrow @nogc { return focusOwner is w; }
@@ -175,6 +216,17 @@ package:
     }
 
 package(mayfair):
+    ColorScheme platformColorScheme = ColorScheme.light; // the desktop's, as the App last heard it
+
+    /// Everything to be restyled: a stylesheet or the colour scheme changed.
+    void restyleAll() nothrow @nogc
+    {
+        if (!_root)
+            return;
+        markCssDirty(_root, true);
+        cssRequested = true;
+    }
+
     /*
         The accessibility tree, as AccessKit wants it: every node if `full`, which is what it asks
         for when a screen reader first connects, and otherwise only the widgets that changed since
@@ -315,6 +367,28 @@ package(mayfair):
                 w._setPressed(false);
     }
 
+    /// The wheel or a touchpad scrolled by `dx`, `dy` points with the pointer at `x`, `y`. It goes
+    /// to what's under the pointer and bubbles up. See ScrollEvent.
+    void scrolled(float x, float y, float dx, float dy)
+    {
+        pointAt(x, y);
+        hoverOver(_root.pick(x, y));
+        if (!hovered)
+            return;
+        auto event = ScrollEvent(dx, dy, pointerX, pointerY);
+        event.shift = heldShift;
+        event.control = heldControl;
+        event.alt = heldAlt;
+        event.meta = heldMeta;
+        event.target = hovered;
+        for (auto w = hovered; w && !event.consumed;)
+        {
+            auto next = w.parent;
+            w.deliver(event);
+            w = next;
+        }
+    }
+
     /// Which modifier keys are held, for the mouse events that follow to carry.
     void modifiers(bool shift, bool control, bool alt, bool meta) nothrow @nogc
     {
@@ -354,7 +428,8 @@ package(mayfair):
         bubble(event);
         if (event.consumed)
             return;
-        if (event.code == KeyCode.tab && !event.control && !event.alt && !event.meta)
+        // Ctrl+Tab too, for getting out of something that takes Tab itself, as a text area does
+        if (event.code == KeyCode.tab && !event.alt && !event.meta)
         {
             traverse(event.shift ? -1 : 1);
             return;
@@ -404,6 +479,7 @@ package(mayfair):
 private:
     float _scale = 1.0f;
     Widget _root;
+    StylesheetList _stylesheets;
     Tvg_Paint background;
 
     float pointerX = 0, pointerY = 0;

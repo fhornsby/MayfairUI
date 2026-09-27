@@ -73,5 +73,63 @@ A("call", *field, "org.a11y.atspi.EditableText", "SetTextContents", "s", "set by
 time.sleep(0.4)
 check(T("GetText", "ii", 0, -1)[0] == "set by a screen reader", "the text can be set through AT-SPI")
 
+# The scroll pane. AccessKit gives AT-SPI a scroll view as a panel, and of what it has scrolled out
+# of view shows only the nearest item either side, as browsers do: the one a screen reader moves
+# on to next, and asks to have scrolled into view
+PANEL = 39
+COMPONENT, WINDOW_COORDS = "org.a11y.atspi.Component", "1"
+pane = find(PANEL)
+check(pane is not None, "the scroll pane is there, as a panel")
+extents = lambda at: A("call", *at, COMPONENT, "GetExtents", "u", WINDOW_COORDS)[0]
+px, py, pw, ph = extents(pane["at"])
+shown = [n["name"] for n in nodes if n["role"] == BUTTON and n["name"].startswith("Row ")]
+check(shown and shown[-1] != "Row 14", f"it shows the rows in view and the next one: {shown}")
+row = find(BUTTON, shown[-1])["at"]
+y = extents(row)[1]
+check(y + 1 >= py + ph, f"{shown[-1]} is out of view below the pane: {y} against {py}+{ph}")
+A("call", *row, COMPONENT, "ScrollTo", "u", "0")
+time.sleep(0.5)
+_, y, _, h = extents(row)
+check(py <= y and y + h <= py + ph, f"a screen reader scrolled it into view, and sees where it went: {y}+{h} in {py}+{ph}")
+nodes.clear(); walk(*app)
+following = [n["name"] for n in nodes if n["role"] == BUTTON and n["name"].startswith("Row ")]
+check(following[-1] != shown[-1], f"and the next row on is there to move to: {following}")
+
+# Toggles: a check box and a radio button, each saying what it is and whether it's on
+CHECKED = 4
+def by_name(name):
+    return next((n for n in nodes if n["name"] == name), None)
+tick, pick = by_name("Tick me"), by_name("Pick me")
+CHECK_BOX, RADIO_BUTTON = 7, 44
+check(tick and tick["role"] == CHECK_BOX and tick["state"] >> CHECKED & 1, "a ticked check box, checked")
+check(pick and pick["role"] == RADIO_BUTTON and not pick["state"] >> CHECKED & 1, "a radio button, not checked")
+
+# The text area, read a line at a time; the slider and progress bar, as values
+LINE = 3
+def text_of(n):
+    try:
+        return A("call", *n["at"], TEXT, "GetText", "ii", "0", "-1")[0]
+    except RuntimeError:
+        return None
+area = next((n for n in nodes if text_of(n) == "one\ntwo\nthree"), None)
+check(area is not None, "the text area's text, lines and all")
+if area:
+    line = A("call", *area["at"], TEXT, "GetStringAtOffset", "iu", "5", str(LINE))
+    check(line[0].rstrip("\n") == "two", f"read a line at a time: {line}")
+VALUE = "org.a11y.atspi.Value"
+def value_of(n):
+    try:
+        return A("get-property", *n["at"], VALUE, "CurrentValue")
+    except RuntimeError:
+        return None
+valued = [(n, value_of(n)) for n in nodes]
+slider = next((n for n, v in valued if v == 30), None)
+check(slider is not None, f"the slider's value: {[v for n, v in valued if v is not None]}")
+check(any(v == 0.5 for n, v in valued), "the progress bar's")
+if slider:
+    A("set-property", *slider["at"], VALUE, "CurrentValue", "d", "70")
+    time.sleep(0.4)
+    check(value_of(slider) == 70, f"a screen reader sets the slider: {value_of(slider)}")
+
 print(f"{len(failures)} failed")
 sys.exit(1 if failures else 0)

@@ -92,6 +92,10 @@ struct AccessibilityAdapter
             data.anchor = AccessibleTextPosition(p.selection.anchor.node, p.selection.anchor.character_index);
             data.focus = AccessibleTextPosition(p.selection.focus.node, p.selection.focus.character_index);
         }
+        data.page = p.page;
+        data.number = p.number;
+        data.scrollX = p.offset.x;
+        data.scrollY = p.offset.y;
         free(p);
     }
 
@@ -147,6 +151,9 @@ private struct PendingAction
     char* value;                        // copied, for setValue and replaceSelectedText
     bool hasSelection;
     accesskit_text_selection selection; // for setTextSelection
+    bool page;                          // for scrollUp and the rest
+    double number = double.nan;         // for setValue, given a number
+    accesskit_point offset;             // for setScrollOffset
 }
 
 private void post(void* userdata, AccessibilityAdapter.Request request, void* payload) nothrow @nogc
@@ -174,6 +181,7 @@ private extern(C) void act(accesskit_action_request* request, void* userdata) no
     if (p)
     {
         p.action = request.action;
+        p.number = double.nan; // calloc's zero would be a number
         p.target = request.target_node;
         if (request.data.has_value)
         {
@@ -190,6 +198,12 @@ private extern(C) void act(accesskit_action_request* request, void* userdata) no
                 p.hasSelection = true;
                 p.selection = data.set_text_selection;
             }
+            else if (data.tag == ACCESSKIT_ACTION_DATA_NUMERIC_VALUE)
+                p.number = data.numeric_value;
+            else if (data.tag == ACCESSKIT_ACTION_DATA_SCROLL_UNIT)
+                p.page = data.scroll_unit == ACCESSKIT_SCROLL_UNIT_PAGE;
+            else if (data.tag == ACCESSKIT_ACTION_DATA_SET_SCROLL_OFFSET)
+                p.offset = data.set_scroll_offset;
         }
         post(userdata, AccessibilityAdapter.Request.action, p);
     }

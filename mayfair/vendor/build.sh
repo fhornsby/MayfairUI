@@ -117,10 +117,17 @@ if [ "$(cat build/thorvg-src.stamp 2>/dev/null)" != "$THORVG_STAMP" ]; then
     echo "$THORVG_STAMP" > build/thorvg-src.stamp
 fi
 
-if [ ! -f build/thorvg/build.ninja ]; then
-    PKG_CONFIG_PATH="$(pwd)/wgpu-native/lib/pkgconfig" meson setup build/thorvg build/thorvg-src \
-        --buildtype=release -Ddefault_library=static \
-        -Dengines=cpu,wg -Dbindings=capi -Dloaders=svg,ttf,lottie -Dextra=lottie_exp
+# The image loaders are ThorVG's own copies -- LodePNG (zlib licence), jpgd (public domain) and
+# libwebp's decoder (BSD) -- which -Dstatic=true picks over the system's libpng, libjpeg and libwebp,
+# so an app has nothing more to ship or find. Lottie brings RapidJSON (MIT) and, for expressions,
+# JerryScript (Apache-2.0). The options are in the stamp, so changing them here reconfigures.
+THORVG_OPTIONS="--buildtype=release -Ddefault_library=static -Dengines=cpu,wg -Dbindings=capi
+    -Dloaders=svg,ttf,lottie,png,jpg,webp -Dstatic=true -Dextra=lottie_exp"
+if [ ! -f build/thorvg/build.ninja ] || [ "$(cat build/thorvg/options.stamp 2>/dev/null)" != "$THORVG_OPTIONS" ]; then
+    rm -rf build/thorvg
+    # shellcheck disable=SC2086 # the options are words
+    PKG_CONFIG_PATH="$(pwd)/wgpu-native/lib/pkgconfig" meson setup build/thorvg build/thorvg-src $THORVG_OPTIONS
+    echo "$THORVG_OPTIONS" > build/thorvg/options.stamp
 fi
 ninja -C build/thorvg
 

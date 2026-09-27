@@ -5,8 +5,11 @@ import mayfair.accessibility;
 import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.layout;
+import mayfair.css;
 import mayfair.widgets.scene;
 import mayfair.widgets.input;
+import mayfair.widgets.region;
+import mayfair.widgets.styling;
 
 /// Space around the four sides of something, in points: padding inside a widget, or a margin
 /// outside it. JavaFX's Insets, in the same order: top, right, bottom, left.
@@ -115,15 +118,30 @@ public:
     /// Adds `child` below this widget, taking it from wherever it was first. Returns this, so calls chain.
     final Widget add(Widget child)
     {
+        if (!takesChildren)
+            throw new Exception(typeid(this).name ~ " doesn't take children with add(): "
+                                ~ "what it holds is its own, or set through a property of its own, like a ScrollPane's content");
+        return adopt(child);
+    }
+
+    /*
+        Adds `child` below this widget at `index` (the end, if it's past it), whether or not add()
+        would: for a widget adding its own parts, as a button does its label. Returns this.
+    */
+    protected final Widget adopt(Widget child, size_t index = size_t.max)
+    {
         if (child.parent)
             child.parent.remove(child);
         child.parent = this;
-        _children ~= child;
-        YGNodeInsertChild(node, child.node, _children.length - 1);
+        if (index > _children.length)
+            index = _children.length;
+        _children = _children[0 .. index] ~ child ~ _children[index .. $];
+        YGNodeInsertChild(node, child.node, index);
+        placeChild(child);
         invalidateAccessible(); // its list of children changed
         child.refreshDisabled(); // it's disabled now if this is
         if (scene)
-            child.mount(scene, paintAfter(child)); // this tree is already live, so the newcomer has to catch up
+            child.mount(scene, childrensLayer, paintAfter(child)); // this tree is already live, so the newcomer has to catch up
         return this;
     }
 
@@ -149,6 +167,7 @@ public:
             YGNodeRemoveChild(node, child.node);
             _children = _children[0 .. i] ~ _children[i + 1 .. $];
             child.parent = null;
+            child.placeInParent(); // on its own again, so nothing of this one's placing applies
             child.refreshDisabled(); // no longer disabled by this
             invalidateAccessible();
             break;
@@ -162,15 +181,27 @@ public:
         A size left at useComputedSize (the default) is worked out from what's inside: a label's
         text, a row's children. Set, prefWidth and prefHeight are the size it asks for, and the
         min and max bound what a parent can make of it when there's more or less room.
-    */
-    enum float useComputedSize = float.nan; /// JavaFX's Region.USE_COMPUTED_SIZE
 
-    mixin(declareProperty!(float, "minWidth", "float.nan", q{ applySize(); }));
-    mixin(declareProperty!(float, "prefWidth", "float.nan", q{ applySize(); }));
-    mixin(declareProperty!(float, "maxWidth", "float.nan", q{ applySize(); }));
-    mixin(declareProperty!(float, "minHeight", "float.nan", q{ applySize(); }));
-    mixin(declareProperty!(float, "prefHeight", "float.nan", q{ applySize(); }));
-    mixin(declareProperty!(float, "maxHeight", "float.nan", q{ applySize(); }));
+        The computed max is where controls and containers differ, as they do in JavaFX. A control
+        -- a button, a label -- is as big as it wants to be and no bigger, so a Column's fillWidth
+        leaves it its own width and growing in a Row doesn't widen it. A container, or a plain
+        Widget, has no limit, and fills whatever it's given. Either can be changed:
+
+            new Button("OK").maxWidth(float.infinity)    // a button as wide as its column
+            new Row().maxHeight(Widget.usePrefSize)      // a row that stays its own height
+
+        A text field is between the two, again as JavaFX's is: it stretches along a line but keeps
+        its own height.
+    */
+    enum float useComputedSize = float.nan;       /// JavaFX's Region.USE_COMPUTED_SIZE
+    enum float usePrefSize = -float.infinity;     /// JavaFX's Region.USE_PREF_SIZE, for a min or max
+
+    mixin(declareStyleableProperty!(float, "minWidth", "min-width", "float.nan", q{ placeInParent(); }));
+    mixin(declareStyleableProperty!(float, "prefWidth", "width", "float.nan", q{ placeInParent(); }));
+    mixin(declareStyleableProperty!(float, "maxWidth", "max-width", "float.nan", q{ placeInParent(); }));
+    mixin(declareStyleableProperty!(float, "minHeight", "min-height", "float.nan", q{ placeInParent(); }));
+    mixin(declareStyleableProperty!(float, "prefHeight", "height", "float.nan", q{ placeInParent(); }));
+    mixin(declareStyleableProperty!(float, "maxHeight", "max-height", "float.nan", q{ placeInParent(); }));
 
     /// Sets the preferred width and height at once. Returns this, so calls chain.
     final This prefSize(this This)(float width, float height)
@@ -181,7 +212,7 @@ public:
     }
 
     /// Space inside the widget's edges, around what it holds.
-    mixin(declareProperty!(Insets, "padding", "Insets.init", q{ applyPadding(); }));
+    mixin(declareStyleableProperty!(Insets, "padding", "padding", "Insets.init", q{ applyPadding(); }));
 
     /// The same padding on every side. Returns this, so calls chain.
     final This padding(this This)(float all)
@@ -204,8 +235,52 @@ public:
         so two widgets that both grow come out different sizes as soon as they hold different
         content, and a row of labelled boxes is visibly uneven. Growing here starts them all from
         nothing, so equal shares are equal. For the other behaviour, set flex-grow on `node`.
+
+        As in JavaFX, it's bounded by the max: a button that grows stays its own width unless its
+        maxWidth is raised too.
     */
-    mixin(declareProperty!(float, "grow", "0", q{ applyGrow(); }));
+    mixin(declareProperty!(float, "grow", "0", q{ placeInParent(); }));
+
+    /*
+        Style: see mayfair.widgets.styling for how it's worked out.
+
+        A widget is selected by its type (`Button`), its style classes (`.button`, and any an app
+        adds), its id (`#save`), and its state (`:hover`, `:focused`, `:disabled`...). Its inline
+        style, a string of declarations, beats any stylesheet; its own stylesheets style everything
+        below it too, on top of the Scene's.
+
+            save.styleClass.add("primary");
+            save.id("save").style("colour: red;");
+            sidebar.stylesheets.add(stylesheet!(import("sidebar.css")));
+    */
+    final StyleClassList styleClass() nothrow
+    {
+        if (!_styleClass)
+            _styleClass = new StyleClassList(this);
+        return _styleClass;
+    }
+
+    /// Adds style classes. Returns this, so calls chain.
+    final This styleClass(this This)(string[] names...)
+    {
+        styleClass.add(names);
+        return cast(This) this;
+    }
+
+    /// What `#name` selects it by. JavaFX's id.
+    mixin(declareProperty!(string, "id", "null", q{ markCssDirty(this, true); }));
+
+    /// Declarations for this widget alone, as a stylesheet's rule would have them:
+    /// `padding: 8; colour: red`. JavaFX's style. They beat any stylesheet.
+    mixin(declareProperty!(string, "style", "null", q{ parseInlineStyle(); markCssDirty(this, false); }));
+
+    /// Stylesheets for this widget and everything below it. JavaFX's Parent.getStylesheets().
+    final StylesheetList stylesheets()
+    {
+        if (!ownStylesheets)
+            ownStylesheets = new StylesheetList({ markCssDirty(this, true); });
+        return ownStylesheets;
+    }
 
     /*
         Input. The Scene works out which widget the mouse is over and hands it the event; see
@@ -229,9 +304,30 @@ public:
     final void setOnMouseDragged(MouseHandler handler) nothrow @nogc { on(MouseEventType.dragged, handler); }
     final This onMouseDragged(this This)(MouseHandler handler) { on(MouseEventType.dragged, handler); return cast(This) this; }
 
+    /*
+        Appearance: JavaFX's Region background and border, and Node opacity and scale. Mostly set
+        by the theme's stylesheet; see Background for what a layered one can do.
+    */
+    mixin(declareStyleableProperty!(Background, "background",
+        "background-colour, background-radius, background-insets", "Background.init", q{ syncRegionPaints(); }));
+    mixin(declareStyleableProperty!(Border, "border",
+        "border-colour, border-width, border-radius, border-insets", "Border.init", q{ syncRegionPaints(); }));
+
+    /// An SVG path to draw the background and border as, stretched to the widget, in place of a
+    /// rectangle: JavaFX's shape. See SvgPath. Empty for a rectangle.
+    mixin(declareStyleableProperty!(string, "shapePath", "shape", "null", q{ parseShape(); }));
+
+    /// How opaque it is, and everything below it, from 0 to 1.
+    mixin(declareStyleableProperty!(float, "opacity", "opacity", "1", q{ invalidate(); }));
+
+    /// How much bigger it's drawn than it's laid out, about its centre, with everything below it:
+    /// a pressed button shrinking slightly, say. Layout doesn't see it.
+    mixin(declareStyleableProperty!(float, "scaleX", "scale-x", "1", q{ invalidate(); }));
+    mixin(declareStyleableProperty!(float, "scaleY", "scale-y", "1", q{ invalidate(); })); /// ditto
+
     /// The pointer's shape while it's over this widget, and anything below it that doesn't say
     /// otherwise. A disabled widget shows the default whatever it says.
-    mixin(declareProperty!(Cursor, "cursor", "Cursor.inherit"));
+    mixin(declareStyleableProperty!(Cursor, "cursor", "cursor", "Cursor.inherit"));
 
     /// Where this widget is in the window, in points from its top left, as it was last drawn: what
     /// the user sees. Empty until it's been drawn. JavaFX's localToScene(getBoundsInLocal()).
@@ -243,10 +339,10 @@ public:
     }
 
     /// Whether the pointer is over this widget, or over anything below it.
-    mixin(declareReadOnlyProperty!(bool, "hover", "false", "", "package"));
+    mixin(declareReadOnlyProperty!(bool, "hover", "false", q{ pseudoClassChanged(this, pseudo!"hover", _hover); }, "package"));
 
     /// Whether the primary button went down on this widget, or on anything below it, and is still down.
-    mixin(declareReadOnlyProperty!(bool, "pressed", "false", "", "package"));
+    mixin(declareReadOnlyProperty!(bool, "pressed", "false", q{ pseudoClassChanged(this, pseudo!"pressed", _pressed); }, "package"));
 
     /// Key events go to the widget with focus and bubble up from it. The same rules as the mouse
     /// handlers above apply: the app's handler first, then the widget's own handleKey().
@@ -275,6 +371,15 @@ public:
         return cast(This) this;
     }
 
+    /// The wheel or a touchpad scrolled with the pointer over this widget, or over anything below
+    /// it that didn't consume it. JavaFX's onScroll. See ScrollEvent.
+    final void setOnScroll(ScrollHandler handler) nothrow @nogc { scrollHandler = handler; }
+    final This onScroll(this This)(ScrollHandler handler)
+    {
+        scrollHandler = handler;
+        return cast(This) this;
+    }
+
     /// Whether this widget takes typed text. Off by default.
     mixin(declareProperty!(bool, "acceptsTextInput", "false"));
 
@@ -288,7 +393,7 @@ public:
     mixin(declareProperty!(bool, "focusTraversable", "false", q{ invalidateAccessible(); }));
 
     /// Whether this widget has focus, and its window has the keyboard.
-    mixin(declareReadOnlyProperty!(bool, "focused", "false", "", "private"));
+    mixin(declareReadOnlyProperty!(bool, "focused", "false", q{ pseudoClassChanged(this, pseudo!"focused", _focused); }, "private"));
 
     /// Whether this is the widget with focus in its scene, whether or not the window has
     /// keyboard focus right now -- which focused() also asks.
@@ -296,13 +401,21 @@ public:
 
     /// Whether the widget has focus and should show it: it got it from the keyboard. A control
     /// draws its focus ring by this rather than focused(), so clicking one doesn't ring it.
-    mixin(declareReadOnlyProperty!(bool, "focusVisible", "false", "", "private"));
+    mixin(declareReadOnlyProperty!(bool, "focusVisible", "false", q{ pseudoClassChanged(this, pseudo!"focus-visible", _focusVisible); }, "private"));
 
     /// Takes focus. Does nothing until the widget is in a live scene, or while it's disabled.
     final void requestFocus()
     {
         if (scene && !disabled)
             scene.setFocus(this, false);
+    }
+
+    /// Takes focus as the keyboard gives it, ring and all: for a control that moves focus with
+    /// keys of its own, as a radio group does with the arrows.
+    protected final void requestFocusFromKeyboard()
+    {
+        if (scene && !disabled)
+            scene.setFocus(this, true);
     }
 
     /*
@@ -314,7 +427,7 @@ public:
     mixin(declareProperty!(bool, "disable", "false", q{ refreshDisabled(); }));
 
     /// Whether this widget is switched off, by its own `disable` or an ancestor's. JavaFX's disabled.
-    mixin(declareReadOnlyProperty!(bool, "disabled", "false", "", "private"));
+    mixin(declareReadOnlyProperty!(bool, "disabled", "false", q{ pseudoClassChanged(this, pseudo!"disabled", _disabled); }, "private"));
 
     /// Gives this widget its shape and brings everything below it to life. Called by Scene.
     /*
@@ -360,27 +473,32 @@ public:
         Gives this widget its shape and brings everything below it to life. Called by Scene.
 
         Draw order is tree order -- a parent, then its children, then its next sibling -- and it's
-        the order the shapes sit in the ThorVG scene. `before` is the shape the new ones go in
-        front of, so that a widget added to a live tree is drawn where it sits in the tree rather
-        than over everything; null puts them at the end.
+        the order the shapes sit in `layer`: the scene's ThorVG scene, or the layer of the nearest
+        widget above that gave its children one (see clipChildren). `before` is the shape the new
+        ones go in front of, so that a widget added to a live tree is drawn where it sits in the
+        tree rather than over everything; null puts them at the end.
     */
-    final void mount(Scene scene, Tvg_Paint before = null) nothrow
+    final void mount(Scene scene, Tvg_Paint layer, Tvg_Paint before = null) nothrow
     {
         this.scene = scene;
+        this.layer = layer;
+        markCssDirty(this, true); // new to this scene's stylesheets
         YGNodeSetConfig(node, scene.config);
         // New to this tree, as far as assistive technology is concerned, even if it's been in it before
         accessibleDirty = true;
         scene.accessibilityChanged = true;
         shape = tvg_shape_new();
         if (before)
-            tvg_scene_insert(scene.paints, shape, before);
+            tvg_scene_insert(layer, shape, before);
         else
-            tvg_scene_add(scene.paints, shape);
+            tvg_scene_add(layer, shape);
         mountBefore = before;
+        syncRegionPaints();
         mounted();
         mountBefore = null;
+        // Into this one's layer for them, if it made one, where they're all there is
         foreach (child; _children)
-            child.mount(scene, before);
+            child.mount(scene, childrensLayer, _childLayer ? null : before);
     }
 
     /// Marks this widget as needing to be drawn again, for when something other than the layout
@@ -401,8 +519,10 @@ public:
     }
 
     /*
-        Paints this widget and everything below it. `px`, `py` is the parent's position in the window
-        in points: Yoga gives a node its position relative to its parent, so the walk down adds them up.
+        Paints this widget and everything below it. `px`, `py` is the parent's position in points,
+        in its layer: Yoga gives a node its position relative to its parent, so the walk down adds
+        them up. `sx`, `sy` is how far the layers it's in are scrolled, so where it's seen in the
+        window is that much less.
 
         A widget whose rectangle is unchanged since it was last painted, and which hasn't been
         invalidated, is left alone. For a rounded rect re-appending the geometry would be free, but a
@@ -410,26 +530,105 @@ public:
         anywhere in the window comes through here. The walk still has to continue into the children,
         because a parent can keep its own rectangle while a child moves inside it.
     */
-    final void paintTree(float px, float py) nothrow @nogc
+    final void paintTree(float px, float py, float sx = 0, float sy = 0,
+                         float parentOpacity = 1, ref const Tvg_Matrix parentMatrix = identity) nothrow @nogc
     {
-        const x = px + YGNodeLayoutGetLeft(node);
-        const y = py + YGNodeLayoutGetTop(node);
         const w = YGNodeLayoutGetWidth(node);
         const h = YGNodeLayoutGetHeight(node);
+        const x = px + layoutX();
+        const y = py + layoutY();
+        laidOut(x, y, w, h);
 
-        // painted.x starts as NaN, which compares unequal to anything, so the first pass always paints
-        if (repaint || x != painted.x || y != painted.y || w != painted.w || h != painted.h)
+        // Opacity and scale are the parent's times its own, for every paint of this widget's. Set
+        // only when they change, and before paint(), which can then set its own opacities on top.
+        const opacity = parentOpacity * clamp01(_opacity);
+        Tvg_Matrix matrix = parentMatrix;
+        if (_scaleX != 1 || _scaleY != 1)
         {
-            tvg_shape_reset(shape);
-            paint(x, y, w, h);
-            if (x != painted.x || y != painted.y || w != painted.w || h != painted.h)
-                invalidateAccessible(); // its bounds
-            painted = Rect(x, y, w, h);
-            repaint = false;
+            const cx = x + w / 2, cy = y + h / 2;
+            const own = Tvg_Matrix(_scaleX, 0, cx * (1 - _scaleX), 0, _scaleY, cy * (1 - _scaleY), 0, 0, 1);
+            matrix = multiply(parentMatrix, own);
+        }
+        if (opacity != appliedOpacity || matrix != appliedMatrix)
+        {
+            appliedOpacity = opacity;
+            appliedMatrix = matrix;
+            forEachOwnPaint((Tvg_Paint p) nothrow @nogc {
+                tvg_paint_set_opacity(p, cast(ubyte)(opacity * 255 + 0.5f));
+                tvg_paint_set_transform(p, &matrix);
+            });
+            repaint = true;
         }
 
+        // drawn.x starts as NaN, which compares unequal to anything, so the first pass always paints
+        const moved = x != drawn.x || y != drawn.y || w != drawn.w || h != drawn.h;
+        if (repaint || moved)
+        {
+            paintRegion(x, y, w, h);
+            tvg_shape_reset(shape);
+            paint(x, y, w, h);
+            if (moved)
+            {
+                invalidateAccessible(); // its bounds
+                if (_childClip)
+                {
+                    tvg_shape_reset(_childClip);
+                    const inside = insidePadding(Rect(x, y, w, h));
+                    tvg_shape_append_rect(_childClip, inside.x, inside.y, inside.w, inside.h, 0, 0, true);
+                }
+            }
+            drawn = Rect(x, y, w, h);
+            repaint = false;
+        }
+        painted = Rect(x - sx, y - sy, w, h);
+
         foreach (child; _children)
-            child.paintTree(x, y);
+            child.paintTree(x, y, sx + _childOffsetX, sy + _childOffsetY, opacity, matrix);
+    }
+
+    /// How opaque it's drawn, its ancestors' opacity included, as of the last paint. For a widget
+    /// setting a paint's opacity of its own in paint(), to multiply by.
+    final float effectiveOpacity() const nothrow @nogc { return appliedOpacity; }
+
+    /*
+        Scrolls whatever scrolls around this widget -- a ScrollPane, or several one inside another
+        -- so that it's in view, or as much of it as fits. Tab does this for the widget it moves
+        focus to, and so does a screen reader asking to see one.
+    */
+    final void scrollIntoView()
+    {
+        scrollIntoView(Bounds(0, 0, YGNodeLayoutGetWidth(node), YGNodeLayoutGetHeight(node)));
+    }
+
+    /// The same for part of it: `rect`, from its top left. A text area's caret, say.
+    final void scrollIntoView(Bounds rect)
+    {
+        for (auto p = parent; p; p = p.parent)
+        {
+            if (!p._childLayer)
+                continue;
+            const at = boundsIn(p);
+            p.reveal(Bounds(at.minX + rect.minX, at.minY + rect.minY, rect.width, rect.height));
+        }
+    }
+
+    /// Where this widget is in the coordinates `ancestor`'s children are laid out in: from its top
+    /// left, and not moved by its scrolling, though by any scrolling in between.
+    final Bounds boundsIn(Widget ancestor) nothrow @nogc
+    {
+        float x = 0, y = 0;
+        for (Widget w = this; w && w !is ancestor; w = w.parent)
+        {
+            x += w.layoutX();
+            y += w.layoutY();
+            if (w.parent && w.parent !is ancestor)
+            {
+                x -= w.parent._childOffsetX;
+                y -= w.parent._childOffsetY;
+            }
+        }
+        const w = YGNodeLayoutGetWidth(node), h = YGNodeLayoutGetHeight(node);
+        return Bounds(x, y, w, h);
     }
 
 protected:
@@ -443,25 +642,149 @@ protected:
     void paint(float x, float y, float w, float h) nothrow @nogc {}
 
     /*
+        Whether add() can give it children: a container can, where a control keeps its own -- a
+        button's label, a scroll pane's view -- or has none, like a label, which Yoga measures
+        itself and wouldn't lay children out in. As JavaFX's controls aren't Panes.
+    */
+    bool takesChildren() const nothrow @nogc { return true; }
+
+    /*
+        Something to do in the next update, when it's safe to allocate and change properties: for
+        a widget that finds out in paint() -- where it can do neither -- that there's work, as a
+        text area does that it's been given a new width to wrap to. update() then runs before the
+        next layout.
+    */
+    final void requestUpdate() nothrow @nogc
+    {
+        updateRequested = true;
+        for (auto p = parent; p && !p.cssChildDirty; p = p.parent)
+            p.cssChildDirty = true;
+        if (scene)
+            scene.cssRequested = true;
+    }
+
+    /// What requestUpdate() asked for.
+    void update() {}
+
+    /*
+        Called each time the style pass has restyled this widget, after its styleable properties
+        are set: for a widget that reads the stylesheet some other way, as a LottieView looks up
+        the colours for its animation's slots. Its variables may have changed with it, or
+        with an ancestor's, or with the colour scheme.
+    */
+    void restyled() {}
+
+    /// computeMaxWidth() or computeMaxHeight() would say something different now: has the parent
+    /// place it again, as it does when its max is set.
+    final void maxChanged() nothrow @nogc { placeInParent(); }
+
+    /// Whether Tab stops here, of a focus-traversable widget: all of them do, but a radio group
+    /// is one stop, the selected one, and the arrow keys move within it.
+    bool isTabStop() { return true; }
+
+    /// The max a widget has while maxWidth and maxHeight are left computed: float.infinity for no
+    /// limit, which suits a container, or usePrefSize for a control. JavaFX's computeMaxWidth.
+    float computeMaxWidth() const nothrow @nogc { return float.infinity; }
+    float computeMaxHeight() const nothrow @nogc { return float.infinity; } /// ditto
+
+    /*
+        How this widget places `child` in its layout: how much it grows, and whether it stretches
+        across. Called when the child is added and when any of its sizes or its grow change; a
+        container calls it again for every child when its own settings change. Place the child
+        with child.place().
+
+        By default the child grows as it asks and stretches as Yoga's alignItems says. Row and
+        Column hold their children to their max, as JavaFX's HBox and VBox do.
+    */
+    void placeChild(Widget child) nothrow @nogc
+    {
+        child.place(child._grow, false, false, YGAlignAuto);
+    }
+
+    /*
         Another shape for this widget to draw with, for when one isn't enough: text in one colour
         over a background in another, or something clipped separately. Call it from mounted(); it
         goes in draw order after the widget's own shape and any added before it, and before its
         children. Like `shape`, it goes when the widget is unmounted, and paint() has to reset it.
     */
-    final Tvg_Paint addPaint() nothrow
+    final Tvg_Paint addPaint(Tvg_Paint p = null) nothrow
     {
-        auto p = tvg_shape_new();
+        if (!p)
+            p = tvg_shape_new();
         if (mountBefore)
-            tvg_scene_insert(scene.paints, p, mountBefore);
+            tvg_scene_insert(layer, p, mountBefore);
         else
-            tvg_scene_add(scene.paints, p);
+            tvg_scene_add(layer, p);
         extraPaints ~= p;
         return p;
     }
 
+    /*
+        Puts this widget's children in a layer of their own, clipped to the inside of its padding:
+        what a scroll pane does, so that what's scrolled out of view isn't seen, and can't be
+        clicked. Call it from mounted(). The layer goes where addPaint() would put a paint, so
+        paints added after it are drawn over the children.
+
+        The children are drawn where the layout puts them, less whatever scrollChildren() says,
+        which moves the whole layer at once: scrolling doesn't redraw them.
+    */
+    final void clipChildren() nothrow
+    {
+        auto clip = tvg_scene_new(); // holds the clip, so the one inside can move and it stays put
+        _childClipHolder = clip;
+        _childClip = tvg_shape_new();
+        tvg_paint_set_clip(clip, _childClip);
+        _childLayer = tvg_scene_new();
+        tvg_scene_add(clip, _childLayer);
+        addPaint(clip);
+    }
+
+    /// Moves this widget's children by `-x`, `-y` from where the layout puts them, all together:
+    /// how far it's scrolled. Only for a widget that's called clipChildren().
+    final void scrollChildren(float x, float y) nothrow @nogc
+    {
+        if (x == _childOffsetX && y == _childOffsetY)
+            return;
+        _childOffsetX = x;
+        _childOffsetY = y;
+        if (_childLayer)
+            tvg_paint_translate(_childLayer, -x, -y);
+        // Everything below has moved, as a screen reader sees it: see buildAccessible()
+        foreach (child; _children)
+            child.invalidateAccessibleTree();
+        invalidateAccessible();
+        if (scene)
+            scene.paintRequested = true;
+    }
+
+    /*
+        Called on every paint pass, after layout and before paint(), with where the layout put this
+        widget. For a widget whose drawing depends on more than its own rectangle -- a scroll pane's
+        bars, on how big its content came out -- which can call invalidate() here to be painted.
+    */
+    void laidOut(float x, float y, float w, float h) nothrow @nogc {}
+
+    /// Whether the point `x`, `y`, in points from the window's top left, is this widget's even
+    /// though a child is drawn there: a scroll pane's bar, over its content. Nothing by default.
+    bool claimsPoint(float x, float y) nothrow @nogc { return false; }
+
+    /// Scrolls, if this widget scrolls, so that `rect` shows: a rectangle in its children's
+    /// coordinates, as childBounds() gives them. See scrollIntoView().
+    void reveal(Bounds rect) {}
+
     /// Called once the shapes are gone, when the widget is removed from a live tree. Where anything
     /// mid-way -- an animation, a half-finished press -- goes back to rest, ready to be added again.
     void unmounted() {}
+
+    /// The same for scrolling: see ScrollEvent.
+    void handleScroll(ref ScrollEvent event) {}
+
+    /// Puts this widget in state `pc`, or takes it out, for selectors that ask about it: a
+    /// checked box's `:selected`, say. JavaFX's pseudoClassStateChanged.
+    final void pseudoClassStateChanged(PseudoClass pc, bool on) nothrow @nogc
+    {
+        pseudoClassChanged(this, pc, on);
+    }
 
     /// A widget's own response to the mouse, FLTK's handle(). Runs after any handler the app set
     /// with onMouse...(), unless that consumed the event. Consume what this uses, so it goes no further.
@@ -511,6 +834,11 @@ protected:
             requestFocus();
             return true;
         }
+        if (action == AccessibleAction.scrollIntoView)
+        {
+            scrollIntoView();
+            return true;
+        }
         return false;
     }
 
@@ -527,6 +855,75 @@ package(mayfair):
     }
 
 package:
+    // Style: see mayfair.widgets.styling
+    bool cssDirty = true, cssBelow, cssChildDirty; // to restyle: it, what's below it, something below it
+    bool updateRequested;                          // see requestUpdate()
+    final void runUpdate() { update(); }
+    final void runRestyled() { restyled(); }
+    final void unmountTree() { unmount(); } // for a Scene letting go of its canvas: see Scene.detach
+    ulong pseudoClasses;          // its states, a PseudoClass bit each
+    Declared[] declared;          // the declarations that won, by name
+    Declaration[] inlineDeclarations; // `style`, parsed
+    StylesheetList ownStylesheets;
+    TransitionSpec[] transitionSpecs;          // what its `transition` says
+    RunningTransition[] runningTransitions;    // those on their way
+    bool styled;                               // since it was last added to a scene
+
+    /// Whether it has style class `name`, without making it a list if it has none.
+    final bool hasStyleClass(string name) const nothrow @nogc
+    {
+        return _styleClass && _styleClass.contains(name);
+    }
+
+    final const(string)[] styleClassNames() const nothrow @nogc
+    {
+        return _styleClass ? _styleClass.names : null;
+    }
+
+    /// Whether the widget's max is its preferred size, set or computed, across and down.
+    final bool widthHeldToPref() const nothrow @nogc
+    {
+        return (_maxWidth == _maxWidth ? _maxWidth : computeMaxWidth()) == usePrefSize;
+    }
+
+    final bool heightHeldToPref() const nothrow @nogc /// ditto
+    {
+        return (_maxHeight == _maxHeight ? _maxHeight : computeMaxHeight()) == usePrefSize;
+    }
+
+    /*
+        Places this widget in its parent's layout, for placeChild(): growing by `grow` along the
+        parent's main axis, and stretching across it if `stretchWidth` or `stretchHeight` says so,
+        with `alignSelf` as Yoga's for it. `across` is where a stretched widget sits when its max
+        stops it short of the parent's width or height: 0 at the start, 0.5 in the middle, 1 at
+        the end. Yoga always puts it at the start, so paintTree() moves it (see shortfall()).
+
+        Flexbox won't stretch a child that has a size of its own across, where JavaFX stretches
+        anything whose max allows, so a stretched axis leaves Yoga's size auto and makes the
+        preferred size the least it can be instead: the container still sizes to fit it, and it
+        still fills the container.
+
+        What that can't do is let it be squeezed: JavaFX sizes a container from its children's
+        preferred sizes but will shrink a stretched child to its min when the container's made
+        smaller, and flexbox has nothing across that says both, as flex-basis and flex-shrink do
+        along. So a stretched widget with a preferred size set stays at least that big. One sized
+        from its content, as controls are, has nothing to stay at, and shrinks as JavaFX's does.
+    */
+    final void place(float grow, bool stretchWidth, bool stretchHeight, YGAlign alignSelf,
+                     float across = 0) nothrow @nogc
+    {
+        _acrossX = stretchWidth ? across : 0;
+        _acrossY = stretchHeight ? across : 0;
+        YGNodeStyleSetFlexGrow(node, grow);
+        YGNodeStyleSetFlexShrink(node, grow > 0 ? 1 : 0);
+        if (grow > 0)
+            YGNodeStyleSetFlexBasis(node, 0);
+        else
+            YGNodeStyleSetFlexBasisAuto(node);
+        YGNodeStyleSetAlignSelf(node, alignSelf);
+        applySize(stretchWidth, stretchHeight);
+    }
+
     ulong accessibleId;
     bool accessibleDirty = true; // a new widget has never been described
 
@@ -535,16 +932,34 @@ package:
     final accesskit_node* buildAccessible(accesskit_tree_update* update)
     {
         auto n = accesskit_node_new(toAccessKit(_accessibleRole));
+        /*
+            Bounds are where it's seen in the window, scrolling and all. AccessKit could take a
+            scroll as a transform on the node that scrolls, leaving the bounds below it alone, but
+            it only registers with AT-SPI a node that comes into view when that node itself
+            changes -- so a row scrolled into view by its pane's transform alone is one a screen
+            reader can't reach. So everything below a scrolling widget is sent again as it scrolls
+            (see scrollChildren), and AccessKit hides what's out of view as it goes.
+        */
         if (painted.x == painted.x) // not NaN: it's been painted, so it's somewhere
             accesskit_node_set_bounds(n, accesskit_rect(painted.x, painted.y,
                                                         painted.x + painted.w, painted.y + painted.h));
+        if (_childClip)
+            accesskit_node_set_clips_children(n);
         pushAccessibleChildren(n);
         if (disabled)
             accesskit_node_set_disabled(n);
         else if (_focusTraversable)
             accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
+        for (auto p = parent; p; p = p.parent)
+        {
+            if (p._childClip)
+            {
+                accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_INTO_VIEW);
+                break;
+            }
+        }
 
-        auto described = AccessibleNode(n, update);
+        auto described = AccessibleNode(n, update, painted.x - drawn.x, painted.y - drawn.y);
         try
             describeAccessible(described);
         catch (Exception e)
@@ -640,7 +1055,7 @@ package:
     {
         if (_disable)
             return;
-        if (_focusTraversable)
+        if (_focusTraversable && isTabStop)
             into ~= this;
         foreach (child; _children)
             child.collectTraversable(into);
@@ -653,13 +1068,28 @@ package:
     */
     final Widget pick(float x, float y) nothrow @nogc
     {
-        foreach_reverse (child; _children)
-            if (auto hit = child.pick(x, y))
-                return hit;
         // A widget that has never been painted has a NaN rectangle, which contains nothing
-        if (x >= painted.x && x < painted.x + painted.w && y >= painted.y && y < painted.y + painted.h)
+        const inside = x >= painted.x && x < painted.x + painted.w && y >= painted.y && y < painted.y + painted.h;
+        if (inside && claimsPoint(x, y))
             return this;
-        return null;
+        if (!_childClip || insidePadding(painted).contains(x, y)) // clipped children can only be hit inside it
+            foreach_reverse (child; _children)
+                if (auto hit = child.pick(x, y))
+                    return hit;
+        return inside ? this : null;
+    }
+
+    /// Lets this widget hear `event`, unless it's disabled: the app's handler first, then its own.
+    final void deliver(ref ScrollEvent event)
+    {
+        if (disabled)
+            return;
+        event.x = event.sceneX - painted.x;
+        event.y = event.sceneY - painted.y;
+        if (scrollHandler)
+            scrollHandler(event);
+        if (!event.consumed)
+            handleScroll(event);
     }
 
     /// Lets this widget hear `event`, unless it's disabled: the app's handler first, then its own.
@@ -676,16 +1106,161 @@ package:
     }
 
 private:
-    struct Rect { float x = float.nan, y, w, h; }
+    struct Rect
+    {
+        float x = float.nan, y, w, h;
+        bool contains(float px, float py) const nothrow @nogc { return px >= x && px < x + w && py >= y && py < y + h; }
+    }
 
     Widget[] _children;
-    Rect painted;      // the rectangle this widget was last painted at
+    Rect drawn;        // the rectangle this widget was last painted at, in its layer
+    Rect painted;      // the same, where it's seen in the window: less any scrolling
+    Tvg_Paint layer;   // what its shapes are in: see mount()
+    Tvg_Paint _childLayer, _childClip; // from clipChildren()
+    Tvg_Paint _childClipHolder;        // the scene the clip's on, which isn't this widget's to fade or scale
+    StyleClassList _styleClass;
+    Tvg_Paint[] regionPaints;          // background fills then border strokes, drawn before `shape`
+    SvgPath svgShape;                  // `shapePath`, parsed
+    Tvg_Point[] svgScratch;             // its points, placed, as it's drawn
+
+    void parseShape()
+    {
+        import core.stdc.stdio : fprintf, stderr;
+        svgShape = SvgPath.init;
+        if (_shapePath.length)
+        {
+            try
+                svgShape = SvgPath.parse(_shapePath);
+            catch (Exception e)
+                fprintf(stderr, "shape: %.*s\n", cast(int) e.msg.length, e.msg.ptr);
+        }
+        svgScratch = new Tvg_Point[svgShape.points.length];
+        invalidate();
+    }
+
+    // The outline a background or border layer is drawn as: the shape if there is one, else a rounded rectangle
+    void appendOutline(Tvg_Paint p, float x, float y, float w, float h, CornerRadii radii) nothrow @nogc
+    {
+        if (!svgShape.empty)
+            svgShape.appendScaled(p, x, y, w, h, svgScratch);
+        else
+            appendRoundedRect(p, x, y, w, h, radii);
+    }
+    float appliedOpacity = 1;
+    Tvg_Matrix appliedMatrix = identity;
+
+    static immutable Tvg_Matrix identity = Tvg_Matrix(1, 0, 0, 0, 1, 0, 0, 0, 1);
+
+    static Tvg_Matrix multiply(ref const Tvg_Matrix a, ref const Tvg_Matrix b) nothrow @nogc
+    {
+        return Tvg_Matrix(a.e11 * b.e11 + a.e12 * b.e21, a.e11 * b.e12 + a.e12 * b.e22, a.e11 * b.e13 + a.e12 * b.e23 + a.e13,
+                          a.e21 * b.e11 + a.e22 * b.e21, a.e21 * b.e12 + a.e22 * b.e22, a.e21 * b.e13 + a.e22 * b.e23 + a.e23,
+                          0, 0, 1);
+    }
+
+    static float clamp01(float v) nothrow @nogc { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+    // Every paint that's this widget's own: its region, its shape, and any it added -- not the
+    // layer its children are in, if it made one, as they see to their own
+    void forEachOwnPaint(scope void delegate(Tvg_Paint) nothrow @nogc action) nothrow @nogc
+    {
+        if (!shape)
+            return;
+        foreach (p; regionPaints)
+            action(p);
+        action(shape);
+        foreach (p; extraPaints)
+            if (p !is _childClipHolder)
+                action(p);
+    }
+
+    // As many paints as the background and border have layers, in the layer before `shape`
+    void syncRegionPaints() nothrow
+    {
+        if (!shape)
+            return;
+        const want = _background.fills.length + _border.strokes.length;
+        while (regionPaints.length < want)
+        {
+            auto p = tvg_shape_new();
+            tvg_scene_insert(layer, p, shape);
+            tvg_paint_set_opacity(p, cast(ubyte)(appliedOpacity * 255 + 0.5f));
+            tvg_paint_set_transform(p, &appliedMatrix);
+            regionPaints ~= p;
+        }
+        while (regionPaints.length > want)
+        {
+            tvg_scene_remove(layer, regionPaints[$ - 1]);
+            regionPaints = regionPaints[0 .. $ - 1];
+        }
+        invalidate();
+    }
+
+    void paintRegion(float x, float y, float w, float h) nothrow @nogc
+    {
+        foreach (i, ref f; _background.fills)
+        {
+            auto p = regionPaints[i];
+            tvg_shape_reset(p);
+            tvg_shape_set_fill_color(p, f.fill.tupleof);
+            appendOutline(p, x + f.insets.left, y + f.insets.top, w - f.insets.left - f.insets.right,
+                          h - f.insets.top - f.insets.bottom, f.radii);
+        }
+        foreach (i, ref b; _border.strokes)
+        {
+            // Inside the edge: the stroke is centred on its path, so the path is half its width in
+            auto p = regionPaints[_background.fills.length + i];
+            const half = b.width / 2;
+            tvg_shape_reset(p);
+            tvg_shape_set_fill_color(p, 0, 0, 0, 0);
+            tvg_shape_set_stroke_width(p, b.width);
+            tvg_shape_set_stroke_color(p, b.colour.tupleof);
+            appendOutline(p, x + b.insets.left + half, y + b.insets.top + half,
+                          w - b.insets.left - b.insets.right - b.width, h - b.insets.top - b.insets.bottom - b.width,
+                          b.radii.less(half));
+        }
+    }
+
+    void parseInlineStyle()
+    {
+        import core.stdc.stdio : fprintf, stderr;
+        inlineDeclarations = null;
+        if (!_style.length)
+            return;
+        try
+            inlineDeclarations = parseDeclarations(_style);
+        catch (CssException e)
+            fprintf(stderr, "%.*s's style: %.*s\n", cast(int) typeid(this).name.length, typeid(this).name.ptr,
+                    cast(int) e.msg.length, e.msg.ptr);
+    }
+    float _childOffsetX = 0, _childOffsetY = 0; // from scrollChildren()
     bool repaint;      // set by invalidate(), for changes the rectangle doesn't show
     MouseHandler[MouseEventType.max + 1] mouseHandlers;
     KeyHandler[KeyEventType.max + 1] keyHandlers;
     InputMethodHandler inputMethodHandler;
+    ScrollHandler scrollHandler;
     Tvg_Paint[] extraPaints; // from addPaint(), drawn after `shape` and before the children
     Tvg_Paint mountBefore;   // while mounting, where the shapes go: see mount()
+    float _acrossX = 0, _acrossY = 0; // see place()
+
+    /*
+        How far to move this widget along one axis from where Yoga put it: `across` of whatever
+        its parent's inside has left over beyond it and its margins, rounded to the pixel grid as
+        Yoga rounds everything else. Nothing unless it stretches on that axis and falls short.
+    */
+    float shortfall(float across, float size, YGEdge start, YGEdge end,
+                    typeof(&YGNodeLayoutGetWidth) parentSize) nothrow @nogc
+    {
+        import core.stdc.math : roundf;
+        if (across == 0 || !parent)
+            return 0;
+        const inside = parentSize(parent.node)
+                     - YGNodeLayoutGetPadding(parent.node, start) - YGNodeLayoutGetPadding(parent.node, end)
+                     - YGNodeLayoutGetBorder(parent.node, start) - YGNodeLayoutGetBorder(parent.node, end);
+        const left = inside - size - YGNodeLayoutGetMargin(node, start) - YGNodeLayoutGetMargin(node, end);
+        const scale = scene ? YGConfigGetPointScaleFactor(scene.config) : 1;
+        return roundf(left * across * scale) / scale;
+    }
 
     void on(MouseEventType type, MouseHandler handler) nothrow @nogc
     {
@@ -697,8 +1272,9 @@ private:
         keyHandlers[type] = handler;
     }
 
-    /// The first shape drawn after everything under `w`: the next sibling's, or failing that, the
-    /// next sibling of the nearest ancestor with one. Null if nothing comes after.
+    /// The first shape drawn after everything under `w` in its layer: the next sibling's, or
+    /// failing that, the next sibling of the nearest ancestor with one in the same layer. Null if
+    /// nothing comes after.
     static Tvg_Paint paintAfter(Widget w) nothrow @nogc
     {
         for (; w.parent; w = w.parent)
@@ -712,8 +1288,41 @@ private:
                     return siblings[i + 1].shape; // a widget's own shape comes before its children's
                 break;
             }
+            if (w.parent._childLayer)
+                return null; // the end of the parent's layer, which is all its children have
         }
         return null;
+    }
+
+    void invalidateAccessibleTree() nothrow @nogc
+    {
+        invalidateAccessible();
+        foreach (child; _children)
+            child.invalidateAccessibleTree();
+    }
+
+    /// The layer this widget's children are drawn in.
+    Tvg_Paint childrensLayer() nothrow @nogc { return _childLayer ? _childLayer : layer; }
+
+    /// `r` less this widget's padding, as the layout worked it out.
+    Rect insidePadding(Rect r) nothrow @nogc
+    {
+        const l = YGNodeLayoutGetPadding(node, YGEdgeLeft), t = YGNodeLayoutGetPadding(node, YGEdgeTop);
+        return Rect(r.x + l, r.y + t, r.w - l - YGNodeLayoutGetPadding(node, YGEdgeRight),
+                    r.h - t - YGNodeLayoutGetPadding(node, YGEdgeBottom));
+    }
+
+    // Where the layout put this widget in its parent, with any nudge its alignment gives it (see place())
+    float layoutX() nothrow @nogc
+    {
+        return YGNodeLayoutGetLeft(node) + shortfall(_acrossX, YGNodeLayoutGetWidth(node), YGEdgeLeft,
+                                                     YGEdgeRight, &YGNodeLayoutGetWidth);
+    }
+
+    float layoutY() nothrow @nogc
+    {
+        return YGNodeLayoutGetTop(node) + shortfall(_acrossY, YGNodeLayoutGetHeight(node), YGEdgeTop,
+                                                    YGEdgeBottom, &YGNodeLayoutGetHeight);
     }
 
     /// Takes the shapes of this widget and everything below it out of the scene.
@@ -724,12 +1333,21 @@ private:
         // Off the scene's config, which the scene frees when it's done while this node lives on
         YGNodeSetConfig(node, cast(YGConfigRef) YGConfigGetDefault());
         foreach (p; extraPaints)
-            tvg_scene_remove(scene.paints, p);
+            tvg_scene_remove(layer, p); // and with a clip, its layer, now empty
         extraPaints = null;
-        tvg_scene_remove(scene.paints, shape); // the scene owned it, so this frees it
+        foreach (p; regionPaints)
+            tvg_scene_remove(layer, p);
+        regionPaints = null;
+        appliedOpacity = 1;
+        appliedMatrix = identity;
+        stopTransitions(this);
+        styled = false; // styled afresh, with nothing to transition from, if it comes back
+        _childLayer = _childClip = _childClipHolder = null;
+        tvg_scene_remove(layer, shape); // the layer owned it, so this frees it
         shape = null;
         scene = null;
-        painted = Rect.init; // NaN again: nothing to hit, and painted in full if it comes back
+        layer = null;
+        painted = drawn = Rect.init; // NaN again: nothing to hit, and painted in full if it comes back
         _setHover(false);
         _setPressed(false);
         _setFocused(false);
@@ -756,16 +1374,39 @@ private:
             child.refreshDisabled();
     }
 
-    // Layout properties, passed on to Yoga. NaN means "work it out", which Yoga calls auto for a
-    // size and undefined for a bound.
-    void applySize() nothrow @nogc
+    // Asks the parent to place this widget again, or places it on its own if it has none
+    void placeInParent() nothrow @nogc
     {
-        _prefWidth == _prefWidth ? YGNodeStyleSetWidth(node, _prefWidth) : YGNodeStyleSetWidthAuto(node);
-        _prefHeight == _prefHeight ? YGNodeStyleSetHeight(node, _prefHeight) : YGNodeStyleSetHeightAuto(node);
-        YGNodeStyleSetMinWidth(node, _minWidth);
-        YGNodeStyleSetMaxWidth(node, _maxWidth);
-        YGNodeStyleSetMinHeight(node, _minHeight);
-        YGNodeStyleSetMaxHeight(node, _maxHeight);
+        if (parent)
+            parent.placeChild(this);
+        else
+            place(_grow, false, false, YGAlignAuto);
+    }
+
+    /*
+        The sizes, passed on to Yoga. NaN means "work it out", which Yoga calls auto for a size and
+        undefined for a bound, and so does a bound of no limit, or of the preferred size when that's
+        worked out from the content: holding to it is up to the parent (see Row). A stretched axis
+        is as place() describes.
+    */
+    void applySize(bool stretchWidth, bool stretchHeight) nothrow @nogc
+    {
+        // A scene's root is the window's size, whatever it asks for, as JavaFX's is: it's in
+        // percentages, which the scene's layout resolves against the window (see Scene.attach)
+        if (scene && !parent && scene.root is this)
+        {
+            YGNodeStyleSetWidthPercent(node, 100);
+            YGNodeStyleSetHeightPercent(node, 100);
+            YGNodeStyleSetMinWidth(node, float.nan);
+            YGNodeStyleSetMaxWidth(node, float.nan);
+            YGNodeStyleSetMinHeight(node, float.nan);
+            YGNodeStyleSetMaxHeight(node, float.nan);
+            return;
+        }
+        applyAxis!(YGNodeStyleSetWidth, YGNodeStyleSetWidthAuto, YGNodeStyleSetMinWidth, YGNodeStyleSetMaxWidth)
+                  (node, _minWidth, _prefWidth, _maxWidth, stretchWidth);
+        applyAxis!(YGNodeStyleSetHeight, YGNodeStyleSetHeightAuto, YGNodeStyleSetMinHeight, YGNodeStyleSetMaxHeight)
+                  (node, _minHeight, _prefHeight, _maxHeight, stretchHeight);
     }
 
     void applyPadding() nothrow @nogc
@@ -783,16 +1424,29 @@ private:
         YGNodeStyleSetMargin(node, YGEdgeBottom, _margin.bottom);
         YGNodeStyleSetMargin(node, YGEdgeLeft, _margin.left);
     }
+}
 
-    void applyGrow() nothrow @nogc
+// One axis of Widget.applySize: the size, and the min and max bounding it
+private void applyAxis(alias setSize, alias setAuto, alias setMin, alias setMax)
+                      (YGNodeRef node, float min, float pref, float max, bool stretch) nothrow @nogc
+{
+    import std.math : isFinite;
+    if (min == Widget.usePrefSize)
+        min = pref; // NaN if the preferred size is worked out, and then a Row's no-shrinking holds it
+    if (max == Widget.usePrefSize)
+        max = pref;
+    if (stretch)
     {
-        YGNodeStyleSetFlexGrow(node, _grow);
-        YGNodeStyleSetFlexShrink(node, _grow > 0 ? 1 : 0);
-        if (_grow > 0)
-            YGNodeStyleSetFlexBasis(node, 0);
-        else
-            YGNodeStyleSetFlexBasisAuto(node);
+        setAuto(node);
+        if (pref == pref && !(pref <= min))
+            min = pref;
     }
+    else if (pref == pref)
+        setSize(node, pref);
+    else
+        setAuto(node);
+    setMin(node, min);
+    setMax(node, isFinite(max) ? max : float.nan);
 }
 
 /// Puts every node in the tree under `w` back on Yoga's default config, so the scene's can be freed.

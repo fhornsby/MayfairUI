@@ -2,6 +2,7 @@ module tests.properties;
 
 import core.thread : Thread;
 import core.time : msecs;
+import std.math : abs;
 import std.format : format;
 import harness;
 import mayfair;
@@ -145,6 +146,85 @@ void layout()
     });
 }
 
+/// Controls keep their preferred size in a Row or Column, as in JavaFX, and containers fill; a max
+/// changes either.
+void preferredSizes()
+{
+    Column root;
+    Button button, wide;
+    Label label;
+    TextField field;
+    Widget plain;
+    Row row;
+    Button inRow, growing, growingWide;
+    Widget filler, short_, narrow;
+    run("properties: controls keep their preferred size", {
+        root = new Column();
+        button = new Button("Short");
+        wide = new Button("Wide").maxWidth(float.infinity);
+        label = new Label("A label");
+        field = new TextField();
+        plain = new Widget().prefSize(50, 20);
+        inRow = new Button("In a row");
+        growing = new Button("Grows").grow(1);
+        growingWide = new Button("Grows wide").grow(1).maxWidth(float.infinity);
+        filler = new Widget().prefWidth(10);
+        short_ = new Widget().prefWidth(10).maxHeight(30);
+        narrow = new Widget().prefHeight(10).maxWidth(100);
+        row = new Row().prefHeight(80).alignment(Pos.centerLeft);
+        row.add(inRow).add(growing).add(growingWide).add(filler).add(short_);
+        root.add(button).add(wide).add(label).add(field).add(plain).add(row).add(narrow);
+        return cast(Widget) root;
+    }, (Driver d) {
+        d.ui({
+            const r = root.boundsInScene;
+            d.check(button.boundsInScene.width < r.width, "a button keeps its own width in a column");
+            d.expect(button.boundsInScene.minX, r.minX, "at the column's alignment");
+            d.check(label.boundsInScene.width < r.width, "so does a label");
+            d.expect(wide.boundsInScene.width, r.width, "unless its max is raised");
+            d.expect(field.boundsInScene.width, r.width, "a text field stretches along the line");
+            d.expect(plain.boundsInScene.width, r.width, "a plain widget fills, whatever its pref");
+            d.expect(plain.boundsInScene.height, 20f, "and keeps its pref down the column");
+            d.expect(row.boundsInScene.width, r.width, "so does a row");
+
+            const rb = row.boundsInScene, b = inRow.boundsInScene;
+            d.check(b.height < rb.height, "a button keeps its own height in a row");
+            d.check(abs(b.centerY - rb.centerY) <= 0.5, "at the row's alignment, to the pixel");
+            d.expect(filler.boundsInScene.height, rb.height, "while a plain widget fills it");
+            d.check(growing.boundsInScene.width < 150, "a growing button stays its width");
+            d.check(growingWide.boundsInScene.width > 200, "unless its max is raised");
+
+            const s = short_.boundsInScene;
+            d.expect(s.height, 30f, "stretching stops at the max");
+            d.check(abs(s.centerY - rb.centerY) <= 0.5, "and it sits at the row's alignment");
+            d.expect(narrow.boundsInScene.width, 100f, "the same down a column");
+            d.expect(narrow.boundsInScene.minX, r.minX, "at its start");
+        });
+
+        d.ui({ root.setAlignment(Pos.topRight); });
+        d.settle();
+        d.ui({
+            d.expect(narrow.boundsInScene.maxX, root.boundsInScene.maxX, "or its end");
+            d.expect(button.boundsInScene.maxX, root.boundsInScene.maxX, "with the controls");
+        });
+        d.ui({ root.setAlignment(Pos.topLeft); });
+
+        // Changing a max, or fill, while it's showing
+        d.ui({ button.setMaxWidth(float.infinity); row.setFillHeight(false); });
+        d.settle();
+        d.ui({
+            d.expect(button.boundsInScene.width, root.boundsInScene.width, "a raised max, while showing");
+            d.check(filler.boundsInScene.height < row.boundsInScene.height, "fill off: nothing stretches");
+        });
+        d.ui({ button.setMaxWidth(Widget.useComputedSize); row.setFillHeight(true); });
+        d.settle();
+        d.ui({
+            d.check(button.boundsInScene.width < root.boundsInScene.width, "and back to its own width");
+            d.expect(filler.boundsInScene.height, row.boundsInScene.height, "and fill back on");
+        });
+    });
+}
+
 /// Read-only properties report what's happening, and can't be set from outside.
 void readOnly()
 {
@@ -168,5 +248,30 @@ void readOnly()
         d.ui({ d.check(b.armed && b.armedProperty.get, "armed while held down"); });
         d.release(bb.centerX, bb.centerY);
         d.ui({ d.check(!b.armed, "not once let go"); });
+    });
+}
+
+/// The scene's root is the window's size whatever it's set to, and a control won't take children.
+void rootAndAdd()
+{
+    Column root;
+    run("properties: the root fills the window; controls keep their children", {
+        root = new Column();
+        return cast(Widget) root;
+    }, (Driver d) {
+        float w, h;
+        d.ui({ w = root.boundsInScene.width; h = root.boundsInScene.height; });
+        d.ui({ root.setPrefWidth(100); root.setMaxHeight(50); root.setGrow(1); });
+        d.settle();
+        d.ui({
+            d.expect(root.boundsInScene.width, w, "the root keeps the window's width");
+            d.expect(root.boundsInScene.height, h, "and its height");
+        });
+        d.ui({
+            import std.exception : collectException;
+            foreach (control; [cast(Widget) new Label("x"), new Button("x"), new ScrollPane(), new TextField()])
+                d.check(collectException(control.add(new Widget)) !is null, typeid(control).name ~ " refuses add()");
+            d.check(collectException(new Column().add(new Widget)) is null, "a container takes children");
+        });
     });
 }

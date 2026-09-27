@@ -42,6 +42,31 @@ struct MouseEvent
 /// What a widget calls when it hears about a mouse event.
 alias MouseHandler = void delegate(ref MouseEvent event);
 
+/*
+    The wheel turned, or fingers moved on a touchpad: JavaFX's ScrollEvent. It goes to the
+    widget under the pointer and bubbles up from there, like a mouse event, so the nearest thing
+    that scrolls -- a ScrollPane, say -- takes it, and one inside another scrolls first.
+
+    The deltas are in points, and say which way the content should move: deltaY is positive when
+    the wheel turns away from the user, which scrolls up and brings the top into view, as in
+    JavaFX. A notch of a wheel is Theme.scroll_step points, JavaFX's 40. A touchpad follows the
+    fingers, and the desktop's natural scrolling setting is already applied to both.
+*/
+struct ScrollEvent
+{
+    float deltaX = 0, deltaY = 0; /// How far, in points: see above
+    float sceneX = 0, sceneY = 0; /// Where the pointer is, in points from the window's top left
+    float x = 0, y = 0;           /// The same, from the top left of the widget hearing the event
+    Widget target;                /// The widget under the pointer, which it bubbles up from
+    bool shift, control, alt, meta;
+    bool consumed;
+
+    void consume() nothrow @nogc { consumed = true; }
+}
+
+/// What a widget calls when it hears about a scroll.
+alias ScrollHandler = void delegate(ref ScrollEvent event);
+
 /// What happened on the keyboard. JavaFX's KeyEvent types.
 enum KeyEventType
 {

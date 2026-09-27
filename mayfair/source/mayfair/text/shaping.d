@@ -3,10 +3,10 @@ module mayfair.text.shaping;
 import mayfair.text.bidi;
 import mayfair.text.font;
 import mayfair.text.harfbuzz;
-import mayfair.text.linebreak;
 
 /*
-    The seam. Everything above here -- fonts, shaping, where lines break -- is what text means; every
+    The seam. Everything above here -- fonts, shaping, and where lines break, in
+    mayfair.text.paragraph -- is what text means; every
     route for getting it on screen is below. A GlyphRun says which glyphs, and where, and nothing
     about how they are drawn, so the outline emitter in mayfair.text.outline can be swapped for an
     atlas that rasterises the same run into a texture without any of this changing.
@@ -35,13 +35,6 @@ struct GlyphRun
     PositionedGlyph[] glyphs;
     float width;       /// total advance, in points
     bool rightToLeft;  /// whether the line as a whole reads right to left: its first strong character does
-}
-
-/// A whole wrapped paragraph, one GlyphRun per line.
-struct TextLayout
-{
-    GlyphRun[] lines;
-    float width, height;  /// in points
 }
 
 /*
@@ -86,79 +79,6 @@ GlyphRun shapeText(Font font, const(char)[] text)
 
     run.width = penX;
     return run;
-}
-
-/*
-    Shapes `text` wrapped to `maxWidth` points. Pass maxWidth <= 0 for a single line.
-
-    Where a line may break is libunibreak's job (UAX #14), not HarfBuzz's and not a search for
-    spaces: the rules cover hyphens, CJK, which punctuation may start or end a line, and a good deal
-    more that guessing gets wrong. Given the opportunities, the choice of which to take here is
-    plain greedy -- take the last one that fits.
-*/
-TextLayout layoutText(Font font, string text, float maxWidth)
-{
-    TextLayout result;
-    if (text.length == 0)
-        return result;
-
-    // brks[i] describes the break after byte i. init_linebreak() builds shared tables and is safe
-    // to call more than once.
-    init_linebreak();
-    auto brks = new char[text.length];
-    set_linebreaks_utf8(cast(const(ubyte)*) text.ptr, text.length, "en", brks.ptr);
-
-    size_t start = 0;
-    while (start < text.length)
-    {
-        size_t cut = text.length; // byte offset where the next line starts
-
-        // A mandatory break (a newline in the text) wins over any fitting decision
-        foreach (i; start .. text.length)
-            if (brks[i] == LINEBREAK_MUSTBREAK)
-            {
-                cut = i + 1;
-                break;
-            }
-
-        auto run = shapeText(font, text[start .. cut]);
-
-        if (maxWidth > 0 && run.width > maxWidth)
-        {
-            // The last opportunity whose line still fits. How wide the line up to a break would be
-            // is the advance of every glyph from text before it -- summed rather than read off
-            // positions, since in mixed-direction text the glyphs aren't in the text's order. The
-            // line is then shaped again on its own, which reorders it for what it now holds.
-            size_t fitting = 0;
-            foreach (b; 1 .. cut - start)
-            {
-                if (brks[start + b - 1] != LINEBREAK_ALLOWBREAK)
-                    continue;
-                float width = 0;
-                foreach (ref g; run.glyphs)
-                    if (g.cluster < b)
-                        width += g.advance;
-                if (width > maxWidth)
-                    break;
-                fitting = b;
-            }
-            // fitting == 0 means not even the first word fits, so let this line overflow rather
-            // than emit an empty one and loop forever
-            if (fitting > 0)
-            {
-                cut = start + fitting;
-                run = shapeText(font, text[start .. cut]);
-            }
-        }
-
-        result.lines ~= run;
-        if (run.width > result.width)
-            result.width = run.width;
-        start = cut;
-    }
-
-    result.height = font.lineHeight * result.lines.length;
-    return result;
 }
 
 private:

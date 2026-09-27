@@ -45,6 +45,14 @@ private enum FT_LOAD_TARGET_LIGHT_ = 1 << 16;
 void emitRun(Tvg_Paint shape, ref GlyphRun run, float originX, float baselineY,
              float scale = 1.0f) nothrow @nogc
 {
+    foreach (ref g; run.glyphs)
+        emitGlyph(shape, g, originX + g.x, baselineY + g.y, scale);
+}
+
+/// One glyph, its origin at `x`, `y` in points. For drawing a run's glyphs somewhere other than
+/// where the run put them: a line of a wrapped paragraph (see mayfair.text.paragraph).
+void emitGlyph(Tvg_Paint shape, ref const PositionedGlyph g, float x, float y, float scale = 1.0f) nothrow @nogc
+{
     FT_Outline_Funcs funcs;
     funcs.move_to = &emitMoveTo;
     funcs.line_to = &emitLineTo;
@@ -55,26 +63,20 @@ void emitRun(Tvg_Paint shape, ref GlyphRun run, float originX, float baselineY,
 
     const snap = scale > 0 ? scale : 1.0f;
 
-    foreach (ref g; run.glyphs)
-    {
-        // Each glyph's own font, since a run can mix in fallbacks for characters the first lacked
-        auto face = g.font.outlineFace(snap);
-        if (FT_Load_Glyph(face, g.glyph, FT_LOAD_TARGET_LIGHT_ | FT_LOAD_NO_BITMAP_) != 0)
-            continue;
-        auto slot = face.glyph;
-        if (slot.format != FT_Glyph_Format.FT_GLYPH_FORMAT_OUTLINE)
-            continue; // a colour or bitmap glyph, which the vector route has nothing to say about
+    // Each glyph's own font, since a run can mix in fallbacks for characters the first lacked
+    auto face = (cast() g.font).outlineFace(snap);
+    if (FT_Load_Glyph(face, g.glyph, FT_LOAD_TARGET_LIGHT_ | FT_LOAD_NO_BITMAP_) != 0)
+        return;
+    auto slot = face.glyph;
+    if (slot.format != FT_Glyph_Format.FT_GLYPH_FORMAT_OUTLINE)
+        return; // a colour or bitmap glyph, which the vector route has nothing to say about
 
-        // Round in device space, then back to points: the Scene's transform will scale these
-        // coordinates by `snap`, so landing on whole pixels there is what matters, not here.
-        auto emitter = Emitter(shape,
-                               roundf((originX + g.x) * snap) / snap,
-                               roundf((baselineY + g.y) * snap) / snap,
-                               snap);
-        FT_Outline_Decompose(&slot.outline, &funcs, &emitter);
-        if (emitter.open)
-            tvg_shape_close(shape); // FreeType closes each contour implicitly; ThorVG wants it said
-    }
+    // Round in device space, then back to points: the Scene's transform will scale these
+    // coordinates by `snap`, so landing on whole pixels there is what matters, not here.
+    auto emitter = Emitter(shape, roundf(x * snap) / snap, roundf(y * snap) / snap, snap);
+    FT_Outline_Decompose(&slot.outline, &funcs, &emitter);
+    if (emitter.open)
+        tvg_shape_close(shape); // FreeType closes each contour implicitly; ThorVG wants it said
 }
 
 private:

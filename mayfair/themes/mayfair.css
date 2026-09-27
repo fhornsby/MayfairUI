@@ -1,0 +1,348 @@
+/*
+    Mayfair's built-in theme: its user agent stylesheet. It's compiled into the library, and an
+    app's own stylesheets go over it -- or replace it, as a Scene's userAgentStylesheet.
+
+    Colours are variables: the palette is declared once on .root, and every rule after it says
+    which colour it means, not what colour it is. So an app can recolour the whole kit from one
+    rule,
+
+        .root { --accent: #f97316; --base: #3f3f46; }
+
+    and a single widget, or everything in part of the tree, by declaring them there instead:
+
+        .danger { --base: #b91c1c; --hover-base: #dc2626; --pressed-base: #991b1b; }
+
+    Both palettes are below: light by default, and dark under
+    @media (prefers-colour-scheme: dark), which follows the desktop's preference.
+*/
+
+/*
+    The palette, light unless the desktop -- or the Scene's colorScheme -- says dark. Everything
+    after it names these colours rather than giving any of its own, so it serves both.
+*/
+.root {
+    font-size: 14px;
+    background-colour: var(--background);
+    --focus: var(--accent);          /* the ring round what the keyboard's on */
+
+    --background: #f8fafc;           /* behind everything */
+    --text: #0f172a;                 /* text */
+    --accent: #0284c7;
+
+    --base: #e2e8f0;                 /* a button, at rest */
+    --hover-base: #cbd5e1;           /* under the pointer */
+    --pressed-base: #94a3b8;         /* pressed in */
+    --default-base: #0284c7;         /* the default button, in the accent */
+    --default-hover-base: #0369a1;
+    --default-pressed-base: #075985;
+    --default-text: #ffffff;
+    --selected-base: #bae6fd;        /* a toggle button that's in */
+    --selected-hover-base: #7dd3fc;
+    --mark: #ffffff;                 /* a tick or dot, on the accent */
+
+    --field: #ffffff;                /* where text is typed */
+    --field-border: #cbd5e1;
+    --field-hover-border: #94a3b8;
+    --prompt-text: #64748b;
+    --selection: #0284c74d;
+
+    --thumb: #0f172a66;
+    --thumb-hover: #0f172a99;
+}
+
+@media (prefers-colour-scheme: dark) {
+    .root {
+        --background: #0f172a;
+        --text: #e2e8f0;
+        --accent: #38bdf8;
+
+        --base: #334155;
+        --hover-base: #475569;
+        --pressed-base: #1e293b;
+        --default-base: #0284c7;
+        --default-hover-base: #0ea5e9;
+        --default-pressed-base: #0369a1;
+        --default-text: #e2e8f0;
+        --selected-base: #075985;
+        --selected-hover-base: #0369a1;
+        --mark: #ffffff;
+
+        --field: #1e293b;
+        --field-border: #475569;
+        --field-hover-border: #64748b;
+        --prompt-text: #94a3b8;
+        --selection: #38bdf85a;
+
+        --thumb: #e2e8f06e;
+        --thumb-hover: #e2e8f0aa;
+    }
+}
+
+.label {
+    colour: var(--text);
+}
+
+.label:disabled {
+    opacity: 0.4;
+}
+
+/*
+    A button is two layers: a ring, clear until focus reaches it by keyboard, and the button
+    itself, in --face -- which its states point at a different one of the palette. A default
+    button has a palette of its own, in the accent.
+*/
+.button, .toggle-button {
+    --face: var(--base);
+    background-colour: transparent, var(--face);
+    background-insets: -2, 0;
+    background-radius: 10, 8;
+    padding: 8 16;
+    colour: var(--text);
+    /* Colours ease in and out, and it's pushed in quicker than it lights up */
+    transition: background-colour 150ms ease-out, scale-x 90ms ease-out, scale-y 90ms ease-out;
+}
+
+.button:hover, .toggle-button:hover {
+    --face: var(--hover-base);
+}
+
+.button:armed, .toggle-button:armed {
+    --face: var(--pressed-base);
+    scale-x: 0.96;
+    scale-y: 0.96;
+}
+
+.toggle-button:selected {
+    --face: var(--selected-base);
+}
+
+.toggle-button:selected:hover {
+    --face: var(--selected-hover-base);
+}
+
+.button:default {
+    --base: var(--default-base);
+    --hover-base: var(--default-hover-base);
+    --pressed-base: var(--default-pressed-base);
+    colour: var(--default-text);
+}
+
+.button:focus-visible, .toggle-button:focus-visible {
+    background-colour: var(--focus), var(--face);
+}
+
+.button:disabled, .toggle-button:disabled {
+    opacity: 0.4;
+}
+
+/*
+    Icons: a symbolic one is drawn in the colour of the text round it, as GTK draws them -- the
+    text's, or on a default button, the default button's. One inside a disabled control fades with
+    it, as the control's opacity takes everything in it.
+*/
+.icon {
+    icon-colour: var(--text);
+}
+
+.button:default > .icon {
+    icon-colour: var(--default-text);
+}
+
+.text-field, .text-area {
+    background-colour: var(--field);
+    background-radius: 6;
+    border-colour: var(--field-border);
+    border-width: 1;
+    border-radius: 6;
+    padding: 7 10;
+    colour: var(--text);
+    prompt-text-colour: var(--prompt-text);
+    selection-colour: var(--selection);
+    transition: border-colour 150ms ease-out;
+}
+
+.text-field:hover, .text-area:hover {
+    border-colour: var(--field-hover-border);
+}
+
+.text-field:focused, .text-area:focused {
+    border-colour: var(--focus);
+    border-width: 2;
+}
+
+.text-field:disabled, .text-area:disabled {
+    opacity: 0.4;
+}
+
+.scroll-pane {
+    thumb-colour: var(--thumb);
+    thumb-hover-colour: var(--thumb-hover);
+}
+
+/*
+    Check boxes and radio buttons: a mark, then the text. The mark's colours are variables on the
+    mark itself -- its ring, its edge and its fill -- and each state changes the one it's about, so
+    any mix of them comes out right with a rule for each. The focus ring is a border outside it,
+    with a gap, so it shows against a ticked box's accent too.
+*/
+.check-box, .radio-button {
+    colour: var(--text);
+    graphic-text-gap: 8;
+    padding: 4;
+}
+
+.check-box > .box, .radio-button > .radio {
+    --ring: transparent;
+    --edge: var(--field-border);
+    --fill: var(--field);
+    background-colour: var(--edge), var(--fill);
+    background-insets: 0, 1;
+    border-colour: var(--ring);
+    border-width: 2;
+    border-insets: -4;
+    transition: background-colour 150ms ease-out, border-colour 150ms ease-out;
+}
+
+.check-box > .box {
+    background-radius: 4, 3;
+    border-radius: 7;
+    padding: 3;
+}
+
+.radio-button > .radio {
+    background-radius: 1em;
+    border-radius: 1em;
+    padding: 4;
+}
+
+.check-box:hover > .box, .radio-button:hover > .radio {
+    --edge: var(--field-hover-border);
+}
+
+.check-box:selected > .box, .check-box:indeterminate > .box, .radio-button:selected > .radio {
+    --edge: var(--accent);
+    --fill: var(--accent);
+}
+
+.check-box:focus-visible > .box, .radio-button:focus-visible > .radio {
+    --ring: var(--focus);
+}
+
+/* The tick, and the dash for indeterminate, drawn as shapes stretched to the mark's padding. The
+   dash's path starts and ends with moves to the corners, so it's stretched to the same box as the
+   tick and sits in the middle of it, rather than filling it. */
+.check-box > .box > .mark {
+    padding: 5 6;
+    shape: "M0,5.6 L1.5,4.1 L4.4,7 L10.5,0.9 L12,2.4 L4.4,10 Z";
+    background-colour: transparent;
+    transition: background-colour 150ms ease-out;
+}
+
+.check-box:selected > .box > .mark {
+    background-colour: var(--mark);
+}
+
+.check-box:indeterminate > .box > .mark {
+    shape: "M0,0 M1,4.2 H11 V5.8 H1 Z M12,10";
+    background-colour: var(--mark);
+}
+
+.radio-button > .radio > .dot {
+    padding: 4;
+    background-colour: transparent;
+    background-radius: 1em;
+    transition: background-colour 150ms ease-out;
+}
+
+.radio-button:selected > .radio > .dot {
+    background-colour: var(--mark);
+}
+
+.check-box:disabled, .radio-button:disabled {
+    opacity: 0.4;
+}
+
+/* A text area's padding is its text's, inside the scroll pane, so it scrolls with it; the area
+   itself keeps just enough to stay inside its own border */
+.text-area {
+    padding: 2;
+}
+
+.text-area .content {
+    padding: 5 8;
+}
+
+/*
+    Sliders: a thin track, filled in the accent up to a round thumb. The thumb has a ring when
+    the keyboard's on the slider, as a button does.
+*/
+.slider:horizontal {
+    width: 140;
+}
+
+.slider:vertical {
+    height: 140;
+}
+
+.slider > .track, .slider > .fill {
+    background-radius: 2;
+}
+
+.slider:horizontal > .track, .slider:horizontal > .fill {
+    height: 4;
+}
+
+.slider:vertical > .track, .slider:vertical > .fill {
+    width: 4;
+}
+
+.slider > .track {
+    background-colour: var(--field-border);
+}
+
+.slider > .fill {
+    background-colour: var(--accent);
+}
+
+.slider > .thumb {
+    --ring: transparent;
+    --edge: var(--field-border);
+    width: 18;
+    height: 18;
+    background-colour: var(--edge), var(--field);
+    background-insets: 0, 1;
+    background-radius: 1em;
+    border-colour: var(--ring);
+    border-width: 2;
+    border-insets: -4;
+    border-radius: 1em;
+    transition: background-colour 150ms ease-out, border-colour 150ms ease-out;
+}
+
+.slider:hover > .thumb, .slider:value-changing > .thumb {
+    --edge: var(--accent);
+}
+
+.slider:focus-visible > .thumb {
+    --ring: var(--focus);
+}
+
+.slider:disabled {
+    opacity: 0.4;
+}
+
+/* Progress bars: a track, and the bar along it in the accent */
+.progress-bar {
+    width: 200;
+}
+
+.progress-bar > .track {
+    height: 6;
+    background-colour: var(--field-border);
+    background-radius: 3;
+}
+
+.progress-bar > .bar {
+    background-colour: var(--accent);
+    background-radius: 3;
+}

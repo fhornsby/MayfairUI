@@ -6,45 +6,29 @@ struct Theme
 {
     @disable this();   // namespace only, never instantiated
 
-    enum Colour background_colour = Colour(15, 23, 42);
-    enum Colour text_colour       = Colour(226, 232, 240);
-    enum Colour accent_colour     = Colour(56, 189, 248);
-    enum Colour border_colour     = Colour(51, 65, 85, 200);
-
+    // How things look is the built-in stylesheet's (themes/mayfair.css); what's here is how they
+    // behave, and the few values something needs before any stylesheet has been applied
+    enum Colour background_colour = Colour(15, 23, 42);    // behind the scene, under the root's own background
+    enum Colour text_colour       = Colour(226, 232, 240); // text, before it's styled
     enum float text_size = 14;     // points, for text not given a font of its own
 
-    enum Colour button_colour         = Colour(51, 65, 85);
-    enum Colour button_hover_colour   = Colour(71, 85, 105);
-    enum Colour button_pressed_colour = Colour(30, 41, 59);
-    enum Colour button_text_colour    = text_colour;
-    // A default button -- the one Enter presses -- is drawn in the accent, so it's clear which that is
-    enum Colour default_button_colour         = Colour(2, 132, 199);
-    enum Colour default_button_hover_colour   = Colour(14, 165, 233);
-    enum Colour default_button_pressed_colour = Colour(3, 105, 161);
-    enum float button_radius          = 8;     // points
-    enum float button_padding_x       = 16;
-    enum float button_padding_y       = 8;
-    enum float button_press_shrink    = 0.04;  // how much smaller a button is while held down
-    enum Duration button_hover_time   = 150.msecs;
-    enum Duration button_press_time   = 90.msecs;
+    enum Duration button_press_time   = 90.msecs;  // how long Enter or Escape shows a button pressed
 
-    enum Colour focus_ring_colour     = accent_colour;
-    enum float focus_ring_width       = 2;     // points
-    enum Duration focus_ring_time     = 120.msecs;
-
-    enum float disabled_opacity       = 0.4;   // how much of a disabled control still shows
-
-    enum Colour text_field_colour        = Colour(30, 41, 59);
-    enum Colour text_field_border_colour = Colour(71, 85, 105);
-    enum Colour text_field_hover_colour  = Colour(100, 116, 139); // the border, with the pointer over it
-    enum Colour prompt_text_colour       = Colour(148, 163, 184); // what an empty field shows as a hint
-    enum Colour selection_colour         = Colour(56, 189, 248, 90);
     enum float text_field_width          = 200;  // points, before any growing or shrinking
-    enum float text_field_padding_x      = 10;
-    enum float text_field_padding_y      = 7;
-    enum float text_field_radius         = 6;
     enum float caret_width               = 1.5;
     enum Duration caret_blink_time       = 1000.msecs; // one on and one off
     enum int caret_blink_count           = 10;  // blinks before it holds still, as GNOME's does
     enum int undo_limit                  = 100; // edits a text field remembers
+
+    // Scrolling. The bars are GNOME's overlay ones: thin, over the content, and only there while
+    // something's happening. Their colours are the stylesheet's.
+    enum float scroll_step               = 40;  // points per notch of a wheel, as JavaFX's
+    enum float scroll_bar_thin           = 3;   // points across, while it only shows where you are
+    enum float scroll_bar_wide           = 8;   // points across, with the pointer over it to take hold of
+    enum float scroll_bar_margin         = 3;   // points between a bar and the edge it runs along
+    enum float scroll_bar_reach          = 14;  // points in from the edge the pointer takes hold of a bar in
+    enum float scroll_bar_min_length     = 24;  // points: the least a thumb shrinks to, however long the content
+    enum Duration scroll_bar_fade_time   = 200.msecs;
+    enum Duration scroll_bar_widen_time  = 100.msecs;
+    enum Duration scroll_bar_linger_time = 1000.msecs; // shown after the last scroll or movement
 }

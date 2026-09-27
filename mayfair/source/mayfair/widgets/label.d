@@ -9,17 +9,23 @@ import mayfair.text;
 import mayfair.widgets.widget;
 
 /*
-    A line of text.
+    Text: a line of it, or several, wrapped to the width it's given if wrapText says so.
+
+        new Label("A long explanation...").wrapText(true)
 
     The text is shaped when it's set, not when it's painted or measured. Shaping allocates, and both
     of the places that would otherwise do it -- Yoga's measure callback and paintTree -- run inside
     the frame loop, which is @nogc on purpose. Doing it at set-text time keeps that promise honest,
     and it's the right place anyway: the glyphs only change when the text or the font does.
 
-    That's also why there's no wrapping yet. Wrapping needs the available width, which isn't known
-    until Yoga is already laying out, so it can't be done up front the way this is. It wants either
-    a shaping cache keyed by width or a relaxed @nogc boundary in the layout phase, and that's a
-    decision worth making deliberately rather than falling into.
+    Wrapping keeps it too. The layout decides the width, and asks how tall the label is at it while
+    it's working, so everything that doesn't depend on the width is done up front, and the lines at
+    a width are worked out from that with arithmetic alone (see Paragraph). The text's own line
+    breaks always start a new line, wrapping or not, as JavaFX's do.
+
+    A wrapping label is as wide as its text on one line if it has room, as JavaFX's is, and wraps
+    when it hasn't: in a Column, when the column is narrower; in a Row, give it a maxWidth, or
+    grow, for the room it can have.
 
     Without a font of its own it uses the default at the theme's text size, which is what most
     labels want; font() swaps in another. Either way, characters the font can't draw come from a
@@ -37,6 +43,7 @@ public:
     {
         _font = defaultFont(Theme.text_size);
         _text = text;
+        styleClass.add("label");
         setAccessibleRole(AccessibleRole.label);
         // Yoga asks a leaf how big it wants to be through this callback, which finds its way back
         // here through the node's context pointer
@@ -49,16 +56,32 @@ public:
     mixin(declareProperty!(string, "text", "null", q{ reshape(); }));
 
     /// What it's drawn with, e.g. `font("Noto Serif", 24)` or a Font opened from the app's own file.
-    mixin(declareProperty!(Font, "font", "null", q{ reshape(); }));
+    mixin(declareStyleableProperty!(Font, "font", "font, font-family, font-size, font-weight, font-style",
+                                    "null", q{ reshape(); }, true));
 
     /// The colour of the text. JavaFX's textFill.
-    mixin(declareProperty!(Colour, "textFill", "Theme.text_colour", q{ applyFill(); }));
+    mixin(declareStyleableProperty!(Colour, "textFill", "colour", "Theme.text_colour", q{ applyFill(); }));
+
+    /// Whether the text wraps to the label's width, rather than staying on one line. JavaFX's wrapText.
+    mixin(declareStyleableProperty!(bool, "wrapText", "wrap-text", "false", q{ remeasure(); }));
+
+    /// How lines line up with each other, and in a label wider than its text. JavaFX's textAlignment.
+    mixin(declareStyleableProperty!(TextAlignment, "textAlignment", "text-align", "TextAlignment.left",
+                                    q{ invalidate(); }));
+
+    /// Extra room between lines, in points. JavaFX's lineSpacing.
+    mixin(declareStyleableProperty!(float, "lineSpacing", "line-spacing", "0", q{ remeasure(); }));
 
 protected:
+    override bool takesChildren() const nothrow @nogc { return false; } // Yoga measures it, as a leaf
+
+    // As big as its text and no bigger, as a JavaFX Labeled is: see Widget.maxWidth
+    override float computeMaxWidth() const nothrow @nogc { return usePrefSize; }
+    override float computeMaxHeight() const nothrow @nogc { return usePrefSize; }
+
     override void mounted() nothrow
     {
         applyFill();
-        applyOpacity();
     }
 
     override void describeAccessible(ref AccessibleNode node)
@@ -66,28 +89,41 @@ protected:
         node.value(_text);
     }
 
-    override void disabledChanged()
-    {
-        applyOpacity();
-        invalidate();
-    }
-
     override void paint(float x, float y, float w, float h) nothrow @nogc
     {
-        // y is the top of the box; a run's origin is its baseline, one ascender below that
-        emitRun(shape, _run, x, y + _ascender, scene ? scene.scale : 1.0f);
+        // The width the layout settled on was measured from these lines, but rounded to the pixel
+        // grid since, so a line that fitted it before rounding still does
+        const lines = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
+        const scale = scene ? scene.scale : 1.0f;
+        float top = y;
+        foreach (ref line; lines)
+        {
+            float left = x;
+            if (_textAlignment == TextAlignment.center)
+                left += (w - line.width) / 2;
+            else if (_textAlignment == TextAlignment.right)
+                left += w - line.width;
+            // A line's origin is its baseline, one ascender below its top
+            _paragraph.emitLine(shape, line, left, top + _paragraph.ascender, scale);
+            top += _paragraph.lineHeight + _lineSpacing;
+        }
     }
 
 private:
     /// Shapes the text again, for a new text or font, and has the layout measure it again.
     void reshape()
     {
-        _run = shapeText(_font, _text);
-        _ascender = _font.ascender;
-        _lineHeight = _font.lineHeight;
+        if (!_font)
+            _font = defaultFont(Theme.text_size); // none given, or a stylesheet's taken back
+        _paragraph = Paragraph(_font, _text);
+        remeasure();
+        invalidateAccessible();
+    }
+
+    void remeasure() nothrow @nogc
+    {
         YGNodeMarkDirty(node); // the measured size changed, so the layout above it has to be redone
         invalidate();
-        invalidateAccessible();
     }
 
     void applyFill() nothrow @nogc
@@ -97,21 +133,17 @@ private:
         invalidate();
     }
 
-    // A disabled label fades, like any other control: it's a control in JavaFX too
-    void applyOpacity() nothrow @nogc
-    {
-        if (shape)
-            tvg_paint_set_opacity(shape, disabled ? cast(ubyte)(255 * Theme.disabled_opacity) : 255);
-    }
-
-    GlyphRun _run;
-    float _ascender = 0, _lineHeight = 0;
+    Paragraph _paragraph;
 }
+
+/// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.
+enum TextAlignment { left, center, right, justify }
 
 /*
     Yoga measuring a leaf. It runs inside YGNodeCalculateLayout, so it must not allocate or throw --
-    hence the shaping already being done. The modes are ignored because a single line has one size;
-    a wrapping Label would have to respect YGMeasureModeAtMost on the width.
+    hence the shaping already being done. Wrapping, it wraps to the width Yoga has, whether that's
+    all it may have (at most) or what it will have (exactly); with no width to go by, the text's
+    as wide as it is on its lines.
 */
 private extern(C) YGSize measureLabel(YGNodeConstRef node, float width, YGMeasureMode widthMode,
                                       float height, YGMeasureMode heightMode) nothrow @nogc
@@ -119,5 +151,8 @@ private extern(C) YGSize measureLabel(YGNodeConstRef node, float width, YGMeasur
     auto self = cast(Label) YGNodeGetContext(node);
     if (!self)
         return YGSize(0, 0);
-    return YGSize(self._run.width, self._lineHeight);
+    const wrap = self._wrapText && widthMode != YGMeasureModeUndefined;
+    float w, h;
+    self._paragraph.measure(wrap ? width : float.infinity, self._lineSpacing, w, h);
+    return YGSize(w, h);
 }

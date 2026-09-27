@@ -21,7 +21,8 @@
 		"bindings"
 	],
 	"stringImportPaths": [
-		"fonts"
+		"fonts",
+		"themes"
 	],
 	"cImportPaths": [
 		"vendor/thorvg/src/bindings/capi",

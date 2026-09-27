@@ -4,6 +4,11 @@
 	"license": "MIT",
 	"targetType": "executable",
 	"dependencies": {
-		"mayfair": { "path": ".." }
-	}
+		"mayfair": {
+			"path": ".."
+		}
+	},
+	"stringImportPaths": [
+		"assets"
+	]
 }
