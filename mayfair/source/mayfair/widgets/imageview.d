@@ -191,6 +191,9 @@ private:
         _naturalWidth = _naturalHeight = 0;
         if (_image && !_image.error)
         {
+            // Kept first, so the decoding's own shapes are the keeper's, and every view has a copy
+            if (_image.keepsDecoding)
+                keepDecoding(_image);
             auto p = createPicture(_image);
             float w = 0, h = 0;
             if (p)
@@ -215,6 +218,37 @@ private:
             tvg_picture_set_filter(_picture, _smooth ? TVG_FILTER_METHOD_BILINEAR : TVG_FILTER_METHOD_NEAREST);
         invalidate();
     }
+}
+
+/*
+    Decodings kept for Image.cached()'s images, so they outlast the views showing them. ThorVG
+    shares one decoding between every picture made from the same bytes, and frees it with the last
+    of them: so the icon a scrolled list's rows all stopped showing would be decoded again when one
+    came back to it. A picture of each that's never drawn holds on to it instead.
+
+    They're ThorVG's, so they go before its engine does, when the App that started it closes; the
+    next App decodes each again the first time it's shown.
+*/
+private Tvg_Paint[const Image] keptDecodings;
+
+private void keepDecoding(Image image) nothrow
+{
+    if (image in keptDecodings)
+        return;
+    auto keeper = tvg_picture_new();
+    if (tvg_picture_load_data(keeper, image.dataPointer, image.dataLength, image.mimeType, image.resourcePath,
+                              image.copyOnLoad) == TVG_RESULT_SUCCESS)
+        keptDecodings[image] = keeper;
+    else
+        tvg_paint_rel(keeper);
+}
+
+/// Lets go of the kept decodings: before ThorVG's engine stops.
+package(mayfair) void releaseKeptDecodings()
+{
+    foreach (keeper; keptDecodings)
+        tvg_paint_rel(keeper);
+    keptDecodings = null;
 }
 
 /// Yoga measuring an image view: its preferred size, whatever room there is.

@@ -39,6 +39,22 @@ public:
         }
     }
 
+    /*
+        The image file at `path`, read once for the life of the app and shared by everything that
+        asks for it after: what an Icon shows, so a hundred rows with a folder icon read the file
+        once and decode it once, and a row scrolled onto another icon and back doesn't read or
+        decode it again. For files that don't change while the app runs, as a theme's icons don't.
+    */
+    static Image cached(string path)
+    {
+        if (auto hit = path in cache)
+            return *hit;
+        auto image = new Image(path);
+        image._shared = true;
+        cache[path] = image;
+        return image;
+    }
+
     /// An image from the bytes of its file, such as `import("logo.svg")`. `name` is what the file
     /// was called, if there's a name: a hint at what it holds, and for messages.
     static Image fromData(const(void)[] data, string name = null)
@@ -104,6 +120,9 @@ package(mayfair):
     const(char)* mimeType() const nothrow @nogc { return mimeTypes[_format].ptr; }
     const(char)* resourcePath() const nothrow @nogc { return _resourcePath.length ? _resourcePathZ.ptr : null; }
 
+    /// Whether it's one of cached()'s, whose decoding is worth keeping once it's made.
+    bool keepsDecoding() const nothrow @nogc { return _shared; }
+
     /// A view decoded it: its size is known now, or it turned out not to be an image after all.
     void decoded(bool ok, float width, float height) nothrow @nogc
     {
@@ -126,6 +145,9 @@ private:
     bool _error;
     string[] _colourSlots;
     bool _slotsScanned;
+    bool _shared; // one of cached()'s
+
+    static Image[string] cache; // cached()'s, by path
 
     this() {}
 
@@ -220,4 +242,6 @@ unittest
     assert(i.dataLength == 6 && i.dataPointer[6] == 0, "a 0 after the data, not counted");
     assert(new Image("/nonexistent/image.png").error, "a missing file: an error, not an exception");
     assert(Image.fromData("").error);
+    assert(Image.cached("/nonexistent/icon.svg") is Image.cached("/nonexistent/icon.svg"), "one per path");
+    assert(Image.cached("/nonexistent/icon.svg").keepsDecoding && !i.keepsDecoding);
 }

@@ -739,6 +739,7 @@ public:
         renderer = chooseRenderer();
         // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
         scope(exit) renderer.release();
+        scope(exit) releaseKeptDecodings(); // before the renderer's engine goes, and after the scene's pictures
         if (!renderer.initialise(window))
             return;
 

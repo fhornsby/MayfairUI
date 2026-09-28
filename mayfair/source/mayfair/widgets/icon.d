@@ -127,7 +127,7 @@ private:
             const path = IconTheme.lookup(_iconName, size, scale);
             if (image && path.length && image.name == path)
                 return;
-            setImage(path.length ? new Image(path) : null);
+            setImage(path.length ? Image.cached(path) : null); // read and decoded once, however many show it
         }
         catch (Exception)
             setImage(null);

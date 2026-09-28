@@ -46,6 +46,7 @@ void main(string[] args)
     tests.controls.textAreas();
     tests.images.imageViews();
     tests.images.icons();
+    tests.images.sharedIcons();
     tests.images.lottie();
     tests.images.lottieSlots();
     tests.containers.stacks();

@@ -275,3 +275,42 @@ void lottieSlots()
         expectColour(Colour(51, 102, 204), "taken away: the file's own again");
     });
 }
+
+/// Icons by name share one Image, read and decoded once, and still each take their own colour;
+/// one shown after every other has gone shares it too.
+void sharedIcons()
+{
+    ProbeIcon a, b;
+    Column root;
+    run("images: shared icons", {
+        root = new Column().fillWidth(false).spacing(8).padding(20);
+        a = new ProbeIcon("edit-copy-symbolic");
+        b = new ProbeIcon("edit-copy-symbolic");
+        b.setStyle("icon-colour: #b91c1c;");
+        root.add(a).add(b);
+        return cast(Widget) root;
+    }, (Driver d) {
+        if (!IconTheme.lookup("edit-copy-symbolic", 16).length)
+            return; // not a desktop with the icon: nothing to share
+        Image first;
+        d.ui({
+            first = a.image;
+            d.check(first !is null && first is b.image, "one Image for both");
+            d.check(coloursOf(a.probe)[0] != coloursOf(b.probe)[0], "each in its own colour");
+            d.expect(coloursOf(b.probe)[0], Colour(0xb9, 0x1c, 0x1c, 255));
+            root.remove(a);
+            root.remove(b);
+        });
+        d.settle();
+        ProbeIcon c;
+        d.ui({
+            c = new ProbeIcon("edit-copy-symbolic");
+            root.add(c);
+        });
+        d.settle();
+        d.ui({
+            d.check(c.image is first, "shown again after the others went: the same one");
+            d.check(c.probe !is null && coloursOf(c.probe).length > 0, "and drawn");
+        });
+    });
+}
