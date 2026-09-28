@@ -19,6 +19,7 @@ import mayfair.accessibility;
 import mayfair.windowing.accessibility;
 import mayfair.windowing.platform;
 import mayfair.windowing.decorations;
+import mayfair.windowing.wayland : WindowMover;
 
 
 /*
@@ -83,6 +84,7 @@ Widget textInputWidget;
 SDL_Rect textInputRect;
 int textInputCursor;
 bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
+WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
 
 /*
     HiDPI. Layout and paint work in points; the scene transform turns those into device pixels, so
@@ -565,6 +567,11 @@ final class Controls : WindowControls {
     }
     bool maximised() { return (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0; }
     void showMenu(float x, float y) { SDL_ShowWindowSystemMenu(window, toWindow(x), toWindow(y)); }
+    bool movesByDrag() { return mover.available; }
+    bool beginMove() {
+        return mover.move(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                                 SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null));
+    }
 }
 
 bool drawsDecorations; // Mayfair draws the title bar and edges, rather than the desktop
@@ -646,6 +653,10 @@ SDL_HitTestResult hitTestAt(float x, float y) nothrow @nogc {
     foreach (p; _scene.popups)
         if (p.autoHide || p.modal)
             return SDL_HitTestResult.SDL_HITTEST_NORMAL;
+    // With the mover, the press is the title bar's, to tell a double click from a drag by;
+    // without it, the window system moves the window from the press
+    if (mover.available)
+        return SDL_HitTestResult.SDL_HITTEST_NORMAL;
     return bar.dragsWindowAt(x + m - band, y + m - band) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE
                                                          : SDL_HitTestResult.SDL_HITTEST_NORMAL;
 }
@@ -717,6 +728,7 @@ public:
             return;
         }
         scope(exit) SDL_DestroyWindow(window);
+        scope(exit) mover.close(); // before the window, and SDL's connection, go
         {
             int cw, ch;
             SDL_GetWindowSize(window, &cw, &ch);
@@ -742,6 +754,9 @@ public:
             }
             else if (!_scene.titleBar.title.length)
                 _scene.titleBar.setTitle(title);
+            if (wayland)
+                mover.open(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                                  SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null));
             _scene.windowControls = new Controls;
             SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
             applyFrame();
@@ -807,6 +822,7 @@ public:
             }
             // The time in SDL_WaitEvent includes SDL handling what the window system sent, e.g. libdecor
             // redrawing the title bar during a resize, as well as time spent idle
+            mover.dispatch();
             trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
                   traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
 

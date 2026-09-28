@@ -1178,4 +1178,9 @@ interface WindowControls
     bool maximised();
     /// Shows the window system's own menu for the window, at `x`, `y` points in it.
     void showMenu(float x, float y);
+    /// Whether the title bar hears the press that moves the window, and starts the move itself with
+    /// beginMove() once the press is a drag. If not, the window system has taken the press already.
+    bool movesByDrag();
+    /// Has the window system move the window by the pointer, while the press that's down lasts.
+    bool beginMove();
 }

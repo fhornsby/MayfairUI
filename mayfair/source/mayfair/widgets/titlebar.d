@@ -145,13 +145,31 @@ protected:
 
     override void handleMouse(ref MouseEvent event)
     {
-        // A press anywhere that isn't a control is the window's: its menu for the secondary
-        // button, and maximising on a double click of the primary one (a single press of which
-        // the window system has already taken, to move the window)
-        if (event.type != MouseEventType.pressed || !isDragArea(event.target))
-            return;
         auto controls = scene ? scene.windowControls : null;
         if (!controls)
+            return;
+        // A drag from a press on the bar moves the window, once it's gone further than a hand
+        // shakes during a double click (GTK's drag threshold)
+        if (event.type == MouseEventType.dragged && _movePending)
+        {
+            enum threshold = 8;
+            const dx = event.sceneX - _pressX, dy = event.sceneY - _pressY;
+            if (dx * dx + dy * dy >= threshold * threshold)
+            {
+                _movePending = false;
+                controls.beginMove();
+            }
+            event.consume();
+            return;
+        }
+        if (event.type == MouseEventType.released)
+            _movePending = false;
+
+        // A press anywhere that isn't a control is the window's: its menu for the secondary
+        // button, and maximising on a double click of the primary one. A single press of it
+        // might be the start of a move -- or, where the window system takes the press to move
+        // the window, has already been one
+        if (event.type != MouseEventType.pressed || !isDragArea(event.target))
             return;
         if (event.button == MouseButton.secondary)
         {
@@ -160,7 +178,15 @@ protected:
         }
         else if (event.button == MouseButton.primary && event.clickCount == 2)
         {
+            _movePending = false;
             controls.toggleMaximised();
+            event.consume();
+        }
+        else if (event.button == MouseButton.primary && controls.movesByDrag())
+        {
+            _movePending = true;
+            _pressX = event.sceneX;
+            _pressY = event.sceneY;
             event.consume();
         }
     }
@@ -206,6 +232,8 @@ private:
     Widget _shownTitleWidget;
     WindowButton[] _windowButtons;
     bool _startButtonsFirst;
+    bool _movePending;     // the primary button went down on the bar, and a drag would move the window
+    float _pressX, _pressY; // where, in the window
 
     void showTitleWidget()
     {

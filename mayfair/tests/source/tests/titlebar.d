@@ -61,5 +61,31 @@ void titleBars()
         Thread.sleep(600.msecs);
         d.settle();
         d.ui({ d.expect(maximise.accessibleText, "Maximise", "and restored, it maximises again"); });
+
+        // The bar where there's nothing: a click leaves the window be, a double click maximises it
+        // (measured afresh each time: maximised, the frame's margin goes and the bar moves up)
+        float emptyX, emptyY;
+        void findEmpty()
+        {
+            d.ui({
+                emptyX = (open.boundsInScene.maxX + title.boundsInScene.minX) / 2;
+                emptyY = bar.boundsInScene.centreY;
+            });
+        }
+        findEmpty();
+        d.click(emptyX, emptyY);
+        Thread.sleep(600.msecs);
+        d.settle();
+        d.ui({ d.expect(maximise.accessibleText, "Maximise", "a click on the bar doesn't maximise"); });
+        d.click(emptyX, emptyY, 2);
+        Thread.sleep(600.msecs);
+        d.settle();
+        d.ui({ d.expect(maximise.accessibleText, "Restore", "a double click on the bar maximises"); });
+        findEmpty();
+        d.click(emptyX, emptyY);
+        d.click(emptyX, emptyY, 2);
+        Thread.sleep(600.msecs);
+        d.settle();
+        d.ui({ d.expect(maximise.accessibleText, "Maximise", "and another restores"); });
     });
 }
