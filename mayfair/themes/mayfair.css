@@ -615,9 +615,16 @@
     background-colour: var(--row-selected);
 }
 
-.list-view:focus-visible .list-cell:selected {
-    background-colour: var(--focus), var(--row-selected);
+/* The row the keys are on, while the list has focus from them: a bar at its left. It's the
+   selected row, unless Ctrl and the arrows moved it on without selecting. */
+.list-view:focus-visible .list-cell:current {
+    background-colour: var(--focus), var(--field);
     background-insets: 0, 0 0 0 3;
+}
+
+.list-view:focus-visible .list-cell:current:selected {
+    background-colour: var(--focus), var(--field), var(--row-selected);
+    background-insets: 0, 0 0 0 3, 0 0 0 3;
 }
 
 .list-view .placeholder {
@@ -677,9 +684,19 @@
     background-colour: var(--row-selected);
 }
 
-.table-view:focus-visible .table-row:selected {
-    background-colour: var(--focus), var(--row-selected);
+.table-view:focus-visible .table-row:current {
+    background-colour: var(--focus), var(--field);
     background-insets: 0, 0 0 0 3;
+}
+
+.table-view:focus-visible .table-row:current:odd {
+    background-colour: var(--focus), var(--field), var(--row-stripe);
+    background-insets: 0, 0 0 0 3, 0 0 0 3;
+}
+
+.table-view:focus-visible .table-row:current:selected {
+    background-colour: var(--focus), var(--field), var(--row-selected);
+    background-insets: 0, 0 0 0 3, 0 0 0 3;
 }
 
 .table-cell {

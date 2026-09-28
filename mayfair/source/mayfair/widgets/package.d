@@ -25,6 +25,7 @@ public import mayfair.widgets.menu;
 public import mayfair.widgets.combobox;
 public import mayfair.widgets.dialog;
 public import mayfair.widgets.virtualflow;
+public import mayfair.widgets.selection;
 public import mayfair.widgets.listview;
 public import mayfair.widgets.tableview;
 public import mayfair.widgets.titlebar;

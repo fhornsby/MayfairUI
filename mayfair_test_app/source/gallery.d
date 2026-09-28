@@ -510,9 +510,13 @@ Widget listsPage(Report report)
     string[] files;
     foreach (i; 0 .. 10_000)
         files ~= format!"Document %05d.txt"(i);
-    auto list = new ListView!string(files).prefSize(300, 260);
+    // As a file manager's: Ctrl and Shift select more than one
+    auto list = new ListView!string(files).prefSize(300, 260).selectionMode(SelectionMode.multiple);
     list.cellFactory({ return cast(ListCell!string) new FileCell; });
-    list.selectedIndexProperty.addListener((int was, int now) { report("Selected " ~ list.selectedItem); });
+    list.onSelectionChanged({
+        const n = list.selectedIndices.length;
+        report(n == 1 ? "Selected " ~ list.selectedItem : format!"%d selected"(n));
+    });
     list.onActivate((int i) { report("Opened " ~ files[i]); });
 
     // A table of made-up people, sortable by any column
@@ -540,8 +544,9 @@ Widget listsPage(Report report)
 
     return page("Lists & tables", "A list or a table makes only the rows in view, however many items it has, "
                 ~ "and gives rows that scroll out of view to those scrolling in. Click a table's header to sort "
-                ~ "by it, click again for the other way, and drag its right edge to size the column.")
-        .add(section("A list of ten thousand, with a cell of its own", list))
+                ~ "by it, click again for the other way, and drag its right edge to size the column. In the list, "
+                ~ "Ctrl+click and Shift+click select more than one, as do Shift and Ctrl with the arrows, and Ctrl+A.")
+        .add(section("A list of ten thousand, with a cell of its own, selecting any number", list))
         .add(section("A table of five thousand people", table));
 }
 

@@ -100,6 +100,13 @@ final class Driver
         settle();
     }
 
+    /// Holds `mods` down for the mouse events after, as Ctrl or Shift held while clicking: SDL reads
+    /// a mouse event's modifiers from the keyboard's state, not the event. KMOD_NONE lets go.
+    void hold(SDL_Keymod mods)
+    {
+        ui({ SDL_SetModState(mods); });
+    }
+
     /// Text typed, as a keyboard or an input method committing it would send it.
     void type(string text)
     {

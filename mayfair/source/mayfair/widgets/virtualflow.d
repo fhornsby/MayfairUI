@@ -104,6 +104,14 @@ public:
         return size_t.max;
     }
 
+    /// Each row that's showing an index, with the index.
+    final void forEachRow(scope void delegate(Widget row, size_t index) action)
+    {
+        foreach (i, shows; _shows)
+            if (shows < _count)
+                action(_rows[i], shows);
+    }
+
     /// Scrolls so row `index` is in view.
     final void reveal(size_t index)
     {

@@ -8,6 +8,7 @@ import mayfair.widgets.input;
 import mayfair.widgets.label;
 import mayfair.widgets.layouts;
 import mayfair.widgets.scrollpane;
+import mayfair.widgets.selection;
 import mayfair.widgets.styling;
 import mayfair.widgets.virtualflow;
 import mayfair.widgets.widget;
@@ -34,9 +35,15 @@ import mayfair.widgets.widget;
     A click selects, and Up and Down, Page Up and Page Down, Home and End move the selection,
     scrolling to keep it in view. It's one stop for Tab. With no items, it says so (placeholder).
 
-    Its style class is "list-view", and each row is a `.list-cell`, :selected for the selected one
-    and :odd for every other, for striping. To a screen reader it's a list box of options, each
-    saying where it is in the whole list.
+    One item is selected at a time, unless selectionMode says any number can be, when Ctrl and
+    Shift with a click or the keys select more, as in a file manager (see Selection):
+
+        files.selectionMode(SelectionMode.multiple);
+        files.onSelectionChanged({ show(files.selectedItems); });
+
+    Its style class is "list-view", and each row is a `.list-cell`: :selected for those selected,
+    :current for the one the keys are on, and :odd for every other, for striping. To a screen
+    reader it's a list box of options, each saying where it is in the whole list.
 */
 class ListView(T) : Widget
 {
@@ -65,8 +72,16 @@ public:
     /// What it lists.
     mixin(declarePropertyOf!(T[], "T[]", "items", "null", q{ itemsChanged(); }));
 
-    /// Which is selected, from 0; -1 for none.
-    mixin(declareProperty!(int, "selectedIndex", "-1", q{ selectionChanged(); }));
+    /// Which is selected, from 0; -1 for none. With several selected, the one selected last.
+    /// Setting it selects that one alone.
+    mixin(declareProperty!(int, "selectedIndex", "-1", q{ selectedIndexSet(); }));
+
+    /// Whether one item can be selected at a time, or any number.
+    mixin(declareProperty!(SelectionMode, "selectionMode", "SelectionMode.single", q{
+        _selection.setMode(_selectionMode);
+        selectionUpdated();
+        invalidateAccessible();
+    }));
 
     /// What it says when it has no items.
     mixin(declareProperty!(string, "placeholder", `"No items"`, q{ _empty.setText(_placeholder); }));
@@ -77,6 +92,43 @@ public:
         return _selectedIndex >= 0 && _selectedIndex < _items.length ? _items[_selectedIndex] : T.init;
     }
 
+    /// Which are selected, from the first.
+    final int[] selectedIndices() const { return _selection.indices; }
+
+    /// The items selected, in the list's order.
+    final T[] selectedItems()
+    {
+        T[] all;
+        foreach (i; _selection.indices)
+            all ~= _items[i];
+        return all;
+    }
+
+    /// Whether item `index` is selected.
+    final bool isSelected(int index) const nothrow @nogc { return _selection.isSelected(index); }
+
+    /// Adds item `index` to what's selected -- or, one at a time, selects it alone.
+    final void select(int index) { _selection.select(index); selectionUpdated(); }
+
+    /// Takes item `index` out of what's selected.
+    final void deselect(int index) { _selection.deselect(index); selectionUpdated(); }
+
+    /// Adds items `from` to `to` to what's selected, either way round.
+    final void selectRange(int from, int to) { _selection.selectRange(from, to, true); selectionUpdated(); }
+
+    /// Selects every item, if any number can be.
+    final void selectAll() { _selection.selectAll(); selectionUpdated(); }
+
+    /// Selects nothing.
+    final void clearSelection() { _selection.clear(); selectionUpdated(); }
+
+    /// What to do when what's selected changes, however it did.
+    final ListView onSelectionChanged(void delegate() handler) nothrow @nogc
+    {
+        _onSelectionChanged = handler;
+        return this;
+    }
+
     /// How rows are made: a ListCell of your own that shows an item its own way.
     final ListView cellFactory(ListCell!T delegate() factory)
     {
@@ -84,7 +136,7 @@ public:
         return this;
     }
 
-    /// What to do when a row's activated: double clicked, or Enter pressed on the selection.
+    /// What to do when a row's activated: double clicked, or Enter pressed on it.
     final ListView onActivate(void delegate(int index) handler) nothrow @nogc
     {
         _onActivate = handler;
@@ -111,29 +163,18 @@ protected:
     {
         if (event.type != KeyEventType.pressed || !_items.length)
             return;
-        const n = cast(int) _items.length;
-        const page = _flow.rowHeight > 0 ? cast(int)(_pane.viewportBounds.height / _flow.rowHeight) - 1 : 10;
-        const at = _selectedIndex;
-        int to;
-        switch (event.code)
+        if (event.code == KeyCode.enter || event.code == KeyCode.numpadEnter)
         {
-            case KeyCode.down:     to = at < 0 ? 0 : at + 1; break;
-            case KeyCode.up:       to = at < 0 ? 0 : at - 1; break;
-            case KeyCode.pageDown: to = at + (page > 1 ? page : 1); break;
-            case KeyCode.pageUp:   to = at - (page > 1 ? page : 1); break;
-            case KeyCode.home:     to = 0; break;
-            case KeyCode.end:      to = n - 1; break;
-            case KeyCode.enter, KeyCode.numpadEnter:
-                if (at >= 0 && _onActivate)
-                    _onActivate(at);
-                event.consume();
-                return;
-            default:
-                return;
+            if (_selection.current >= 0 && _onActivate)
+                _onActivate(_selection.current);
+            event.consume();
+            return;
         }
-        to = to < 0 ? 0 : to >= n ? n - 1 : to;
-        setSelectedIndex(to);
-        scrollTo(to);
+        const page = _flow.rowHeight > 0 ? cast(int)(_pane.viewportBounds.height / _flow.rowHeight) - 1 : 10;
+        if (!_selection.key(event, page))
+            return;
+        selectionUpdated();
+        scrollTo(_selection.current);
         event.consume();
     }
 
@@ -150,7 +191,8 @@ protected:
                 if (i == size_t.max)
                     break;
                 requestFocus();
-                setSelectedIndex(cast(int) i);
+                _selection.press(cast(int) i, event.shift, event.control);
+                selectionUpdated();
                 if (event.clickCount == 2 && _onActivate)
                     _onActivate(cast(int) i);
                 event.consume();
@@ -162,6 +204,8 @@ protected:
     override void describeAccessible(ref AccessibleNode node)
     {
         node.rowCount(_items.length);
+        if (_selectionMode == SelectionMode.multiple)
+            node.multiselectable();
     }
 
 private:
@@ -171,6 +215,10 @@ private:
     Label _empty;
     ListCell!T delegate() _factory;
     void delegate(int) _onActivate;
+    void delegate() _onSelectionChanged;
+    Selection _selection;
+    uint _shownChanges; // the selection's changes, as far as onSelectionChanged has heard
+    bool _syncing;      // setting selectedIndex from the selection, not the other way
 
     Widget makeCell()
     {
@@ -180,27 +228,42 @@ private:
     void bindCell(Widget w, size_t i)
     {
         auto cell = cast(ListCell!T) w;
-        cell.show(_items[i], i, _items.length, i == _selectedIndex);
+        cell.show(_items[i], i, _items.length, _selection.isSelected(cast(int) i), i == _selection.current);
     }
 
     void itemsChanged()
     {
-        if (_selectedIndex >= cast(int) _items.length)
-            setSelectedIndex(cast(int) _items.length - 1);
+        _selection.resize(_items.length); // what was selected past the end goes
         _empty.setVisible(_items.length == 0);
         _flow.setCount(_items.length);
+        selectionUpdated();
         invalidateAccessible();
     }
 
-    int _shownSelection = -1;
-
-    void selectionChanged()
+    /// The app set selectedIndex: that item alone, then.
+    void selectedIndexSet()
     {
-        foreach (i; [_shownSelection, _selectedIndex])
-            if (i >= 0)
-                if (auto cell = cast(ListCell!T) _flow.rowAt(i))
-                    cell.showSelected(i == _selectedIndex);
-        _shownSelection = _selectedIndex;
+        if (_syncing)
+            return;
+        _selection.selectOnly(_selectedIndex);
+        selectionUpdated();
+    }
+
+    /// The selection changed: shown on the rows, in selectedIndex, and told to whoever's listening.
+    void selectionUpdated()
+    {
+        _flow.forEachRow((Widget w, size_t i) {
+            (cast(ListCell!T) w).showSelected(_selection.isSelected(cast(int) i), i == _selection.current);
+        });
+        _syncing = true;
+        setSelectedIndex(_selection.lead);
+        _syncing = false;
+        if (_selection.changes != _shownChanges)
+        {
+            _shownChanges = _selection.changes;
+            if (_onSelectionChanged)
+                _onSelectionChanged();
+        }
     }
 }
 
@@ -241,8 +304,11 @@ public:
     final T item() nothrow @nogc { return _item; }
     final size_t index() const nothrow @nogc { return _index; } /// ditto
 
-    /// Whether it's the list's selected row.
+    /// Whether it's selected.
     final bool isSelected() const nothrow @nogc { return _selected; }
+
+    /// Whether it's the row the keys are on.
+    final bool isCurrent() const nothrow @nogc { return _current; }
 
     /// Shows `item`: as text, by default. Override to show it otherwise.
     void updateItem(T item)
@@ -274,21 +340,25 @@ protected:
     }
 
 package:
-    void show(T item, size_t index, size_t count, bool selected)
+    void show(T item, size_t index, size_t count, bool selected, bool current)
     {
         _item = item;
         _index = index;
         _count = count;
         pseudoClassStateChanged(pseudo!"odd", index % 2 == 1);
-        showSelected(selected);
+        showSelected(selected, current);
         updateItem(item);
         invalidateAccessible();
     }
 
-    void showSelected(bool on)
+    void showSelected(bool selected, bool current)
     {
-        _selected = on;
-        pseudoClassStateChanged(pseudo!"selected", on);
+        if (selected == _selected && current == _current)
+            return;
+        _selected = selected;
+        _current = current;
+        pseudoClassStateChanged(pseudo!"selected", selected);
+        pseudoClassStateChanged(pseudo!"current", current);
         invalidateAccessible();
     }
 
@@ -296,7 +366,7 @@ private:
     Label _label;
     T _item;
     size_t _index, _count;
-    bool _selected;
+    bool _selected, _current;
 }
 
 unittest

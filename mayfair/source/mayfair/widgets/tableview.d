@@ -13,6 +13,7 @@ import mayfair.widgets.input;
 import mayfair.widgets.label;
 import mayfair.widgets.layouts;
 import mayfair.widgets.scrollpane;
+import mayfair.widgets.selection;
 import mayfair.widgets.styling;
 import mayfair.widgets.virtualflow;
 import mayfair.widgets.widget;
@@ -29,15 +30,16 @@ import mayfair.widgets.widget;
     Clicking a column's header sorts by it, again sorts the other way, and a third time puts the
     items back in their own order. Sorting compares what the cells say -- as numbers, where both
     are -- unless the column has a comparator of its own, and it's stable, so what's equal keeps
-    its order. The selection stays with its item. Dragging a header's right edge sizes its
+    its order. The selection stays with its items. Dragging a header's right edge sizes its
     column; the last column takes any room to spare.
 
     As with a ListView, only the rows in view are made, however many items there are. Selecting,
-    the keys and activating are as a list's.
+    the keys and activating are as a list's, and so is selecting any number of rows at once, when
+    selectionMode says it can.
 
     Its style class is "table-view". The header is a `.column-header-background` of
-    `.column-header`s, :sorted for the one sorted by; each row is a `.table-row` -- :selected, and
-    :odd for striping -- of `.table-cell`s. To a screen reader it's a table.
+    `.column-header`s, :sorted for the one sorted by; each row is a `.table-row` -- :selected,
+    :current for the one the keys are on, and :odd for striping -- of `.table-cell`s. To a screen reader it's a table.
 */
 class TableView(S) : Widget
 {
@@ -76,8 +78,16 @@ public:
     /// What it shows, a row each.
     mixin(declarePropertyOf!(S[], "S[]", "items", "null", q{ itemsChanged(); }));
 
-    /// Which row is selected, from the top as it's sorted; -1 for none.
-    mixin(declareProperty!(int, "selectedIndex", "-1", q{ selectionChanged(); }));
+    /// Which row is selected, from the top as it's sorted; -1 for none. With several selected, the
+    /// one selected last. Setting it selects that row alone.
+    mixin(declareProperty!(int, "selectedIndex", "-1", q{ selectedIndexSet(); }));
+
+    /// Whether one row can be selected at a time, or any number.
+    mixin(declareProperty!(SelectionMode, "selectionMode", "SelectionMode.single", q{
+        _selection.setMode(_selectionMode);
+        selectionUpdated();
+        invalidateAccessible();
+    }));
 
     /// What it says when it has no items.
     mixin(declareProperty!(string, "placeholder", `"No items"`, q{ _empty.setText(_placeholder); }));
@@ -106,6 +116,43 @@ public:
     /// The item shown in row `row`, as it's sorted.
     final S itemAt(int row) { return _items[_order[row]]; }
 
+    /// Which rows are selected, from the top as it's sorted.
+    final int[] selectedIndices() const { return _selection.indices; }
+
+    /// The items in the rows selected, from the top.
+    final S[] selectedItems()
+    {
+        S[] all;
+        foreach (row; _selection.indices)
+            all ~= _items[_order[row]];
+        return all;
+    }
+
+    /// Whether row `row` is selected.
+    final bool isSelected(int row) const nothrow @nogc { return _selection.isSelected(row); }
+
+    /// Adds row `row` to what's selected -- or, one at a time, selects it alone.
+    final void select(int row) { _selection.select(row); selectionUpdated(); }
+
+    /// Takes row `row` out of what's selected.
+    final void deselect(int row) { _selection.deselect(row); selectionUpdated(); }
+
+    /// Adds rows `from` to `to` to what's selected, either way round.
+    final void selectRange(int from, int to) { _selection.selectRange(from, to, true); selectionUpdated(); }
+
+    /// Selects every row, if any number can be.
+    final void selectAll() { _selection.selectAll(); selectionUpdated(); }
+
+    /// Selects nothing.
+    final void clearSelection() { _selection.clear(); selectionUpdated(); }
+
+    /// What to do when what's selected changes, however it did. Sorting doesn't change it.
+    final TableView onSelectionChanged(void delegate() handler) nothrow @nogc
+    {
+        _onSelectionChanged = handler;
+        return this;
+    }
+
     /// The column it's sorted by, or null for the items' own order.
     final TableColumn!S sortColumn() nothrow @nogc { return _sortColumn; }
 
@@ -122,7 +169,7 @@ public:
         resort();
     }
 
-    /// What to do when a row's activated: double clicked, or Enter on the selection. It's given
+    /// What to do when a row's activated: double clicked, or Enter on it. It's given
     /// the item's index in `items`.
     final TableView onActivate(void delegate(int item) handler) nothrow @nogc
     {
@@ -150,29 +197,18 @@ protected:
     {
         if (event.type != KeyEventType.pressed || !_order.length)
             return;
-        const n = cast(int) _order.length;
-        const page = _flow.rowHeight > 0 ? cast(int)(_pane.viewportBounds.height / _flow.rowHeight) - 1 : 10;
-        const at = _selectedIndex;
-        int to;
-        switch (event.code)
+        if (event.code == KeyCode.enter || event.code == KeyCode.numpadEnter)
         {
-            case KeyCode.down:     to = at < 0 ? 0 : at + 1; break;
-            case KeyCode.up:       to = at < 0 ? 0 : at - 1; break;
-            case KeyCode.pageDown: to = at + (page > 1 ? page : 1); break;
-            case KeyCode.pageUp:   to = at - (page > 1 ? page : 1); break;
-            case KeyCode.home:     to = 0; break;
-            case KeyCode.end:      to = n - 1; break;
-            case KeyCode.enter, KeyCode.numpadEnter:
-                if (at >= 0 && _onActivate)
-                    _onActivate(cast(int) _order[at]);
-                event.consume();
-                return;
-            default:
-                return;
+            if (_selection.current >= 0 && _onActivate)
+                _onActivate(cast(int) _order[_selection.current]);
+            event.consume();
+            return;
         }
-        to = to < 0 ? 0 : to >= n ? n - 1 : to;
-        setSelectedIndex(to);
-        scrollTo(to);
+        const page = _flow.rowHeight > 0 ? cast(int)(_pane.viewportBounds.height / _flow.rowHeight) - 1 : 10;
+        if (!_selection.key(event, page))
+            return;
+        selectionUpdated();
+        scrollTo(_selection.current);
         event.consume();
     }
 
@@ -188,7 +224,8 @@ protected:
                 if (i == size_t.max)
                     break;
                 requestFocus();
-                setSelectedIndex(cast(int) i);
+                _selection.press(cast(int) i, event.shift, event.control);
+                selectionUpdated();
                 if (event.clickCount == 2 && _onActivate)
                     _onActivate(cast(int) _order[i]);
                 event.consume();
@@ -201,6 +238,8 @@ protected:
     {
         node.rowCount(_order.length + 1); // the header's a row too
         node.columnCount(_columns.length);
+        if (_selectionMode == SelectionMode.multiple)
+            node.multiselectable();
     }
 
 private:
@@ -214,8 +253,11 @@ private:
     TableColumn!S _sortColumn;
     bool _ascending = true;
     size_t[] _order;          // the index in `items` of each row, as sorted
-    int _shownSelection = -1;
     void delegate(int) _onActivate;
+    void delegate() _onSelectionChanged;
+    Selection _selection;     // by row, as sorted
+    uint _shownChanges;       // the selection's changes, as far as onSelectionChanged has heard
+    bool _syncing;            // setting selectedIndex from the selection, not the other way
 
     Widget makeRow()
     {
@@ -242,7 +284,7 @@ private:
         foreach (c, cell; row.children)
             if (c < _columns.length)
                 (cast(Label) cell).setText(_columns[c]._text(item));
-        row.show(i, i == _selectedIndex);
+        row.show(i, _selection.isSelected(cast(int) i), i == _selection.current);
     }
 
     /// Every column's width, as the header and each row lay them out: the last takes what's spare.
@@ -311,10 +353,10 @@ private:
         invalidateAccessible();
     }
 
-    /// Works out the rows' order again, keeping the selection on its item.
+    /// Works out the rows' order again, keeping the selection on its items.
     void resort()
     {
-        const selectedItemIndex = _selectedIndex >= 0 && _selectedIndex < _order.length ? _order[_selectedIndex] : size_t.max;
+        const was = _order.dup;
         _order.length = _items.length;
         foreach (i, ref o; _order)
             o = i;
@@ -329,30 +371,45 @@ private:
             }
             sort!(less, SwapStrategy.stable)(_order);
         }
-        int to = -1;
-        foreach (i, o; _order)
-            if (o == selectedItemIndex)
-                to = cast(int) i;
-        _shownSelection = -1;
-        if (to != _selectedIndex)
-            setSelectedIndex(to);
+        // Where each row's item has gone
+        auto rowOf = new int[_items.length];
+        rowOf[] = -1;
+        foreach (row, item; _order)
+            rowOf[item] = cast(int) row;
+        auto moved = new int[was.length];
+        foreach (row, item; was)
+            moved[row] = item < rowOf.length ? rowOf[item] : -1;
+        _selection.reorder(moved, _order.length);
         _flow.setCount(_order.length);
-        if (to >= 0)
-            scrollTo(to);
+        selectionUpdated();
+        if (_selection.lead >= 0)
+            scrollTo(_selection.lead);
     }
 
-    void selectionChanged()
+    /// The app set selectedIndex: that row alone, then.
+    void selectedIndexSet()
     {
-        if (_selectedIndex >= cast(int) _order.length)
-        {
-            setSelectedIndex(cast(int) _order.length - 1);
+        if (_syncing)
             return;
+        _selection.selectOnly(_selectedIndex);
+        selectionUpdated();
+    }
+
+    /// The selection changed: shown on the rows, in selectedIndex, and told to whoever's listening.
+    void selectionUpdated()
+    {
+        _flow.forEachRow((Widget w, size_t i) {
+            (cast(TableRow) w).showSelected(_selection.isSelected(cast(int) i), i == _selection.current);
+        });
+        _syncing = true;
+        setSelectedIndex(_selection.lead);
+        _syncing = false;
+        if (_selection.changes != _shownChanges)
+        {
+            _shownChanges = _selection.changes;
+            if (_onSelectionChanged)
+                _onSelectionChanged();
         }
-        foreach (i; [_shownSelection, _selectedIndex])
-            if (i >= 0)
-                if (auto row = cast(TableRow) _flow.rowAt(i))
-                    row.showSelected(i == _selectedIndex);
-        _shownSelection = _selectedIndex;
     }
 
     /// A header clicked: sorted by it, then the other way, then not.
@@ -492,18 +549,22 @@ private:
             YGNodeStyleSetAlignItems(node, YGAlignCenter);
         }
 
-        void show(size_t index, bool selected)
+        void show(size_t index, bool selected, bool current)
         {
             _index = index;
             pseudoClassStateChanged(pseudo!"odd", index % 2 == 1);
-            showSelected(selected);
+            showSelected(selected, current);
             invalidateAccessible();
         }
 
-        void showSelected(bool on)
+        void showSelected(bool selected, bool current)
         {
-            _selected = on;
-            pseudoClassStateChanged(pseudo!"selected", on);
+            if (selected == _selected && current == _current)
+                return;
+            _selected = selected;
+            _current = current;
+            pseudoClassStateChanged(pseudo!"selected", selected);
+            pseudoClassStateChanged(pseudo!"current", current);
             invalidateAccessible();
         }
 
@@ -518,7 +579,7 @@ private:
 
     private:
         size_t _index;
-        bool _selected;
+        bool _selected, _current;
     }
 }
 

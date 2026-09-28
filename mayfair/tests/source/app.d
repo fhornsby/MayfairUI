@@ -62,6 +62,7 @@ void main(string[] args)
     tests.popups.visibility();
     tests.lists.listViews();
     tests.lists.tableViews();
+    tests.lists.multipleSelection();
     tests.titlebar.titleBars();
     tests.gallery.navigation();
 

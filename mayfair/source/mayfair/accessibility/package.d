@@ -182,6 +182,12 @@ struct AccessibleNode
         accesskit_node_set_expanded(node, on);
     }
 
+    /// That any number of its options can be selected at once: a list's.
+    void multiselectable() nothrow @nogc
+    {
+        accesskit_node_set_multiselectable(node);
+    }
+
     /// That it opens a menu: a menu's title, or an item with a submenu.
     void opensMenu() nothrow @nogc
     {
