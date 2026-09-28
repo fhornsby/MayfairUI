@@ -38,6 +38,9 @@ private:
     WGPUSurface surface;
     WGPUAdapter adapter;
     WGPUDevice device;
+    // Ours to release: wgpuDeviceGetQueue hands out a new reference each call, and each one keeps
+    // the device -- and every texture on it -- alive after release()
+    WGPUQueue queue;
     Tvg_Canvas _canvas;
     uint width, height;
     WGPUPresentMode presentMode;
@@ -97,6 +100,7 @@ public:
         wgpuAdapterRequestDevice(adapter, &deviceDescriptor, deviceCallback);
         if (!device)
             return false;
+        queue = wgpuDeviceGetQueue(device);
 
         // Fifo (vsync on) makes every frame wait for the display: ~16 ms a frame on a Vega 10, against ~1 ms
         // with Mailbox. Fifo is the only mode every GPU supports, so Mailbox is used only where available.
@@ -180,11 +184,13 @@ public:
             tvg_canvas_destroy(_canvas);
             tvg_engine_term();
         }
+        if (queue) wgpuQueueRelease(queue);
         if (device) wgpuDeviceRelease(device);
         if (adapter) wgpuAdapterRelease(adapter);
         if (surface) wgpuSurfaceRelease(surface);
         if (instance) wgpuInstanceRelease(instance);
         _canvas = null;
+        queue = null;
         device = null;
         adapter = null;
         surface = null;
@@ -313,7 +319,7 @@ public:
         wgpuRenderPassEncoderRelease(encoded);
 
         WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, null);
-        wgpuQueueSubmit(wgpuDeviceGetQueue(device), 1, &commands);
+        wgpuQueueSubmit(queue, 1, &commands);
         wgpuCommandBufferRelease(commands);
         wgpuCommandEncoderRelease(encoder);
         wgpuTextureViewRelease(frameView);
