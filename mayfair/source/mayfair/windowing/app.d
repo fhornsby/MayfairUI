@@ -18,6 +18,7 @@ import mayfair.trace;
 import mayfair.accessibility;
 import mayfair.windowing.accessibility;
 import mayfair.windowing.platform;
+import mayfair.filechooser : FileChooser;
 import mayfair.windowing.decorations;
 import mayfair.windowing.wayland : WindowMover;
 
@@ -762,6 +763,7 @@ public:
             SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
             applyFrame();
         }
+        _scene.nativeWindow = window;
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();
         _scene.platformColourScheme = systemColourScheme();
@@ -807,6 +809,11 @@ public:
                 gotEvent = SDL_WaitEventTimeout(&event, msUntilNextPulse());
             } else if (repickPending) {
                 gotEvent = SDL_PollEvent(&event); // it's for update(), which should run now
+            } else if (FileChooser.waiting()) {
+                // The dialog's answer comes over D-Bus, and SDL only reads that when it pumps
+                // events: waiting on the window system alone, it'd sit there until the next
+                // input. So while one's up, the loop looks in now and then.
+                gotEvent = SDL_WaitEventTimeout(&event, 100);
             } else {
                 if (!SDL_WaitEvent(&event))
                     break;

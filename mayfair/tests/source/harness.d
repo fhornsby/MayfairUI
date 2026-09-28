@@ -272,6 +272,12 @@ void run(string name, Widget delegate() build, void delegate(Driver) script)
     auto d = new Driver;
     const before = failures.length;
 
+    // Each App's SDL_Quit lets go of D-Bus altogether, so the next one connects afresh: libdbus
+    // otherwise keeps the session bus's address for good, and tests.files couldn't point the
+    // file choosers at its own bus. An environment variable, as SDL_Quit forgets hints.
+    import core.sys.posix.stdlib : setenv;
+    setenv("SDL_SHUTDOWN_DBUS_ON_QUIT", "1", 1);
+
     auto app = new App(name);
     app.scene = new Scene(build());
     app.scene.setColourScheme(ColourScheme.dark); // the same colours whatever the desktop's set to

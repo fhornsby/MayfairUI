@@ -469,6 +469,28 @@ Widget popupsPage(Report report)
             .addButton("Rename", { report("Renamed to " ~ name.text); }, ButtonKind.default_)
             .show(rename);
     });
+    // The desktop's own file dialogs
+    auto openFile = new Button("Open…").graphic(new Icon("document-open-symbolic"));
+    openFile.setOnAction({
+        new FileChooser().title("Open a picture")
+            .addFilter("Pictures", "png", "jpg", "svg")
+            .addFilter("All files", "*")
+            .showOpenDialog(openFile, (path) { report(path ? "Chose " ~ path : "Chose nothing"); });
+    });
+    auto openFiles = new Button("Open several…");
+    openFiles.setOnAction({
+        new FileChooser().showOpenMultipleDialog(openFiles, (paths) {
+            import std.conv : to;
+            report(paths.length ? "Chose " ~ paths.length.to!string ~ ": " ~ paths.to!string : "Chose nothing");
+        });
+    });
+    auto saveFile = new Button("Save as…").graphic(new Icon("document-save-symbolic"));
+    saveFile.setOnAction({
+        import std.path : expandTilde;
+        new FileChooser().initialDirectory(expandTilde("~")).initialFileName("Untitled.txt")
+            .addFilter("Text", "txt")
+            .showSaveDialog(saveFile, (path) { report(path ? "Would save to " ~ path : "Didn't save"); });
+    });
     auto sheet = stylesheet!(`.danger { --base: #dc2626; --hover-base: #ef4444; --pressed-base: #b91c1c; colour: white; }`);
 
     auto result = page("Popups", "Menus, drop-downs, tooltips and dialogs show over the window. A menu or "
@@ -479,6 +501,7 @@ Widget popupsPage(Report report)
         .add(section("A context menu", area))
         .add(section("Drop-downs", row(new Label("Size"), size, new Label("Country"), country)))
         .add(section("Dialogs", row(confirm, rename)))
+        .add(section("File dialogs", row(openFile, openFiles, saveFile)))
         .add(section("Tooltips", row(
             new Button().graphic(new Icon("edit-undo-symbolic")).accessibleText("Undo").tooltip("Undo the last change"),
             new Button().graphic(new Icon("edit-redo-symbolic")).accessibleText("Redo").tooltip("Redo what was undone"),

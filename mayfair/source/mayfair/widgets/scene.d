@@ -675,6 +675,7 @@ package(mayfair):
     float contentWidth = 0, contentHeight = 0; // as of the last layout
 
     WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
+    void* nativeWindow;            // the SDL_Window it's in, from the App, for what the desktop shows over it
     bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
 
     /// The window was maximised or restored, for the title bar's button to say which it does.
