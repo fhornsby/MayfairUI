@@ -541,9 +541,10 @@ void render() nothrow @nogc {
         present();
     }
 
-    trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms", viewWidth, viewHeight,
-          traceMs(start, afterLayout), traceMs(afterLayout, afterPaint), traceMs(afterPaint, traceNow()),
-          traceMs(start, traceNow()));
+    // "animating" tells a frame an animation asked for from one an event caused, for plotting frame pacing
+    trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms  animating %d", viewWidth,
+          viewHeight, traceMs(start, afterLayout), traceMs(afterLayout, afterPaint),
+          traceMs(afterPaint, traceNow()), traceMs(start, traceNow()), cast(int) animationsRunning());
 }
 
 /*

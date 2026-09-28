@@ -284,8 +284,10 @@ public:
         tvg_canvas_sync(_canvas); // ThorVG's work is finished in the offscreen texture by here
         const afterSync = traceNow();
 
+        // Blocks until the compositor hands a buffer back, which is on its schedule, not ours
         WGPUSurfaceTexture frame;
         wgpuSurfaceGetCurrentTexture(surface, &frame);
+        const afterAcquire = traceNow();
         if (frame.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
             frame.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
             if (frame.texture) wgpuTextureRelease(frame.texture);
@@ -321,9 +323,9 @@ public:
         // leaves nothing to show and the window stays on whatever it had.
         wgpuSurfacePresent(surface);
         wgpuTextureRelease(frame.texture);
-        trace("gpu   present  update+draw %.2f  sync %.2f  downsample %.2f  surface present %.2f ms",
-              traceMs(start, afterDraw), traceMs(afterDraw, afterSync),
-              traceMs(afterSync, afterBlit), traceMs(afterBlit, traceNow()));
+        trace("gpu   present  update+draw %.2f  sync %.2f  buffer wait %.2f  downsample %.2f  surface present %.2f ms",
+              traceMs(start, afterDraw), traceMs(afterDraw, afterSync), traceMs(afterSync, afterAcquire),
+              traceMs(afterAcquire, afterBlit), traceMs(afterBlit, traceNow()));
     }
 
 private:
