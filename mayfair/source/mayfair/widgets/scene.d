@@ -892,11 +892,12 @@ private:
     /*
         What's at `x`, `y`: the topmost popup there, or the tree -- unless a popup that hides on a
         press elsewhere, or a modal one, is showing, when the rest of the window is out of reach.
-        A popup the pointer passes through, like a tooltip, is never what's there.
+        A popup the pointer passes through, like a tooltip, is never what's there. What a popup
+        keeps within reach -- a menu's menu bar -- is still there, unless a modal one is showing.
     */
     Widget pickAt(float x, float y) nothrow @nogc
     {
-        bool blocked;
+        bool blocked, modal;
         foreach_reverse (p; popups)
         {
             if (p.pointerTransparent)
@@ -904,19 +905,34 @@ private:
             if (auto hit = p.pick(x, y))
                 return hit;
             blocked = blocked || p.autoHide || p.modal;
+            modal = modal || p.modal;
         }
-        if (blocked)
-            return null;
+        Widget hit;
         if (_titleBar)
-            if (auto hit = _titleBar.pick(x, y))
-                return hit;
-        return _root.pick(x, y);
+            hit = _titleBar.pick(x, y);
+        if (!hit)
+            hit = _root.pick(x, y);
+        if (modal || (blocked && !reachable(hit)))
+            return null;
+        return hit;
+    }
+
+    /// Whether `w` is within what a showing popup keeps within reach of the pointer.
+    bool reachable(Widget w, const Popup only = null) nothrow @nogc
+    {
+        foreach (p; popups)
+            if (!only || p is only)
+                foreach (r; p._reachable)
+                    if (isWithin(w, r))
+                        return true;
+        return false;
     }
 
     /*
         A press landed on `target`, which may be nothing: hides the popups over it that hide on a
-        press outside them, down to a modal one or the one it's in. Whether that's all the press
-        does -- it was outside any popup, so there's nothing for it to go to.
+        press outside them, down to a modal one or the one it's in -- or the one that keeps it
+        within reach, which leaves it to that to say what the press does. Whether that's all the
+        press does: it was outside any popup, so there's nothing for it to go to.
     */
     bool hidePopupsOver(Widget target)
     {
@@ -926,7 +942,7 @@ private:
             auto p = popups[i];
             if (p.pointerTransparent)
                 continue; // a tooltip over a menu doesn't stop the menu going
-            if (p.modal || !p.autoHide || isWithin(target, p))
+            if (p.modal || !p.autoHide || isWithin(target, p) || reachable(target, p))
                 break;
             hidePopup(p); // and anything over it
             hid = true;

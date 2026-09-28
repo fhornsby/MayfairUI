@@ -141,6 +141,105 @@ void menus()
     });
 }
 
+/// Menu bars: a title's menu below it; moving along the bar switches menus, and a press on the open
+/// title closes it; F10, Left and Right; submenus by the keys and by resting on them; choosing in one
+/// puts every menu away; and accelerators, with the menus closed.
+void menuBars()
+{
+    MenuBar bar;
+    Menu file, edit, recent;
+    MenuItem open, notes, undo;
+    CheckMenuItem wrap;
+    Button content;
+    string[] done;
+    run("popups: menu bars", {
+        open = new MenuItem("Open", { done ~= "open"; }).accelerator("Ctrl+O");
+        notes = new MenuItem("notes.txt", { done ~= "notes"; });
+        recent = new Menu("Open recent").add(notes).add(new MenuItem("todo.txt", { done ~= "todo"; }));
+        file = new Menu("File").add(open).add(recent).add(new MenuSeparator())
+            .add(new MenuItem("Quit", { done ~= "quit"; }).accelerator("Ctrl+Q").disable(true));
+        undo = new MenuItem("Undo", { done ~= "undo"; }).accelerator("Ctrl+Z");
+        wrap = new CheckMenuItem("Wrap", { done ~= "wrap"; }).accelerator("Ctrl+Shift+W");
+        edit = new Menu("Edit").add(undo).add(wrap);
+        bar = new MenuBar().add(file).add(edit);
+        content = new Button("Content").onAction({ done ~= "content"; });
+        // The button off to the right, clear of where the menus drop down
+        return cast(Widget) new Column().add(bar).add(new Column().padding(20).fillWidth(false)
+            .alignment(Pos.topRight).add(content));
+    }, (Driver d) {
+        const(Popup)[] showing() { return bar.scene.showingPopups; }
+        d.click(file);
+        d.ui({
+            d.check(file.showing, "a click on a title opens its menu");
+            d.check(open.boundsInScene.minY > file.boundsInScene.maxY, "below it");
+            d.check(open.focused, "with focus on its first item");
+        });
+        d.move(edit.boundsInScene.centreX, edit.boundsInScene.centreY);
+        d.ui({ d.check(edit.showing && !file.showing, "moving along the bar opens the next menu"); });
+        d.click(edit);
+        d.ui({
+            d.check(!edit.showing, "a click on the open title closes it");
+            d.expect(showing.length, 0);
+        });
+
+        // The keys
+        d.key(SDL_Keycode.SDLK_F10);
+        d.ui({ d.check(file.showing && open.focused, "F10 opens the first menu"); });
+        d.key(SDL_Keycode.SDLK_RIGHT);
+        d.ui({ d.check(edit.showing && !file.showing && undo.focused, "Right: the next menu"); });
+        d.key(SDL_Keycode.SDLK_LEFT);
+        d.ui({ d.check(file.showing && !edit.showing, "Left: back"); });
+        d.key(SDL_Keycode.SDLK_DOWN);
+        d.ui({ d.check(recent.focused, "Down to the submenu's item"); });
+        d.key(SDL_Keycode.SDLK_RIGHT);
+        d.ui({
+            d.check(recent.showing && notes.focused, "Right opens the submenu, focus in it");
+            d.check(file.showing, "its menu still open");
+            d.check(notes.boundsInScene.minX >= recent.boundsInScene.maxX, "beside it");
+        });
+        d.key(SDL_Keycode.SDLK_LEFT);
+        d.ui({ d.check(!recent.showing && recent.focused && file.showing, "Left closes it, focus back on its item"); });
+        d.key(SDL_Keycode.SDLK_RIGHT);
+        d.key(SDL_Keycode.SDLK_RETURN);
+        d.ui({
+            d.expect(done, ["notes"], "Enter chooses in the submenu");
+            d.expect(showing.length, 0, "and every menu goes");
+        });
+
+        // The pointer resting on a submenu's item opens it, leaving focus there
+        d.click(file);
+        d.move(recent.boundsInScene.centreX, recent.boundsInScene.centreY);
+        d.ui({ d.check(!recent.showing, "not straight away"); });
+        Thread.sleep(400.msecs);
+        d.settle();
+        d.ui({ d.check(recent.showing && recent.focused, "after resting on it, focus still on it"); });
+        d.click(notes);
+        d.ui({
+            d.expect(done, ["notes", "notes"], "a click chooses in it");
+            d.expect(showing.length, 0, "and every menu goes");
+        });
+
+        // A press elsewhere puts it away, and does nothing else
+        d.click(file);
+        d.click(content);
+        d.ui({
+            d.check(!file.showing, "a press outside closes it");
+            d.expect(done, ["notes", "notes"], "and reaches nothing else");
+        });
+
+        // Accelerators, with the menus closed
+        d.key(SDL_Keycode.SDLK_O, SDL_Keymod.KMOD_LCTRL);
+        d.key(SDL_Keycode.SDLK_W, cast(SDL_Keymod) (SDL_Keymod.KMOD_LCTRL | SDL_Keymod.KMOD_LSHIFT));
+        d.key(SDL_Keycode.SDLK_Q, SDL_Keymod.KMOD_LCTRL);
+        d.key(SDL_Keycode.SDLK_Z);
+        d.ui({
+            d.expect(done, ["notes", "notes", "open", "wrap"], "Ctrl+O and Ctrl+Shift+W; not a disabled item's, or Z alone");
+            d.check(wrap.selected, "a check item's accelerator switches it");
+            d.expect(showing.length, 0, "without opening anything");
+        });
+    });
+}
+
 /// Drop-downs: the list below, as wide at least, with the choice picked out; choosing from it;
 /// and Up and Down changing the choice without it.
 void comboBoxes()

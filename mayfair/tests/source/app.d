@@ -55,6 +55,7 @@ void main(string[] args)
     tests.tabs.navigationLists();
     tests.popups.placing();
     tests.popups.menus();
+    tests.popups.menuBars();
     tests.popups.comboBoxes();
     tests.popups.dialogs();
     tests.popups.tooltips();

@@ -410,6 +410,32 @@ Widget popupsPage(Report report)
         .accessibleText("Main menu").tooltip("Main menu");
     auto menuWithText = new MenuButton("File").menu(appMenu);
 
+    // A menu bar, with submenus; its accelerators work on this page, menus open or not
+    auto menuBar = new MenuBar()
+        .add(new Menu("File")
+            .add(new MenuItem("New", { report("New"); }).accelerator("Ctrl+N"))
+            .add(new MenuItem("Open…", { report("Open"); }).accelerator("Ctrl+O").graphic(new Icon("document-open-symbolic")))
+            .add(new Menu("Open recent")
+                .add(new MenuItem("notes.txt", { report("Open notes.txt"); }))
+                .add(new MenuItem("todo.txt", { report("Open todo.txt"); }))
+                .add(new Menu("Older")
+                    .add(new MenuItem("letter.txt", { report("Open letter.txt"); }))))
+            .add(new MenuItem("Save", { report("Save"); }).accelerator("Ctrl+S").graphic(new Icon("document-save-symbolic")))
+            .add(new MenuSeparator())
+            .add(new MenuItem("Quit", { report("Quit (not really)"); }).accelerator("Ctrl+Q")))
+        .add(new Menu("Edit")
+            .add(new MenuItem("Undo", { report("Undo"); }).accelerator("Ctrl+Z"))
+            .add(new MenuItem("Redo", { report("Redo"); }).accelerator("Ctrl+Shift+Z").disable(true))
+            .add(new MenuSeparator())
+            .add(new MenuItem("Find…", { report("Find"); }).accelerator("Ctrl+F")))
+        .add(new Menu("View")
+            .add(new CheckMenuItem("Show sidebar", { report("Sidebar toggled"); }).selected(true).accelerator("F9"))
+            .add(new Menu("Zoom")
+                .add(new MenuItem("Zoom in", { report("Zoom in"); }).accelerator("Ctrl+="))
+                .add(new MenuItem("Zoom out", { report("Zoom out"); }).accelerator("Ctrl+-"))
+                .add(new MenuItem("Actual size", { report("Actual size"); }).accelerator("Ctrl+0"))));
+    menuBar.style("background-colour: var(--field-border), var(--field); background-insets: 0, 1; background-radius: 8, 7;");
+
     // A right click anywhere in the box
     auto area = new Stack().prefSize(320, 100);
     area.style("background-colour: var(--field-border), var(--field); background-insets: 0, 1; background-radius: 8, 7;");
@@ -448,6 +474,7 @@ Widget popupsPage(Report report)
     auto result = page("Popups", "Menus, drop-downs, tooltips and dialogs show over the window. A menu or "
                        ~ "drop-down goes with a click outside it or Escape; a dialog dims the window until it's "
                        ~ "answered. Rest the pointer on a button with a tooltip to see it.")
+        .add(section("A menu bar", menuBar))
         .add(section("Menu buttons", row(menuButton, menuWithText)))
         .add(section("A context menu", area))
         .add(section("Drop-downs", row(new Label("Size"), size, new Label("Country"), country)))

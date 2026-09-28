@@ -485,8 +485,35 @@
     min-width: 160;
 }
 
-.menu-item:hover, .menu-item:focus-visible {
+.menu-item:hover, .menu-item:focus-visible, .menu-item:showing {
     background-colour: var(--row-hover);
+}
+
+/* A submenu's item: an arrow at its right, where an accelerator would be */
+.submenu-item > .arrow {
+    icon-size: 16;
+    icon-colour: var(--prompt-text);
+}
+
+/* A menu bar, its titles flat until the pointer's on one or its menu is open */
+.menu-bar {
+    padding: 3 6;
+    gap: 2;
+}
+
+.menu-bar-item {
+    padding: 4 10;
+    background-colour: transparent;
+    background-radius: 6;
+    colour: var(--text);
+}
+
+.menu-bar-item:hover, .menu-bar-item:showing {
+    background-colour: var(--row-hover);
+}
+
+.menu-bar-item:disabled {
+    opacity: 0.4;
 }
 
 .menu-item:disabled {

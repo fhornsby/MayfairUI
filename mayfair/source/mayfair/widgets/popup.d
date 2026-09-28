@@ -128,6 +128,7 @@ package:
     enum Placement { beside, at, centre }
     Scene _showingIn;
     Tvg_Paint _layer, _scrim;  // the layer it's drawn in, and a modal one's dimming behind it
+    Widget[] _reachable;       // outside it, but still the pointer's while it's showing: a menu's menu bar
     Widget _focusBefore;       // what had focus when it took it
     bool _focusShownBefore;    // and whether that focus was shown
     double _shownAmount = 0;   // how far it's faded in

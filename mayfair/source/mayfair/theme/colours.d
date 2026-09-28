@@ -54,4 +54,5 @@ struct Theme
     enum Duration tooltip_delay          = 500.msecs;  // resting on something before its tooltip shows
     enum Duration tooltip_browse_time    = 800.msecs;  // after one hides, the next shows at once for this long
     enum float tooltip_max_width         = 320;  // points: longer tooltips wrap
+    enum Duration submenu_delay          = 200.msecs;  // resting on a menu's item before its submenu opens, or another closes
 }

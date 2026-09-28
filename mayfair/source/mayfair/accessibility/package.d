@@ -48,6 +48,7 @@ enum AccessibleRole
     cell,              /// One of a row's cells
     columnHeader,      /// What a table's column is, at its top
     menu,
+    menuBar,           /// A row of menus' titles along the top of a window
     comboBox,          /// A drop-down to choose one of a list from; its choice goes in AccessibleNode.value
     dialog,            /// A dialog over the window, named by its title
     menuItem,
@@ -179,6 +180,12 @@ struct AccessibleNode
     void expanded(bool on) nothrow @nogc
     {
         accesskit_node_set_expanded(node, on);
+    }
+
+    /// That it opens a menu: a menu's title, or an item with a submenu.
+    void opensMenu() nothrow @nogc
+    {
+        accesskit_node_set_has_popup(node, ACCESSKIT_HAS_POPUP_MENU);
     }
 
     /// Whether a tab, or a list's choice, is the one selected.
@@ -318,6 +325,7 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.listBox:           return ACCESSKIT_ROLE_LIST_BOX;
         case AccessibleRole.listBoxOption:     return ACCESSKIT_ROLE_LIST_BOX_OPTION;
         case AccessibleRole.menu:              return ACCESSKIT_ROLE_MENU;
+        case AccessibleRole.menuBar:           return ACCESSKIT_ROLE_MENU_BAR;
         case AccessibleRole.menuItem:          return ACCESSKIT_ROLE_MENU_ITEM;
         case AccessibleRole.textRun:           return ACCESSKIT_ROLE_TEXT_RUN;
         case AccessibleRole.scrollPane:        return ACCESSKIT_ROLE_SCROLL_VIEW;
