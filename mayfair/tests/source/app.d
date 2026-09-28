@@ -2,7 +2,7 @@ import core.stdc.stdlib : exit;
 import std.format : format;
 import std.stdio : writefln;
 import harness;
-static import tests.buttons, tests.focus, tests.textinput, tests.textfield, tests.properties, tests.scrolling, tests.styling, tests.wrapping, tests.toggles, tests.controls, tests.images, tests.containers, tests.gallery, tests.tabs, tests.popups, tests.lists, tests.titlebar, tests.files;
+static import tests.buttons, tests.focus, tests.textinput, tests.textfield, tests.properties, tests.scrolling, tests.styling, tests.wrapping, tests.toggles, tests.controls, tests.images, tests.containers, tests.gallery, tests.tabs, tests.popups, tests.lists, tests.titlebar, tests.files, tests.canvas;
 
 /*
     Runs every end-to-end test, one window at a time, and exits non-zero if any failed.
@@ -49,6 +49,8 @@ void main(string[] args)
     tests.images.sharedIcons();
     tests.images.lottie();
     tests.images.lottieSlots();
+    tests.canvas.drawing();
+    tests.canvas.painting();
     tests.containers.stacks();
     tests.containers.docks();
     tests.containers.grids();

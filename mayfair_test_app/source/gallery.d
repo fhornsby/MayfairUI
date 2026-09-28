@@ -26,6 +26,7 @@ Dock buildGallery(string start = null)
         Page("Sliders & progress", "media-playlist-shuffle-symbolic", rangePage(&report)),
         Page("Images & icons", "image-x-generic-symbolic", imagesPage()),
         Page("Animation", "media-playback-start-symbolic", animationPage(&report)),
+        Page("Canvas", "applications-graphics-symbolic", canvasPage(&report)),
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
@@ -245,6 +246,77 @@ Widget imagesPage()
             new Icon(tick).iconSize(32).style("icon-colour: var(--accent);"),
             new Icon(tick).iconSize(32).style("icon-colour: #16a34a;"),
             new Icon(tick).iconSize(32).style("icon-colour: #dc2626;"))));
+}
+
+Widget canvasPage(Report report)
+{
+    // Somewhere to paint: a white sheet, drawn on by dragging
+    auto paper = new Canvas(480, 260);
+    auto g = paper.graphicsContext;
+    void blank() { g.setFill(Colour(255, 255, 255)).fillRect(0, 0, paper.width, paper.height); }
+    blank();
+    g.setLineCap(StrokeLineCap.round).setLineJoin(StrokeLineJoin.round).setLineWidth(6).setStroke(Colour(37, 99, 235));
+    float lastX = 0, lastY = 0;
+    paper.onMousePressed((ref MouseEvent e) {
+        lastX = e.x;
+        lastY = e.y;
+        g.strokeLine(e.x, e.y, e.x, e.y); // a dot, for a click
+    });
+    paper.onMouseDragged((ref MouseEvent e) {
+        g.strokeLine(lastX, lastY, e.x, e.y);
+        lastX = e.x;
+        lastY = e.y;
+    });
+
+    auto colours = new Row().spacing(6);
+    foreach (c; [Colour(37, 99, 235), Colour(220, 38, 38), Colour(22, 163, 74), Colour(234, 179, 8), Colour(24, 24, 27)])
+        colours.add(swatch(g, c));
+    auto brush = new Slider(1, 40, 6).prefWidth(140);
+    brush.valueProperty.addListener((double was, double now) { g.setLineWidth(cast(float) now); });
+    auto clear = new Button("Clear");
+    clear.setOnAction({ blank(); });
+    auto save = new Button("Save as PNG…").graphic(new Icon("document-save-symbolic"));
+    save.setOnAction({
+        new FileChooser().initialFileName("painting.png").addFilter("PNG pictures", "png")
+            .showSaveDialog(save, (path) {
+                if (!path)
+                    return;
+                paper.savePng(path);
+                report("Saved " ~ path);
+            });
+    });
+
+    // Drawn once, to show what a GraphicsContext does
+    auto shapes = new Canvas(480, 150);
+    auto s = shapes.graphicsContext;
+    s.setFill(Colour(37, 99, 235)).fillRoundRect(10, 10, 110, 70, 20, 20);
+    s.setStroke(Colour(220, 38, 38)).setLineWidth(4).setLineDashes(12, 6).strokeOval(140, 10, 110, 70);
+    s.setLineDashes().setStroke(Colour(22, 163, 74)).setLineWidth(3).beginPath().moveTo(270, 80)
+        .bezierCurveTo(300, 0, 340, 100, 370, 20).stroke();
+    s.setFill(Colour(234, 179, 8)).beginPath().moveTo(425, 45).arc(425, 45, 40, 40, 30, 300).closePath().fill();
+    s.save().beginPath().rect(10, 95, 220, 45).clip();
+    foreach (i; 0 .. 12)
+        s.setFill(i % 2 ? Colour(124, 58, 237) : Colour(236, 72, 153)).fillOval(i * 22, 90, 36, 36);
+    s.restore();
+    s.setFill(Colour(128, 128, 128)).setFont(defaultFont(22, FontWeight.bold)).setTextBaseline(TextBaseline.centre)
+        .fillText("Drawn by a GraphicsContext", 250, 118);
+
+    return page("Canvas", "A Canvas holds pixels, drawn on by its GraphicsContext: shapes, paths, text and images, "
+                ~ "with transforms, clips and blending. What's drawn stays until it's drawn over, so it's what "
+                ~ "painting wants; it can be read back, and saved as a PNG.")
+        .add(section("Paint by dragging", new Column().spacing(10).fillWidth(false)
+            .add(paper).add(row(colours, new Label("Brush"), brush, clear, save))))
+        .add(section("Shapes, a curve, an arc, a clip and text", shapes));
+}
+
+// A button in `colour` that paints in it, made here so each has its own colour (see reportKey)
+Button swatch(GraphicsContext g, Colour colour)
+{
+    import std.format : format;
+    return new Button().prefSize(28, 28).accessibleText(format!"#%02x%02x%02x"(colour.r, colour.g, colour.b))
+        .style(format!"--base: #%02x%02x%02x; --hover-base: #%02x%02x%02x;"(colour.r, colour.g, colour.b,
+                                                                            colour.r, colour.g, colour.b))
+        .onAction({ g.setStroke(colour); });
 }
 
 Widget animationPage(Report report)

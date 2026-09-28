@@ -49,7 +49,7 @@ void navigation()
         d.ui({
             foreach (child; find!NavigationList(dock.left).children)
                 items ~= cast(NavigationItem) child;
-            d.expect(items.length, 12, "a page for each part of the kit");
+            d.expect(items.length, 13, "a page for each part of the kit");
         });
 
         // Each brought into view first, as the sidebar scrolls in a short window
@@ -93,7 +93,9 @@ void navigation()
         }
 
         // The keypad, whose keys are made in a loop too: each says which it is
-        open(items[6]); // Layout
+        foreach (item; items)
+            if (item.text == "Layout")
+                open(item);
         Button five, zero;
         d.ui({
             foreach (b; buttonsIn(dock.centre))
