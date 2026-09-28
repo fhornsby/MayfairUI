@@ -54,6 +54,8 @@ enum AccessibleRole
     menuItem,
     textRun,           /// A stretch of a text field's text, with its characters laid out: see TextField
     scrollPane,        /// Something that scrolls what's in it; its position goes in AccessibleNode.scroll
+    tree,              /// Items in a hierarchy, each opening to show those below it
+    treeItem,          /// One of a tree's items; its depth goes in AccessibleNode.level, whether it's open in expanded
 }
 
 /// Something assistive technology can ask a widget to do. JavaFX's AccessibleAction.
@@ -180,6 +182,12 @@ struct AccessibleNode
     void expanded(bool on) nothrow @nogc
     {
         accesskit_node_set_expanded(node, on);
+    }
+
+    /// How deep a tree's item is: 1 for those at the top.
+    void level(size_t depth) nothrow @nogc
+    {
+        accesskit_node_set_level(node, depth);
     }
 
     /// That any number of its options can be selected at once: a list's.
@@ -335,6 +343,8 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.menuItem:          return ACCESSKIT_ROLE_MENU_ITEM;
         case AccessibleRole.textRun:           return ACCESSKIT_ROLE_TEXT_RUN;
         case AccessibleRole.scrollPane:        return ACCESSKIT_ROLE_SCROLL_VIEW;
+        case AccessibleRole.tree:              return ACCESSKIT_ROLE_TREE;
+        case AccessibleRole.treeItem:          return ACCESSKIT_ROLE_TREE_ITEM;
     }
 }
 

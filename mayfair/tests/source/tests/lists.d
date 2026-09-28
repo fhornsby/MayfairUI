@@ -305,3 +305,121 @@ void multipleSelection()
         });
     });
 }
+
+/// Trees: a click on an arrow opening an item, loading what's below it once; the keys opening,
+/// closing and moving in and out; closing round the selection moving it up; a double click opening
+/// and activating; rows indented by depth; and selecting an item deep inside opening the way to it.
+void treeViews()
+{
+    TreeView!string tree;
+    TreeItem!string home, documents, notes, old, letter, music, readme;
+    int loads;
+    TreeItem!string[] activated;
+    run("lists: tree views", {
+        notes = new TreeItem!string("notes.txt");
+        letter = new TreeItem!string("letter.txt");
+        documents = new TreeItem!string("Documents").icon("folder-symbolic").childrenLoader({
+            loads++;
+            old = new TreeItem!string("Old", letter).icon("folder-symbolic");
+            return [notes, new TreeItem!string("todo.txt"), old];
+        });
+        music = new TreeItem!string("Music", new TreeItem!string("song.ogg")).icon("folder-symbolic");
+        readme = new TreeItem!string("readme.txt");
+        home = new TreeItem!string("Home", documents, music, readme).expanded(true);
+        tree = new TreeView!string(home).prefSize(300, 320).onActivate((TreeItem!string i) { activated ~= i; });
+        return cast(Widget) new Column().padding(20).fillWidth(false).add(tree);
+    }, (Driver d) {
+        TreeCell!string cellOf(TreeItem!string item)
+        {
+            TreeCell!string found;
+            void walk(Widget w)
+            {
+                if (auto c = cast(TreeCell!string) w)
+                    if (c.visible && c.item is item)
+                        found = c;
+                foreach (child; w.children)
+                    walk(cast() child);
+            }
+            walk(tree);
+            return found;
+        }
+        Widget arrowOf(TreeItem!string item)
+        {
+            foreach (child; cellOf(item).children)
+                if (child.styleClass.contains("disclosure"))
+                    return cast() child;
+            return null;
+        }
+        void clickArrow(TreeItem!string item)
+        {
+            Widget arrow;
+            d.ui({ arrow = arrowOf(item); });
+            d.click(arrow);
+        }
+        void clickRow(TreeItem!string item, ubyte clicks = 1)
+        {
+            TreeCell!string c;
+            d.ui({ c = cellOf(item); });
+            d.click(c, float.nan, clicks);
+        }
+
+        d.ui({
+            d.expect(tree.rowCount, 4, "the root and what's below it");
+            d.expect(loads, 0, "nothing loaded before it's opened");
+        });
+        clickArrow(documents);
+        d.settle();
+        d.ui({
+            d.check(documents.expanded, "a click on the arrow opens it");
+            d.expect(loads, 1, "loading what's below it");
+            d.expect(tree.rowCount, 7);
+            d.check(tree.selectedItem is null, "without selecting it");
+            d.check(cellOf(notes).boundsInScene.minX == cellOf(documents).boundsInScene.minX,
+                    "rows span the tree");
+            const step = arrowOf(notes).boundsInScene.minX - arrowOf(documents).boundsInScene.minX;
+            d.check(abs(step - tree.indent) < 0.5f, format!"a step down, indented by `indent`: %s"(step));
+            d.expect(cellOf(notes).children[2].boundsInScene.minX, cellOf(old).children[2].boundsInScene.minX,
+                     "siblings' texts line up, with an icon or without");
+        });
+
+        clickRow(notes);
+        d.ui({ d.check(tree.selectedItem is notes, "a click on a row selects it"); });
+        d.key(SDL_Keycode.SDLK_LEFT);
+        d.ui({ d.check(tree.selectedItem is documents, "Left from a leaf: the item it's in"); });
+        d.key(SDL_Keycode.SDLK_LEFT);
+        d.settle();
+        d.ui({ d.check(!documents.expanded && tree.rowCount == 4, "Left again closes it"); });
+        d.key(SDL_Keycode.SDLK_RIGHT);
+        d.settle();
+        d.ui({ d.check(documents.expanded, "Right opens it"); });
+        d.key(SDL_Keycode.SDLK_RIGHT);
+        d.ui({ d.check(tree.selectedItem is notes, "Right again: the first below it"); });
+        d.ui({ d.expect(loads, 1, "loaded only the once"); });
+
+        clickArrow(documents);
+        d.settle();
+        d.ui({
+            d.check(!documents.expanded, "its arrow closes it");
+            d.check(tree.selectedItem is documents, "and the selection inside moves up to it");
+        });
+
+        clickRow(music);
+        clickRow(music, 2);
+        d.settle();
+        d.ui({
+            d.check(music.expanded, "a double click opens it");
+            d.expect(activated, [music], "and activates it");
+        });
+        clickRow(readme);
+        d.key(SDL_Keycode.SDLK_RETURN);
+        d.ui({ d.expect(activated, [music, readme], "Enter activates"); });
+
+        d.ui({ tree.select(letter); });
+        d.settle();
+        d.ui({
+            d.check(documents.expanded && old.expanded, "selecting one deep inside opens the way to it");
+            d.check(tree.isSelected(letter) && tree.rowOf(letter) >= 0, "and it's selected");
+            d.check(cellOf(letter) !is null, "and in view");
+        });
+    });
+}

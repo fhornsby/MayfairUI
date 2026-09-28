@@ -709,6 +709,67 @@
 }
 
 /*
+    Trees: a list's box, each row indented by how deep it is, with an arrow to open it.
+*/
+.tree-view {
+    width: 260;
+    height: 300;
+    padding: 1;
+    indent: 20;
+    background-colour: var(--field-border), var(--field);
+    background-insets: 0, 1;
+    background-radius: 8, 7;
+}
+
+.tree-view:focus-visible {
+    background-colour: var(--focus), var(--field);
+    background-insets: 0, 2;
+}
+
+.tree-cell {
+    padding: 4 8 4 4;
+    gap: 6;
+    background-colour: transparent;
+}
+
+.tree-cell:hover {
+    background-colour: var(--row-hover);
+}
+
+.tree-cell:selected {
+    background-colour: var(--row-selected);
+}
+
+.tree-view:focus-visible .tree-cell:current {
+    background-colour: var(--focus), var(--field);
+    background-insets: 0, 0 0 0 3;
+}
+
+.tree-view:focus-visible .tree-cell:current:selected {
+    background-colour: var(--focus), var(--field), var(--row-selected);
+    background-insets: 0, 0 0 0 3, 0 0 0 3;
+}
+
+/* The arrow, with room round it to hit */
+.tree-cell .disclosure {
+    padding: 2;
+    background-radius: 4;
+}
+
+.tree-cell .disclosure:hover {
+    background-colour: var(--row-hover);
+}
+
+.tree-cell .disclosure .icon {
+    icon-size: 16;
+    icon-colour: var(--prompt-text);
+}
+
+.tree-view .placeholder {
+    colour: var(--prompt-text);
+}
+
+/*
     The title bar Mayfair draws, when it draws one: the window's title in the middle, bold, on a
     band a shade off the window's own, with a line under it. Everything in it fades a little while
     the window hasn't focus, as GNOME's do.

@@ -542,12 +542,32 @@ Widget listsPage(Report report)
     });
     table.onActivate((int i) { report("Opened " ~ people[i].name); });
 
+    // A made-up disk as deep as you like: each folder's contents made the first time it's opened
+    TreeItem!string folder(string name, int depth)
+    {
+        return new TreeItem!string(name).icon("folder-symbolic").childrenLoader({
+            TreeItem!string[] inside;
+            foreach (i; 0 .. 4)
+                inside ~= folder(format!"Folder %d.%d"(depth + 1, i + 1), depth + 1);
+            foreach (i; 0 .. 12)
+                inside ~= new TreeItem!string(format!"File %d.%02d.txt"(depth + 1, i + 1)).icon("text-x-generic-symbolic");
+            return inside;
+        });
+    }
+    auto disk = new TreeItem!string("Home").icon("user-home-symbolic")
+        .add(folder("Documents", 0), folder("Music", 0), folder("Pictures", 0))
+        .add(new TreeItem!string("readme.txt").icon("text-x-generic-symbolic"));
+    auto tree = new TreeView!string(disk).prefSize(320, 300).showRoot(false);
+    tree.onSelectionChanged({ if (auto item = tree.selectedItem) report("Selected " ~ item.value); });
+    tree.onActivate((TreeItem!string item) { if (item.isLeaf) report("Opened " ~ item.value); });
+
     return page("Lists & tables", "A list or a table makes only the rows in view, however many items it has, "
                 ~ "and gives rows that scroll out of view to those scrolling in. Click a table's header to sort "
                 ~ "by it, click again for the other way, and drag its right edge to size the column. In the list, "
                 ~ "Ctrl+click and Shift+click select more than one, as do Shift and Ctrl with the arrows, and Ctrl+A.")
         .add(section("A list of ten thousand, with a cell of its own, selecting any number", list))
-        .add(section("A table of five thousand people", table));
+        .add(section("A table of five thousand people", table))
+        .add(section("A tree, each folder made the first time it's opened", tree));
 }
 
 Widget stylingPage(Report report)

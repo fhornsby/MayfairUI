@@ -63,6 +63,7 @@ void main(string[] args)
     tests.lists.listViews();
     tests.lists.tableViews();
     tests.lists.multipleSelection();
+    tests.lists.treeViews();
     tests.titlebar.titleBars();
     tests.gallery.navigation();
 
