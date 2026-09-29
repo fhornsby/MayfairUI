@@ -124,6 +124,16 @@ public:
     /// Draws `line` into `shape` with its left end at `x` and its baseline at `baseline`, in points.
     void emitLine(Tvg_Paint shape, ref const Line line, float x, float baseline, float scale) nothrow @nogc
     {
+        eachGlyph(line, x, baseline, (ref const PositionedGlyph g, float gx, float gy) nothrow @nogc {
+            emitGlyph(shape, g, gx, gy, scale);
+        });
+    }
+
+    /// Each of `line`'s glyphs, with where its origin goes when the line's left end is at `x`
+    /// and its baseline at `baseline`, in points: in the order they're drawn.
+    void eachGlyph(ref const Line line, float x, float baseline,
+                   scope void delegate(ref const PositionedGlyph, float, float) nothrow @nogc glyph) nothrow @nogc
+    {
         const block = &blocks[line.block];
         float pen = 0, penAll = 0;
         foreach (ref g; block.run.glyphs)
@@ -134,7 +144,7 @@ public:
             const at = block.start + g.cluster;
             if (at < line.start || at >= line.end)
                 continue;
-            emitGlyph(shape, g, x + pen + offset, baseline + g.y, scale);
+            glyph(g, x + pen + offset, baseline + g.y);
             pen += g.advance;
         }
     }

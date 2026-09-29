@@ -99,7 +99,11 @@ protected:
         }
         auto m = Tvg_Matrix(sx, 0, ox, 0, sy, oy, 0, 0, 1);
         tvg_paint_set_transform(_picture, &m);
+        _placed = Bounds(ox, oy, _naturalWidth * sx, _naturalHeight * sy);
     }
+
+    /// Where paint() last put the picture, in points: for a subclass drawing it some other way.
+    final Bounds placed() const nothrow @nogc { return _placed; }
 
     /*
         The size it asks the layout for, before padding: JavaFX's ImageView's. With nothing to fit
@@ -185,6 +189,7 @@ protected:
 private:
     Tvg_Paint _holder, _picture;
     float _naturalWidth = 0, _naturalHeight = 0;
+    Bounds _placed;
 
     void load() nothrow
     {

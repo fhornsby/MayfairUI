@@ -1,7 +1,7 @@
 module tests.styling;
 
 import core.thread : Thread;
-import core.time : msecs;
+import core.time : MonoTime, msecs;
 import std.format : format;
 import harness;
 import mayfair;
@@ -205,16 +205,26 @@ void transitions()
         });
         Bounds b;
         d.ui({ b = item.boundsInScene; });
+        // It starts somewhere between just before the move and the first check after it: each
+        // step takes a frame or two, which is a refresh each while the display paces them
+        const before = MonoTime.currTime;
         d.move(b.centreX, b.centreY);
+        MonoTime after;
         d.ui({
+            after = MonoTime.currTime;
             d.check(item.textFill.r < 200, "a transition starts on its way, not there");
             d.expect(item.opacity, 1f, "a property with no transition changes at once");
         });
         Thread.sleep(200.msecs);
         d.settle();
         d.ui({
+            // So it's as far through as the time since then says, give or take which frame it started in
+            const now = MonoTime.currTime;
+            const most = (now - before).total!"msecs" / 400.0, least = (now - after).total!"msecs" / 400.0;
             const r = item.textFill.r;
-            d.check(r > 60 && r < 200, format!"half way through, half way there: %s"(r));
+            d.check(least < 0.9, format!"checked part way through: at least %.2f of the way"(least));
+            d.check(r >= 255 * least - 15 && r <= 255 * most + 15,
+                    format!"part way through, as far as the time says: %s, from %.2f to %.2f of the way"(r, least, most));
         });
         Thread.sleep(300.msecs);
         d.settle();

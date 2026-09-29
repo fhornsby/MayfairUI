@@ -9,4 +9,5 @@ public import mayfair.text.fonts;
 public import mayfair.text.shaping;
 public import mayfair.text.paragraph;
 public import mayfair.text.outline;
+public import mayfair.text.raster;
 public import mayfair.text.caret;

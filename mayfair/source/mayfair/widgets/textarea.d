@@ -302,7 +302,8 @@ private:
     final static class Content : Widget
     {
         TextArea area;
-        Tvg_Paint selection, text, caret;
+        Tvg_Paint selection, caret;
+        TextImage text;
 
         this(TextArea area)
         {
@@ -325,13 +326,15 @@ private:
         override void mounted() nothrow
         {
             selection = addPaint();
-            text = addPaint();
+            text.create();
+            addPaint(text.paint);
             caret = addPaint();
         }
 
         override void unmounted()
         {
-            selection = text = caret = null;
+            selection = caret = null;
+            text.release();
         }
 
         override void laidOut(float x, float y, float w, float h) nothrow @nogc
@@ -353,7 +356,7 @@ private:
         override void paint(float x, float y, float w, float h) nothrow @nogc
         {
             area.drawText(selection, text, caret, x + YGNodeLayoutGetPadding(node, YGEdgeLeft),
-                          y + YGNodeLayoutGetPadding(node, YGEdgeTop), scene ? scene.scale : 1.0f);
+                          y + YGNodeLayoutGetPadding(node, YGEdgeTop), scene ? scene.pixelScale : 1.0f);
         }
     }
 }

@@ -26,10 +26,14 @@ import core.stdc.stdlib : getenv, atof;
     the CPU path and GTK both produced 146, and text looked visibly coarse next to any other app.
     Drawing at supersampleFactor times the window size and letting a linear filter average the
     result multiplies the coverage levels available per device pixel, at the price of drawing that
-    many more pixels -- squared. At 2x a Vega 10 APU can't always draw the gallery's Animation page
-    in a refresh; at 1.5x it can (98% of frames on the next vblank), and at 1 it matches vkcube
-    (99%), but 1.5x text is visibly softer than 2x. Text rasterised on the CPU by FreeType, with its
-    256 levels of coverage, would make supersampling unnecessary.
+    many more pixels -- squared.
+
+    That was when text was drawn as outlines. Text and icons are bitmaps now, rendered on the CPU
+    by FreeType and ThorVG's software renderer at exactly the pixels they cover (see
+    mayfair.text.raster), so what's left to the MSAA is shapes -- corners, check boxes, a slider's
+    thumb -- which it draws well enough, and supersampling is off by default. It cost: on a Vega 10
+    APU at 2x, 97% of the gallery's Animation page's frames reached the screen on the next vblank;
+    at 1x, 99%, as many as vkcube's. MAYFAIR_SUPERSAMPLE still turns it on.
 
     We still configure the surface ourselves so we can choose the present mode.
 */
@@ -50,7 +54,7 @@ private:
     WGPUTextureFormat surfaceFormat;
 
     // Supersampling: ThorVG's target, and the pass that scales it down to the window
-    float supersampleFactor = 2.0f;
+    float supersampleFactor = 1.0f;
     WGPUTexture offscreen;
     WGPUTextureView offscreenView;
     WGPUSampler sampler;
@@ -153,7 +157,7 @@ public:
             return false;
         }
 
-        // MAYFAIR_SUPERSAMPLE=1 turns it off, which is the way to see what the MSAA alone looks like
+        // MAYFAIR_SUPERSAMPLE=2, say, draws at twice the size: see above
         if (const(char)* factor = getenv("MAYFAIR_SUPERSAMPLE")) {
             const parsed = atof(factor);
             if (parsed >= 1.0 && parsed <= 4.0)

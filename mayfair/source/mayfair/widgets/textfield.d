@@ -86,9 +86,10 @@ protected:
         // The selection, the text and the caret each need a colour of their own, and all three are
         // clipped to the inside of the field, so text scrolled out of view doesn't show
         _selectionPaint = addPaint();
-        _textPaint = addPaint();
+        _text.create();
+        addPaint(_text.paint);
         _caretPaint = addPaint();
-        foreach (i, p; [_selectionPaint, _textPaint, _caretPaint])
+        foreach (i, p; [_selectionPaint, _text.paint, _caretPaint])
         {
             _clips[i] = tvg_shape_new();
             tvg_paint_set_clip(p, _clips[i]); // held by the paint, and freed with it
@@ -98,7 +99,8 @@ protected:
     override void unmounted()
     {
         super.unmounted();
-        _selectionPaint = _textPaint = _caretPaint = null;
+        _selectionPaint = _caretPaint = null;
+        _text.release();
         _clips[] = null;
     }
 
@@ -149,14 +151,15 @@ protected:
             tvg_shape_reset(clip);
             tvg_shape_append_rect(clip, innerX - Theme.caret_width, y, innerW + 2 * Theme.caret_width, h, 0, 0, true);
         }
-        drawText(_selectionPaint, _textPaint, _caretPaint, _originX, _lineTop, scene ? scene.scale : 1.0f);
+        drawText(_selectionPaint, _text, _caretPaint, _originX, _lineTop, scene ? scene.pixelScale : 1.0f);
     }
 
 private:
     void delegate() _onAction;
     float _scrollX = 0, _originX = 0, _lineTop = 0; // where the text was last drawn
     float[2] _paintedAt = [0, 0];
-    Tvg_Paint _selectionPaint, _textPaint, _caretPaint;
+    Tvg_Paint _selectionPaint, _caretPaint;
+    TextImage _text;
     Tvg_Paint[3] _clips;
 }
 

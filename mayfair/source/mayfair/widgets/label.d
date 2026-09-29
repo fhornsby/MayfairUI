@@ -81,7 +81,13 @@ protected:
 
     override void mounted() nothrow
     {
-        applyFill();
+        _image.create();
+        addPaint(_image.paint);
+    }
+
+    override void unmounted()
+    {
+        _image.release(); // its paint went with the widget's
     }
 
     override void describeAccessible(ref AccessibleNode node)
@@ -100,7 +106,7 @@ protected:
         // The width the layout settled on was measured from these lines, but rounded to the pixel
         // grid since, so a line that fitted it before rounding still does
         const lines = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
-        const scale = scene ? scene.scale : 1.0f;
+        _image.begin(scene ? scene.pixelScale : 1.0f);
         float top = y;
         foreach (ref line; lines)
         {
@@ -110,9 +116,10 @@ protected:
             else if (_textAlignment == TextAlignment.right)
                 left += w - line.width;
             // A line's origin is its baseline, one ascender below its top
-            _paragraph.emitLine(shape, line, left, top + _paragraph.ascender, scale);
+            _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill);
             top += _paragraph.lineHeight + _lineSpacing;
         }
+        _image.finish();
     }
 
 private:
@@ -134,12 +141,11 @@ private:
 
     void applyFill() nothrow @nogc
     {
-        if (shape)
-            tvg_shape_set_fill_color(shape, _textFill.tupleof);
-        invalidate();
+        invalidate(); // the colour's in the picture, which is made again
     }
 
     Paragraph _paragraph;
+    TextImage _image; // the text, drawn by FreeType (see mayfair.text.raster)
 }
 
 /// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.

@@ -119,7 +119,7 @@ public:
 
     /*
         Draws it all into `into`, a ThorVG scene, with its top left at the scene's origin. `scale`
-        is device pixels per point, which glyphs are hinted to; `canvasWidth` by `canvasHeight`
+        is pixels per point, which text is rendered at (see Scene.pixelScale); `canvasWidth` by `canvasHeight`
         is how much the root element's background covers, as a browser's fills its whole window.
     */
     void draw(Tvg_Paint into, float scale, float canvasWidth, float canvasHeight)
@@ -130,10 +130,9 @@ public:
         _scale = scale;
         _canvasWidth = canvasWidth;
         _canvasHeight = canvasHeight;
-        _text = null;
         lh_document_draw(_doc, 0, 0, 0, null);
+        endText();
         _targets = null;
-        _text = null;
     }
 
     /*
@@ -187,14 +186,40 @@ private:
     Tvg_Paint[] _targets;         // where paints go: the scene given, then each clip inside it
     float _scale = 1;
     float _canvasWidth = 0, _canvasHeight = 0;
-    Tvg_Paint _text;              // the last text drawn, which more text in its colour can join
-    Colour _textColour;
+    // Text drawn since anything else was, which more text joins: a page is thousands of words,
+    // and each run of them between other drawing is one picture (see mayfair.text.raster)
+    TextImage _text;
+    bool _inText;
 
     // A paint in the current clip, in drawing order
     void add(Tvg_Paint p) nothrow
     {
-        _text = null;
+        endText();
         tvg_scene_add(_targets[$ - 1], p);
+    }
+
+    // Some text, into the picture for the text drawn since anything else was
+    void addText(ref const GlyphRun run, float x, float baseline, Colour c) nothrow
+    {
+        if (!_inText)
+        {
+            _text.create();
+            tvg_scene_add(_targets[$ - 1], _text.paint);
+            _text.begin(_scale);
+            _inText = true;
+        }
+        _text.addRun(run, x, baseline, c);
+    }
+
+    // Puts the text drawn so far into its picture. The picture keeps a copy of its pixels, and
+    // the scene the picture, so the buffers can go.
+    void endText() nothrow
+    {
+        if (!_inText)
+            return;
+        _text.finish();
+        _text.release();
+        _inText = false;
     }
 
     WebFont* fontOf(uintptr_t handle) nothrow @nogc
@@ -419,16 +444,7 @@ extern(C) void drawText(void* user, uintptr_t, const(char)* text, uintptr_t hand
         const col = colour(c);
         const baseline = pos.y + pos.height - f.descent;
 
-        // Text in one colour, one word after another, goes in one shape: a page is thousands of words
-        if (!doc._text || doc._textColour != col)
-        {
-            auto shape = tvg_shape_new();
-            fill(shape, col);
-            doc.add(shape);
-            doc._text = shape;
-            doc._textColour = col;
-        }
-        emitRun(doc._text, *run, pos.x, baseline, doc._scale);
+        doc.addText(*run, pos.x, baseline, col);
 
         if (f.decoration)
         {
@@ -778,7 +794,7 @@ extern(C) void setClip(void* user, lh_position pos, lh_radii radius) nothrow
 extern(C) void delClip(void* user) nothrow
 {
     auto doc = self(user);
-    doc._text = null;
+    doc.endText();
     if (doc._targets.length > 1)
         doc._targets = doc._targets[0 .. $ - 1];
 }
@@ -794,7 +810,7 @@ extern(C) void drawListMarker(void* user, uintptr_t, const(lh_list_marker)* m) n
             auto image = doc.image(m.image, m.base_url);
             if (image.keeper)
             {
-                doc._text = null;
+                doc.endText();
                 doc.placeImage(doc._targets[$ - 1], image, p.x, p.y, image.width, image.height);
             }
             return;

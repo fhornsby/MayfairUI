@@ -1,5 +1,8 @@
 module mayfair.widgets.icon;
 
+import core.stdc.math : roundf;
+import core.stdc.stdlib : free, realloc;
+import core.stdc.string : memset;
 import std.algorithm : endsWith;
 import std.math : ceil;
 import mayfair.images;
@@ -35,6 +38,11 @@ import mayfair.widgets.widget;
     Recolouring an SVG changes the colour of each shape in it, so it costs nothing to draw. A bitmap
     has no shapes to recolour, so a symbolic PNG is drawn through ThorVG's fill effect instead: the
     same result, rendered off-screen first.
+
+    An SVG is drawn on the CPU, by ThorVG's software renderer, into a bitmap at exactly the pixels
+    it covers, which is what's shown: an icon is thin strokes a pixel or two across, like a glyph,
+    and the GPU's antialiasing gives an edge too few shades of coverage to draw them cleanly (see
+    mayfair.text.raster). It's drawn again only when its size, colour or picture changes.
 */
 class Icon : ImageView
 {
@@ -90,9 +98,109 @@ protected:
         recolour();
     }
 
+    override void unmounted()
+    {
+        super.unmounted();
+        // The bitmap's picture went with the holder; the rasteriser is ThorVG's, and ThorVG's
+        // engine may stop before it's back in a window
+        _bitmap = null;
+        if (_rasteriser)
+            tvg_canvas_destroy(_rasteriser);
+        _rasteriser = null;
+        free(_pixels);
+        _pixels = null;
+        _pixelCount = 0;
+        _drawnWidth = _drawnHeight = 0;
+    }
+
+    override void paint(float x, float y, float w, float h) nothrow @nogc
+    {
+        super.paint(x, y, w, h);
+        drawBitmap();
+    }
+
 private:
     string _lookedUpName;              // what the named icon was last found for
     int _lookedUpSize, _lookedUpScale;
+
+    // The SVG, drawn on the CPU (see above)
+    Tvg_Canvas _rasteriser;
+    Tvg_Paint _bitmap;                 // the picture showing it, in the holder beside the vector one
+    uint* _pixels;
+    size_t _pixelCount;
+    int _drawnWidth, _drawnHeight;     // what it was drawn at, in pixels
+    bool _stale = true;                // its colour or picture changed since
+
+    /*
+        Shows the SVG as a bitmap of exactly the pixels it covers, on the pixel grid, drawn again
+        if they or it changed. Anything else -- a PNG, which is a bitmap already -- is drawn as it is.
+    */
+    void drawBitmap() nothrow @nogc
+    {
+        auto vector = picture;
+        if (!vector || !scene || !image || image.format != ImageFormat.svg)
+        {
+            if (_bitmap)
+                tvg_paint_set_visible(_bitmap, false);
+            if (vector)
+                tvg_paint_set_visible(vector, true);
+            return;
+        }
+        const s = scene.pixelScale;
+        const at = placed;
+        const px = roundf(at.minX * s), py = roundf(at.minY * s);
+        const pw = cast(int) roundf(at.width * s), ph = cast(int) roundf(at.height * s);
+        if (pw <= 0 || ph <= 0 || naturalWidth <= 0 || naturalHeight <= 0)
+            return;
+        if (_stale || pw != _drawnWidth || ph != _drawnHeight)
+        {
+            if (!render(vector, pw, ph))
+                return;
+            _stale = false;
+            _drawnWidth = pw;
+            _drawnHeight = ph;
+        }
+        tvg_picture_set_size(_bitmap, pw / s, ph / s);
+        tvg_paint_translate(_bitmap, px / s, py / s);
+        tvg_paint_set_visible(vector, false);
+        tvg_paint_set_visible(_bitmap, true);
+    }
+
+    // Draws a copy of `vector`, recoloured as it is, `w` by `h` pixels, into the bitmap
+    bool render(Tvg_Paint vector, int w, int h) nothrow @nogc
+    {
+        const count = cast(size_t) w * h;
+        if (count > _pixelCount)
+        {
+            auto grown = cast(uint*) realloc(_pixels, count * uint.sizeof);
+            if (!grown)
+                return false;
+            _pixels = grown;
+            _pixelCount = count;
+        }
+        memset(_pixels, 0, count * uint.sizeof);
+        if (!_rasteriser)
+            _rasteriser = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
+        if (!_rasteriser)
+            return false;
+        tvg_swcanvas_set_target(_rasteriser, _pixels, w, w, h, TVG_COLORSPACE_ARGB8888);
+        auto copy = tvg_paint_duplicate(vector);
+        tvg_paint_set_visible(copy, true); // the vector's hidden, and the copy with it
+        auto m = Tvg_Matrix(w / naturalWidth, 0, 0, 0, h / naturalHeight, 0, 0, 0, 1);
+        tvg_paint_set_transform(copy, &m);
+        tvg_canvas_add(_rasteriser, copy);
+        tvg_canvas_update(_rasteriser);
+        tvg_canvas_draw(_rasteriser, false);
+        tvg_canvas_sync(_rasteriser);
+        tvg_canvas_remove(_rasteriser, null); // and frees the copy
+        if (!_bitmap)
+        {
+            _bitmap = tvg_picture_new();
+            tvg_scene_add(holder, _bitmap);
+        }
+        tvg_picture_load_raw(_bitmap, _pixels, w, h, TVG_COLORSPACE_ARGB8888, true);
+        return true;
+    }
 
     void applySize()
     {
@@ -144,6 +252,8 @@ private:
         if (!p)
             return;
         tvg_scene_clear_effects(holder);
+        _stale = true; // the bitmap's in the old colours
+        invalidate();
         if (!_symbolic)
             return; // in its own colours, as it was loaded
         auto accessor = tvg_accessor_new();

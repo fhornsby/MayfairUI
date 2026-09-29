@@ -175,7 +175,7 @@ protected:
             tvg_scene_remove(_content.page, null);
             const w = _doc.width > view.width ? _doc.width : view.width;
             const h = _doc.height > view.height ? _doc.height : view.height;
-            _drawnScale = scene.scale;
+            _drawnScale = scene.pixelScale;
             _doc.draw(_content.page, _drawnScale, w, h);
             _redraw = false;
             _content.invalidate();
@@ -358,9 +358,9 @@ private:
             const v = view._pane.viewportBounds();
             if (v.width != view._laidOutWidth || v.height != view._laidOutHeight)
                 view.requestUpdate();
-            if (scene && scene.scale != view._drawnScale)
+            if (scene && scene.pixelScale != view._drawnScale)
             {
-                view._redraw = true; // its glyphs are hinted to the pixels of the display it's on
+                view._redraw = true; // its text is rendered for the pixels of the display it's on
                 view.requestUpdate();
             }
         }

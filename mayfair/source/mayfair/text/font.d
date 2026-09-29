@@ -3,6 +3,7 @@ module mayfair.text.font;
 import std.string : fromStringz, toStringz;
 import mayfair.text.freetype;
 import mayfair.text.harfbuzz;
+import mayfair.text.raster : GlyphBitmap, GlyphCache;
 
 /// How heavy a face is, on the OS/2 table's (and CSS's) 100-900 scale.
 enum FontWeight : ushort
@@ -47,6 +48,7 @@ public:
         if (_hb) hb_font_destroy(_hb);
         if (_face) FT_Done_Face(_face);
         if (_outline) FT_Done_Face(_outline);
+        _bitmaps.clear();
     }
 
     float size() const nothrow @nogc { return _size; }
@@ -125,6 +127,15 @@ package:
 
     hb_font_t* hb() nothrow @nogc { return _hb; }
 
+    /// Glyph `glyph` rendered by FreeType at `scale` pixels to the point, for the bitmap route
+    /// (mayfair.text.raster): rendered the first time it's asked for, and kept.
+    const(GlyphBitmap)* glyphBitmap(uint glyph, float scale) nothrow @nogc
+    {
+        if (auto b = _bitmaps.lookup(glyph, scale))
+            return b;
+        return _bitmaps.add(outlineFace(scale), glyph, scale);
+    }
+
     /// The face to load outlines from, sized so that one device pixel really is one pixel to
     /// FreeType, which is what hinting needs to grid-fit against. Resized only when the scale
     /// changes, which is a display change, not a frame.
@@ -142,6 +153,7 @@ private:
     FT_Face _face;
     FT_Face _outline;
     float _outlineScale = 0; // 0 so the first call always sizes it
+    GlyphCache _bitmaps;
     hb_font_t* _hb;
     float _size;
     string _family;

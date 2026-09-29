@@ -431,13 +431,15 @@ protected:
     /*
         Draws the text into `text`, the selection into `selection` and the caret and anything
         being composed into `caret`, with the text's top left at `ox`, `oy`. For the subclass's
-        paint(), or its content's.
+        paint(), or its content's. The text is drawn by FreeType, at `pixelScale` pixels to the
+        point (see mayfair.text.raster).
     */
-    final void drawText(Tvg_Paint selection, Tvg_Paint text, Tvg_Paint caret, float ox, float oy, float scale) nothrow @nogc
+    final void drawText(Tvg_Paint selection, ref TextImage text, Tvg_Paint caret, float ox, float oy,
+                        float pixelScale) nothrow @nogc
     {
         tvg_shape_reset(selection);
-        tvg_shape_reset(text);
         tvg_shape_reset(caret);
+        text.begin(pixelScale);
         tvg_shape_set_fill_color(selection, _highlightFill.tupleof);
         tvg_shape_set_fill_color(caret, _textFill.tupleof);
         const lh = lineHeight;
@@ -446,16 +448,11 @@ protected:
             appendBoxes(selection, selectionStart, selectionEnd, ox, oy, lh);
 
         if (!_text.length && !_composed.length && _promptText.length)
-        {
-            tvg_shape_set_fill_color(text, _promptTextFill.tupleof);
-            emitRun(text, _promptRun, ox, oy + _font.ascender, scale);
-        }
+            text.addRun(_promptRun, ox, oy + _font.ascender, _promptTextFill);
         else
-        {
-            tvg_shape_set_fill_color(text, _textFill.tupleof);
             foreach (ref l; _lines)
-                emitRun(text, l.line.run, ox + l.x, oy + l.top + _font.ascender, scale);
-        }
+                text.addRun(l.line.run, ox + l.x, oy + l.top + _font.ascender, _textFill);
+        text.finish();
 
         if (focused && canEdit() && _caretOn && (_anchor == _caretPosition || _composed.length))
         {

@@ -146,6 +146,10 @@ public:
     /// because a glyph has to land on the pixel grid to rasterise the same way twice.
     float scale() const nothrow @nogc { return _scale; }
 
+    /// Pixels the renderer draws per point: the display's scale times any render scale of the
+    /// renderer's own (see setScale). What a bitmap is made at to be drawn one texel to a pixel.
+    float pixelScale() const nothrow @nogc { return paintScale; }
+
     /*
         Both halves of HiDPI in one place: what Yoga rounds layout to, and what turns the points
         everything else works in into device pixels.
