@@ -8,6 +8,7 @@ import std.math : ceil;
 import mayfair.images;
 import mayfair.properties;
 import mayfair.renderers.thorvg;
+import mayfair.text.raster : replacePicture;
 import mayfair.theme;
 import mayfair.widgets.imageview;
 import mayfair.widgets.widget;
@@ -193,12 +194,7 @@ private:
         tvg_canvas_draw(_rasteriser, false);
         tvg_canvas_sync(_rasteriser);
         tvg_canvas_remove(_rasteriser, null); // and frees the copy
-        if (!_bitmap)
-        {
-            _bitmap = tvg_picture_new();
-            tvg_scene_add(holder, _bitmap);
-        }
-        tvg_picture_load_raw(_bitmap, _pixels, w, h, TVG_COLORSPACE_ARGB8888, true);
+        _bitmap = replacePicture(holder, _bitmap, _pixels, w, h);
         return true;
     }
 

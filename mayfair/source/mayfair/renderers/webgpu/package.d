@@ -236,6 +236,9 @@ public:
         offscreenDesc.mipLevelCount = 1;
         offscreenDesc.sampleCount = 1;
         offscreenDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        // Readable back only for MAYFAIR_SNAPSHOT, which is all that copies from it
+        if (getenv("MAYFAIR_SNAPSHOT"))
+            offscreenDesc.usage |= WGPUTextureUsage_CopySrc;
         WGPUTexture nextOffscreen = wgpuDeviceCreateTexture(device, &offscreenDesc);
         if (!nextOffscreen) {
             fprintf(stderr, "could not create the %ux%u offscreen target\n", rw, rh);
@@ -292,6 +295,56 @@ public:
         return "webgpu";
     }
 
+    /*
+        MAYFAIR_SNAPSHOT for this renderer (see mayfair.renderers.cpu.snapshot): ThorVG's frame,
+        copied back from the GPU and written as a PNG. It's what ThorVG drew, before the scaling
+        down, so at the render scale. Slow -- it waits for the GPU -- but it's a developer's tool.
+    */
+    void snapshotOffscreen(){
+        import mayfair.renderers.cpu : snapshot;
+        if (!offscreen)
+            return;
+        const w = wgpuTextureGetWidth(offscreen), h = wgpuTextureGetHeight(offscreen);
+        const rowBytes = (w * 4 + 255) / 256 * 256; // a copy's rows are 256-byte aligned
+        WGPUBufferDescriptor bufferDesc;
+        bufferDesc.size = cast(ulong) rowBytes * h;
+        bufferDesc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+        auto buffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
+        if (!buffer)
+            return;
+        scope(exit) wgpuBufferRelease(buffer);
+
+        WGPUTexelCopyTextureInfo from;
+        from.texture = offscreen;
+        from.aspect = WGPUTextureAspect_All;
+        WGPUTexelCopyBufferInfo to;
+        to.buffer = buffer;
+        to.layout.bytesPerRow = rowBytes;
+        to.layout.rowsPerImage = h;
+        auto size = WGPUExtent3D(w, h, 1);
+        auto encoder = wgpuDeviceCreateCommandEncoder(device, null);
+        wgpuCommandEncoderCopyTextureToBuffer(encoder, &from, &to, &size);
+        auto commands = wgpuCommandEncoderFinish(encoder, null);
+        wgpuQueueSubmit(queue, 1, &commands);
+        wgpuCommandBufferRelease(commands);
+        wgpuCommandEncoderRelease(encoder);
+
+        bool mapped;
+        WGPUBufferMapCallbackInfo callback;
+        callback.mode = WGPUCallbackMode_AllowSpontaneous;
+        callback.callback = &snapshotMapped;
+        callback.userdata1 = &mapped;
+        wgpuBufferMapAsync(buffer, WGPUMapMode_Read, 0, cast(size_t) rowBytes * h, callback);
+        wgpuDevicePoll(device, true, null);
+        if (!mapped)
+            return;
+        // BGRA8 bytes are a little-endian 0xAARRGGBB, which is what snapshot() takes
+        auto pixels = cast(const(uint)*) wgpuBufferGetConstMappedRange(buffer, 0, cast(size_t) rowBytes * h);
+        if (pixels)
+            snapshot(pixels, rowBytes / 4, w, h);
+        wgpuBufferUnmap(buffer);
+    }
+
     /// Draws the canvas's current scene into the offscreen target, scales that down into the
     /// window's next frame, and presents it.
     void present(){
@@ -301,6 +354,8 @@ public:
         const afterDraw = traceNow();
         tvg_canvas_sync(_canvas); // ThorVG's work is finished in the offscreen texture by here
         const afterSync = traceNow();
+        if (getenv("MAYFAIR_SNAPSHOT"))
+            snapshotOffscreen();
 
         // Blocks until the compositor hands a buffer back, which is on its schedule, not ours
         WGPUSurfaceTexture frame;
@@ -538,4 +593,9 @@ private void printWgpuMessage(const(char)* context, WGPUStringView message) noth
         fprintf(stderr, "%s: %s\n", context, message.data);
     else
         fprintf(stderr, "%s: %.*s\n", context, cast(int) message.length, message.data);
+}
+
+private extern(C) void snapshotMapped(WGPUMapAsyncStatus status, WGPUStringView, void* mapped, void*) nothrow @nogc
+{
+    *cast(bool*) mapped = status == WGPUMapAsyncStatus_Success;
 }

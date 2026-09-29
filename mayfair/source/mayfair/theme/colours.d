@@ -11,6 +11,7 @@ struct Theme
     enum Colour background_colour = Colour(15, 23, 42);    // behind the scene, under the root's own background
     enum Colour text_colour       = Colour(226, 232, 240); // text, before it's styled
     enum float text_size = 14;     // points, for text not given a font of its own
+    enum float text_gamma = 2.2;   // how much light text's edges are lifted: see mayfair.text.raster
 
     // Garbage collection, which the app's loop does between frames: see App.collectGarbage
     enum size_t gc_min_growth = 1 << 20;  // bytes allocated since the last collection before the next is worth it

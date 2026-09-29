@@ -169,8 +169,9 @@ private struct SDL_SurfaceFields
     A developer's tool: with MAYFAIR_SNAPSHOT set to a file name, every frame drawn is also written
     there as a PNG, alpha and all -- what the window hands the compositor, shadow included, which a
     screenshot of the desktop can't show on Wayland. Uncompressed, so it needs nothing but stdio.
+    The WebGPU renderer writes its frames through this too, read back from the GPU.
 */
-private void snapshot(const(uint)* pixels, uint stride, uint w, uint h) nothrow @nogc
+package(mayfair) void snapshot(const(uint)* pixels, uint stride, uint w, uint h) nothrow @nogc
 {
     import core.stdc.stdio : FILE, fclose, fopen, fwrite;
     import core.stdc.stdlib : getenv;

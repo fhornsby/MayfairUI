@@ -1,6 +1,6 @@
 module mayfair.text.raster;
 
-import core.stdc.math : roundf;
+import core.stdc.math : powf, roundf;
 import core.stdc.stdlib : free, malloc, realloc;
 import core.stdc.string : memset;
 
@@ -9,7 +9,7 @@ import mayfair.text.font;
 import mayfair.text.freetype;
 import mayfair.text.paragraph;
 import mayfair.text.shaping;
-import mayfair.theme : Colour;
+import mayfair.theme : Colour, Theme;
 
 /*
     The bitmap route: text rasterised on the CPU by FreeType, and shown as a picture.
@@ -145,23 +145,29 @@ public:
                 continue;
             const ox = p.x + b.left - left, oy = p.y - b.top - top;
             const c = p.colour;
+            if (!tabled || c != tableColour)
+            {
+                coverageCurve(c, table);
+                tableColour = c;
+                tabled = true;
+            }
             foreach (row; 0 .. b.height)
             {
                 auto dst = pixels + (oy + row) * w + ox;
                 auto src = b.coverage + row * b.width;
                 foreach (col; 0 .. b.width)
                 {
-                    const cov = src[col];
+                    const cov = table[src[col]];
                     if (cov)
                         dst[col] = over(dst[col], c, cov);
                 }
             }
         }
 
-        tvg_picture_load_raw(picture, pixels, w, h, TVG_COLORSPACE_ARGB8888, true);
+        picture = replacePicture(paint, picture, pixels, w, h);
         tvg_picture_set_size(picture, w / scale, h / scale);
         tvg_paint_translate(picture, left / scale, top / scale);
-        show(true);
+        shown = true;
     }
 
 private:
@@ -180,6 +186,9 @@ private:
     size_t glyphCount, glyphCapacity;
     uint* pixels;
     size_t pixelCapacity;
+    ubyte[256] table;       // coverage as it's blended, for tableColour: see coverageCurve
+    Colour tableColour;
+    bool tabled;
 
     const(GlyphBitmap)* bitmapOf(ref const Placed p) nothrow @nogc
     {
@@ -204,6 +213,46 @@ private:
             tvg_paint_set_opacity(picture, on ? 255 : 0);
         shown = on;
     }
+}
+
+/*
+    A new picture of `pixels`, `w` by `h` premultiplied 0xAARRGGBB, in `holder` where `old` was.
+    A new one each time, as ThorVG won't load a picture again once it's been drawn: it keeps the
+    bitmap it had, and sizing that to the new one's size squashes it.
+*/
+package(mayfair) Tvg_Paint replacePicture(Tvg_Paint holder, Tvg_Paint old, const(uint)* pixels, int w, int h) nothrow @nogc
+{
+    auto picture = tvg_picture_new();
+    tvg_picture_load_raw(picture, pixels, w, h, TVG_COLORSPACE_ARGB8888, true); // a copy: pixels are the caller's
+    if (old)
+    {
+        tvg_scene_insert(holder, picture, old);
+        tvg_scene_remove(holder, old); // and ThorVG frees it
+    }
+    else
+        tvg_scene_add(holder, picture);
+    return picture;
+}
+
+/*
+    Coverage as it's blended, for text in `colour`. FreeType's coverage is a fraction of the light,
+    but it's blended into sRGB values, which aren't linear in light: half way between two sRGB
+    values is darker than half the light of each. So a glyph's edge comes out darker than it should,
+    which dark text wears as a little more weight, and reads well, but light text on a dark ground
+    loses to its background: it looks thin. Light text's coverage is lifted to make up for it, by a
+    gamma curve as strong as the text is light; dark text's is left as it is.
+*/
+private void coverageCurve(Colour colour, ref ubyte[256] table) nothrow @nogc
+{
+    static float linear(ubyte c) nothrow @nogc
+    {
+        const v = c / 255.0f;
+        return v <= 0.04045f ? v / 12.92f : powf((v + 0.055f) / 1.055f, 2.4f);
+    }
+    const luminance = 0.2126f * linear(colour.r) + 0.7152f * linear(colour.g) + 0.0722f * linear(colour.b);
+    const exponent = 1 / (1 + (Theme.text_gamma - 1) * luminance);
+    foreach (i; 0 .. 256)
+        table[i] = cast(ubyte)(powf(i / 255.0f, exponent) * 255 + 0.5f);
 }
 
 /// `colour` at `coverage` over `dst`, a premultiplied 0xAARRGGBB, as source-over does.
@@ -342,4 +391,52 @@ private:
             b.coverage[row * b.width .. (row + 1) * b.width] = bm.buffer[row * bm.pitch .. row * bm.pitch + b.width];
         return b;
     }
+}
+
+unittest
+{
+    import mayfair.text.fonts : defaultFont;
+
+    // Drawn by ThorVG's software renderer, as a window would draw it
+    tvg_engine_init(1);
+    scope (exit) tvg_engine_term();
+    enum w = 300, h = 40;
+    auto pixels = new uint[w * h];
+    auto canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
+    scope (exit) tvg_canvas_destroy(canvas);
+    tvg_swcanvas_set_target(canvas, pixels.ptr, w, w, h, TVG_COLORSPACE_ARGB8888);
+
+    TextImage text;
+    text.create();
+    tvg_canvas_add(canvas, text.paint);
+    scope (exit) text.release();
+    auto font = defaultFont(14);
+
+    // Draws `s`, and says how far right it reaches, in pixels
+    int show(string s)
+    {
+        auto run = shapeText(font, s);
+        text.begin(1);
+        text.addRun(run, 0, 20, Colour(0, 0, 0));
+        text.finish();
+        pixels[] = 0;
+        tvg_canvas_update(canvas);
+        tvg_canvas_draw(canvas, false);
+        tvg_canvas_sync(canvas);
+        int right;
+        foreach (i, p; pixels)
+            if (p >> 24 && cast(int)(i % w) + 1 > right)
+                right = cast(int)(i % w) + 1;
+        return right;
+    }
+
+    const short_ = show("Short");
+    assert(short_ > 0, "drawn");
+    // Drawn again with other text: a picture that's been drawn won't load again, and this once
+    // showed the first text squashed into the second's size
+    const width = shapeText(font, "Something rather longer").width;
+    const long_ = show("Something rather longer");
+    assert(long_ > short_ * 2, "the new text, not the old one stretched");
+    assert(long_ > width - 3 && long_ < width + 3, "as wide as it's laid out");
+    assert(show("") == 0, "and nothing for no text");
 }
