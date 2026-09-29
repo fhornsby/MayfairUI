@@ -12,6 +12,10 @@ struct Theme
     enum Colour text_colour       = Colour(226, 232, 240); // text, before it's styled
     enum float text_size = 14;     // points, for text not given a font of its own
 
+    // Garbage collection, which the app's loop does between frames: see App.collectGarbage
+    enum size_t gc_min_growth = 1 << 20;  // bytes allocated since the last collection before the next is worth it
+    enum size_t gc_max_growth = 64 << 20; // bytes allocated before one's worth a frame, while animating
+
     enum Duration button_press_time   = 90.msecs;  // how long Enter or Escape shows a button pressed
 
     enum float text_field_width          = 200;  // points, before any growing or shrinking

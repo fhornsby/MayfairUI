@@ -16,3 +16,6 @@
 [submodule "mayfair/vendor/sheenbidi"]
 	path = mayfair/vendor/sheenbidi
 	url = https://github.com/Tehreer/SheenBidi.git
+[submodule "mayfair/vendor/litehtml"]
+	path = mayfair/vendor/litehtml
+	url = https://github.com/litehtml/litehtml.git

@@ -18,6 +18,7 @@ public import mayfair.widgets.imageview;
 public import mayfair.widgets.icon;
 public import mayfair.widgets.lottieview;
 public import mayfair.widgets.canvas;
+public import mayfair.widgets.litewebview;
 public import mayfair.widgets.scrollpane;
 public import mayfair.widgets.tabpane;
 public import mayfair.widgets.navigationlist;

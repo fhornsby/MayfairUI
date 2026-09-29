@@ -27,6 +27,7 @@ Dock buildGallery(string start = null)
         Page("Images & icons", "image-x-generic-symbolic", imagesPage()),
         Page("Animation", "media-playback-start-symbolic", animationPage(&report)),
         Page("Canvas", "applications-graphics-symbolic", canvasPage(&report)),
+        Page("Web page", "web-browser-symbolic", webPage(&report)),
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
@@ -307,6 +308,67 @@ Widget canvasPage(Report report)
         .add(section("Paint by dragging", new Column().spacing(10).fillWidth(false)
             .add(paper).add(row(colours, new Label("Brush"), brush, clear, save))))
         .add(section("Shapes, a curve, an arc, a clip and text", shapes));
+}
+
+Widget webPage(Report report)
+{
+    import std.base64 : Base64;
+
+    // A picture from the gallery's own, as a data: URL: there's no file for it to be relative to
+    const hills = "data:image/svg+xml;base64," ~ Base64.encode(cast(const(ubyte)[]) import("hills.svg")).idup;
+    auto view = new LiteWebView().prefHeight(460);
+    view.setOnLinkClicked((ref LinkEvent e) { report("Link: " ~ e.url); });
+    view.loadContent(`<!DOCTYPE html>
+<html><head><title>A page of HTML</title>
+<style>
+  body { margin: 16px 20px; line-height: 1.45; }
+  h1 { font-size: 1.6em; margin: 0 0 0.4em; }
+  .note { padding: 10px 14px; border-radius: 10px; border: 1px solid #0284c7;
+          background: linear-gradient(to right, #0284c722, #0284c705); }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid #94a3b8; padding: 4px 10px; text-align: left; }
+  th { background: #94a3b833; }
+  code, pre { font-family: monospace; }
+  pre { background: #64748b22; padding: 8px 12px; border-radius: 6px; }
+  .float { float: right; margin: 0 0 8px 16px; border-radius: 8px; }
+  .boxes div { display: inline-block; width: 60px; height: 40px; margin-right: 8px; border-radius: 6px; }
+  a:hover { text-decoration: none; }
+</style></head>
+<body>
+<h1>A page of HTML</h1>
+<img class="float" src="` ~ hills ~ `" width="160">
+<p>This is a <b>LiteWebView</b>: HTML and CSS laid out by <a href="https://github.com/litehtml/litehtml">litehtml</a>,
+drawn with Mayfair's own text and ThorVG. Text is <i>italic</i>, <b>bold</b>, <u>underlined</u>,
+<s>struck through</s>, <code>code</code>, H<sub>2</sub>O and E = mc<sup>2</sup>.
+Jump down to <a href="#tables">the table</a>.</p>
+<p class="note">It's a document viewer rather than a browser: no JavaScript, no forms, and nothing from the network.
+Pictures and stylesheets come from files, or data: URLs like the one above.</p>
+<h2>Lists</h2>
+<ul><li>Discs,</li><li>and <ul><li>circles</li><li>below them</li></ul></li></ul>
+<ol><li>Numbered</li><li>in order</li></ol>
+<h2>Backgrounds and borders</h2>
+<div class="boxes">
+  <div style="background: #ef4444"></div>
+  <div style="background: linear-gradient(135deg, #f59e0b, #ec4899)"></div>
+  <div style="background: radial-gradient(circle, #22c55e, #0ea5e9)"></div>
+  <div style="background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red)"></div>
+  <div style="border: 4px dashed #8b5cf6"></div>
+  <div style="border: 6px double #64748b"></div>
+</div>
+<h2 id="tables">A table</h2>
+<table>
+  <tr><th>Widget</th><th>What it shows</th></tr>
+  <tr><td>Label</td><td>Text</td></tr>
+  <tr><td>Canvas</td><td>Pixels</td></tr>
+  <tr><td>LiteWebView</td><td>A page of HTML</td></tr>
+</table>
+<pre>auto view = new LiteWebView();
+view.load("docs/index.html");</pre>
+</body></html>`);
+
+    return page("Web page", "A LiteWebView shows a page of HTML and CSS, laid out by litehtml and drawn like "
+                ~ "everything else. It follows links to files and to #fragments, and hands the rest to the desktop.")
+        .add(view);
 }
 
 // A button in `colour` that paints in it, made here so each has its own colour (see reportKey)

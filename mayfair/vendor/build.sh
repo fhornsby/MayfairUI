@@ -11,6 +11,7 @@
 #   vendor/harfbuzz/        HarfBuzz source, a git submodule pinned to a release. Never modified.
 #   vendor/libunibreak/     libunibreak source, a git submodule pinned to a release. Never modified.
 #   vendor/sheenbidi/       SheenBidi source, a git submodule pinned to a release. Never modified.
+#   vendor/litehtml/        litehtml source, a git submodule pinned to a release. Never modified.
 #   vendor/wgpu-native/     wgpu-native prebuilt release, downloaded here (git-ignored)
 #   vendor/accesskit/       AccessKit's C bindings, prebuilt release, downloaded here (git-ignored)
 #   vendor/build/           Patched ThorVG source and build output (git-ignored). Delete it to rebuild
@@ -31,7 +32,7 @@ ACCESSKIT_VERSION=0.23.0
 ACCESSKIT_SHA256=dd2f84f51bea0bcf01270a7505b2b85a7945d40d703b6f479d64963accb4b95d
 ACCESSKIT_ZIP=accesskit-c-$ACCESSKIT_VERSION.zip
 
-for m in thorvg/meson.build yoga/yoga/Yoga.h freetype/include/ft2build.h \
+for m in thorvg/meson.build yoga/yoga/Yoga.h freetype/include/ft2build.h litehtml/include/litehtml.h \
          harfbuzz/src/hb.h libunibreak/src/linebreak.h sheenbidi/Headers/SheenBidi/SheenBidi.h; do
     if [ ! -f "$m" ]; then
         echo "vendor/${m%%/*} is empty. Run: git submodule update --init" >&2
@@ -233,4 +234,22 @@ if [ "$(cat build/sheenbidi/stamp 2>/dev/null)" != "$SHEENBIDI_STAMP" ]; then
         -c sheenbidi/Source/SheenBidi.c -o build/sheenbidi/SheenBidi.o
     ar rcs build/sheenbidi/libsheenbidi.a build/sheenbidi/SheenBidi.o
     echo "$SHEENBIDI_STAMP" > build/sheenbidi/stamp
+fi
+
+# litehtml lays out and draws HTML and CSS, for LiteWebView. Only its library, with the copy of
+# Gumbo (Google's HTML5 parser, Apache-2.0) it bundles. It's C++ throughout, so D reaches it through
+# a shim of Mayfair's own, bindings/litehtml_shim.cpp, which puts a C API on it; that's built here
+# too, as dub only compiles C. The shim is in the stamp, so changing it rebuilds it.
+if [ ! -f build/litehtml/build.ninja ]; then
+    cmake -S litehtml -B build/litehtml -G Ninja -DCMAKE_BUILD_TYPE=Release -DLITEHTML_BUILD_TESTING=OFF
+fi
+ninja -C build/litehtml
+
+LITEHTML_SHIM_STAMP="$(git -C litehtml rev-parse HEAD) $(cat ../bindings/litehtml_shim.cpp ../bindings/litehtml_shim.h | sha256sum)"
+if [ "$(cat build/litehtml/shim.stamp 2>/dev/null)" != "$LITEHTML_SHIM_STAMP" ]; then
+    echo "Building the litehtml shim"
+    c++ -std=c++17 -O2 -fPIC -Wall -Ilitehtml/include -Ilitehtml/include/litehtml \
+        -c ../bindings/litehtml_shim.cpp -o build/litehtml/litehtml_shim.o
+    ar rcs build/litehtml/liblitehtml_shim.a build/litehtml/litehtml_shim.o
+    echo "$LITEHTML_SHIM_STAMP" > build/litehtml/shim.stamp
 fi

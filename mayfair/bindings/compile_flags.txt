@@ -6,3 +6,4 @@
 -I../vendor/libunibreak/src
 -I../vendor/accesskit/include
 -I../vendor/sheenbidi/Headers
+-I../vendor/litehtml/include

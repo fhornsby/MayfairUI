@@ -64,6 +64,36 @@ public:
     /// Baseline to baseline, in points. What a wrapped paragraph steps down by per line.
     float lineHeight() const nothrow @nogc { return _face.size.metrics.height / 64.0f; }
 
+    /// Distance from the baseline to the bottom of a line, in points: positive, below it.
+    float descender() const nothrow @nogc { return -_face.size.metrics.descender / 64.0f; }
+
+    /// How tall a lower-case x is, in points, as the font says, or half its size if it doesn't.
+    float xHeight() nothrow @nogc
+    {
+        auto os2 = cast(TT_OS2*) FT_Get_Sfnt_Table(_face, FT_Sfnt_Tag.FT_SFNT_OS2);
+        // Only a version 2 table has it: FreeType leaves it 0 in an older one
+        if (os2 && os2.sxHeight > 0 && _face.units_per_EM)
+            return os2.sxHeight * _size / _face.units_per_EM;
+        return _size / 2;
+    }
+
+    /// Where an underline goes, in points below the baseline, and how thick it is: the font's
+    /// own, or what's usual where it doesn't say.
+    float underlinePosition() const nothrow @nogc
+    {
+        if (!_face.units_per_EM || !_face.underline_position)
+            return _size / 10;
+        return -_face.underline_position * _size / _face.units_per_EM;
+    }
+
+    /// ditto
+    float underlineThickness() const nothrow @nogc
+    {
+        if (!_face.units_per_EM || _face.underline_thickness <= 0)
+            return _size / 14;
+        return _face.underline_thickness * _size / _face.units_per_EM;
+    }
+
     /// Whether this face has a glyph for `c`. Where it doesn't, shaping falls back to another font.
     bool hasGlyph(dchar c) nothrow @nogc { return FT_Get_Char_Index(_face, c) != 0; }
 

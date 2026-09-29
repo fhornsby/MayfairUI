@@ -290,6 +290,12 @@
     padding: 5 8;
 }
 
+/* A page of HTML: the theme's text and accent until the page says otherwise */
+.lite-web-view {
+    colour: var(--text);
+    link-colour: var(--accent);
+}
+
 /*
     Sliders: a thin track, filled in the accent up to a round thumb. The thumb has a ring when
     the keyboard's on the slider, as a button does.

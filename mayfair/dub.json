@@ -42,7 +42,10 @@
 		"$PACKAGE_DIR/vendor/build/freetype/libfreetype.a",
 		"$PACKAGE_DIR/vendor/build/libunibreak/libunibreak.a",
 		"$PACKAGE_DIR/vendor/build/accesskit/libaccesskit.a",
-		"$PACKAGE_DIR/vendor/build/sheenbidi/libsheenbidi.a"
+		"$PACKAGE_DIR/vendor/build/sheenbidi/libsheenbidi.a",
+		"$PACKAGE_DIR/vendor/build/litehtml/liblitehtml_shim.a",
+		"$PACKAGE_DIR/vendor/build/litehtml/liblitehtml.a",
+		"$PACKAGE_DIR/vendor/build/litehtml/src/gumbo/libgumbo.a"
 	],
 	"libs": [
 		"stdc++",

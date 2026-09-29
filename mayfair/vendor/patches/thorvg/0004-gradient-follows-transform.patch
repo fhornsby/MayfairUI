@@ -1,0 +1,40 @@
+Move a gradient with its shape when only the transform changes. Backported from ThorVG's
+5b7b4c4c (in v1.1.0), which is below as it was committed.
+
+The CPU engine bakes a shape's transform into its gradient's placement, and only worked that
+out again when the gradient or colour changed. So a gradient in a scene that moved -- a
+LiteWebView page, scrolled -- stayed where it was first drawn while its shape moved on, and
+the shape showed the gradient's end colour, or its start, instead of the gradient. Drop this
+patch when ThorVG is updated to v1.1.0 or later.
+
+From 5b7b4c4cd9d94561d9200df20dcfa2de8edbf722 Mon Sep 17 00:00:00 2001
+From: Nor-s <soongeon@lottiefiles.com>
+Date: Mon, 6 Jul 2026 13:28:50 +0900
+Subject: [PATCH] cpu_engine: fix outdated gradient fill on transform-only
+ updates
+
+The gradient placement coefficients baked in _prepareLinear/_prepareRadial
+depend on the shape transform, but SwShapeTask::run's fill-update mask
+ignored Transform, so in retained mode a transformed gradient stayed
+pinned to its old position. Add Transform to regenerate the coefficients;
+the color table stays gated on Gradient.
+---
+ src/renderer/cpu_engine/tvgSwRenderer.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/renderer/cpu_engine/tvgSwRenderer.cpp b/src/renderer/cpu_engine/tvgSwRenderer.cpp
+index ca99121a..a1678b18 100644
+--- a/src/renderer/cpu_engine/tvgSwRenderer.cpp
++++ b/src/renderer/cpu_engine/tvgSwRenderer.cpp
+@@ -124,7 +124,7 @@ struct SwShapeTask : SwTask
+     {
+         auto strokeWidth = validStrokeWidth(clipper);
+         auto updateShape = flags[0] & (RenderUpdateFlag::Path | RenderUpdateFlag::Transform | RenderUpdateFlag::Clip);
+-        auto updateFill = (flags[0] & (RenderUpdateFlag::Color | RenderUpdateFlag::Gradient));
++        auto updateFill = (flags[0] & (RenderUpdateFlag::Color | RenderUpdateFlag::Gradient | RenderUpdateFlag::Transform));
+ 
+         //Shape
+         if (updateShape) {
+-- 
+2.53.0
+

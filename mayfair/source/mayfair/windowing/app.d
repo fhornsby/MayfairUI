@@ -86,6 +86,9 @@ SDL_Rect textInputRect;
 int textInputCursor;
 bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
 WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
+//Garbage collection: see collectGarbage()
+size_t liveAfterCollect;   // bytes in use after the last collection
+ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
 
 /*
     HiDPI. Layout and paint work in points; the scene transform turns those into device pixels, so
@@ -521,6 +524,42 @@ void present() nothrow @nogc {
         renderer.present();
 }
 
+/*
+    Collects garbage while the loop would otherwise be waiting. Left to itself, druntime collects
+    when an allocation finds the heap full, and on this thread that's in update(): layout, paint
+    and present are @nogc, but update() runs the app's code, and is part of the frame, so its pause
+    makes the frame late. Collecting here, between frames, keeps the heap from filling up, so that
+    mostly doesn't happen. It isn't prevented: GC.disable() would do that, but then a background
+    thread allocating while the loop sleeps would grow the heap with nothing to collect it, and
+    druntime's own collections are what keep that in check.
+
+    It only collects once enough has been allocated to be worth the pause: a keystroke's few bytes
+    aren't worth scanning the heap for. Enough is Theme.gc_min_growth, or a quarter of what was live
+    after the last collection if that's more, as a big heap takes longer to scan. While something's
+    animating the next frame is due soon, so it only collects if the last collection's pause fits
+    before then -- unless the heap has grown past Theme.gc_max_growth, when a frame is worth losing
+    to keep it in check. The time it takes comes out of the wait: the wait is to the next frame, not
+    for a length of time.
+*/
+void collectGarbage(bool animating) nothrow {
+    import core.memory : GC;
+    const used = GC.stats().usedSize;
+    const grown = used > liveAfterCollect ? used - liveAfterCollect : 0;
+    const enough = liveAfterCollect / 4 > Theme.gc_min_growth ? liveAfterCollect / 4 : Theme.gc_min_growth;
+    if (grown < enough)
+        return;
+    if (animating && grown < Theme.gc_max_growth
+        && cast(ulong) msUntilNextPulse() * 1_000_000 < lastCollectPause)
+        return; // no time before the next frame: the next wait, or the one after
+    const start = traceNow();
+    GC.collect();
+    const end = traceNow();
+    lastCollectPause = end - start;
+    liveAfterCollect = GC.stats().usedSize;
+    trace("gc    collected %.1f MB in %.2f ms, %.1f MB live", (used - liveAfterCollect) / 1048576.0,
+          traceMs(start, end), liveAfterCollect / 1048576.0);
+}
+
 /// Runs whichever of layout, paint and present are needed, in order.
 void render() nothrow @nogc {
     if (!needsLayout && !needsPaint && !needsPresent)
@@ -799,6 +838,8 @@ public:
         // While an animation runs, the wait is cut short when its next frame is due.
         SDL_Event event;
         while (running) {
+            // Before the wait, which it then shortens by as long as it took
+            collectGarbage(animationsRunning());
             const waitStart = traceNow();
             bool gotEvent;
             // While something's animating, the next frame is when the display's ready for it, and
