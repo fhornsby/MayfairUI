@@ -38,6 +38,11 @@ void traceClose() nothrow @nogc {
     }
 }
 
+/// Whether tracing is on: for gathering what only a trace wants, which costs something to find out.
+bool tracing() nothrow @nogc {
+    return traceFile !is null;
+}
+
 /// Current time in nanoseconds. It's the same clock SDL uses for event timestamps.
 ulong traceNow() nothrow @nogc {
     return SDL_GetTicksNS();

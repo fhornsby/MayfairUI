@@ -89,6 +89,9 @@ WindowMover mover;         // moves the window by Mayfair's title bar on Wayland
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
 ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
+size_t collections;        // druntime's count of collections, as of the loop's last look, while tracing
+size_t collectionsBetween; // how many of them collectGarbage() made
+size_t collectionsTraced, collectionsBetweenTraced; // both, as of the last frame traced
 
 /*
     HiDPI. Layout and paint work in points; the scene transform turns those into device pixels, so
@@ -483,7 +486,10 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
 int msUntilNextPulse() nothrow @nogc {
     const wanted = untilNextPulse();
     const now = traceNow();
-    const frameDue = lastUpdate + framePeriod;
+    // A renderer whose present waits for the display paces frames itself, and a timer of the
+    // loop's own, knowing nothing of when the display refreshes, would make it miss them. So the
+    // timer only stops it running flat out if the present stops waiting: a hidden window, say.
+    const frameDue = lastUpdate + (renderer.pacedByDisplay() ? framePeriod / 2 : framePeriod);
     const untilFrame = frameDue > now ? cast(long)((frameDue - now) / 1_000_000) : 0;
     if (wanted == Duration.zero)
         return cast(int) untilFrame;
@@ -553,6 +559,7 @@ void collectGarbage(bool animating) nothrow {
         return; // no time before the next frame: the next wait, or the one after
     const start = traceNow();
     GC.collect();
+    collectionsBetween++;
     const end = traceNow();
     lastCollectPause = end - start;
     liveAfterCollect = GC.stats().usedSize;
@@ -583,10 +590,15 @@ void render() nothrow @nogc {
         present();
     }
 
-    // "animating" tells a frame an animation asked for from one an event caused, for plotting frame pacing
-    trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms  animating %d", viewWidth,
-          viewHeight, traceMs(start, afterLayout), traceMs(afterLayout, afterPaint),
-          traceMs(afterPaint, traceNow()), traceMs(start, traceNow()), cast(int) animationsRunning());
+    // "animating" tells a frame an animation asked for from one an event caused, for plotting frame pacing.
+    // "gc" is how many collections there were since the frame before, druntime's own and
+    // collectGarbage()'s, and "between" how many were collectGarbage()'s, in the wait before it.
+    trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms  animating %d  gc %d  between %d",
+          viewWidth, viewHeight, traceMs(start, afterLayout), traceMs(afterLayout, afterPaint),
+          traceMs(afterPaint, traceNow()), traceMs(start, traceNow()), cast(int) animationsRunning(),
+          cast(int)(collections - collectionsTraced), cast(int)(collectionsBetween - collectionsBetweenTraced));
+    collectionsTraced = collections;
+    collectionsBetweenTraced = collectionsBetween;
 }
 
 /*
@@ -827,6 +839,12 @@ public:
         scope(exit) accessibility.close();
         scope(exit) foreach (c; cursors) if (c) SDL_DestroyCursor(c);
 
+        // Collections before now -- building the widgets, say -- aren't any frame's
+        if (tracing()) {
+            import core.memory : GC;
+            collections = collectionsTraced = GC.profileStats().numCollections;
+        }
+
         // First frame, without waiting for an event
         running = true;
         render();
@@ -878,6 +896,10 @@ public:
             update();
 
             if (running) {
+                if (tracing()) {
+                    import core.memory : GC;
+                    collections = GC.profileStats().numCollections; // for the frame's trace line
+                }
                 render();
                 updateAccessibility();
             }

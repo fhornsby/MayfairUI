@@ -139,6 +139,11 @@ public:
         return 1.0f;
     }
 
+    /// SDL_UpdateWindowSurface hands the frame over at once: the loop's timer paces it.
+    bool pacedByDisplay(){
+        return false;
+    }
+
     const(char)* name(){
         return "cpu";
     }

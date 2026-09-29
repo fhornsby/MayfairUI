@@ -26,7 +26,10 @@ import core.stdc.stdlib : getenv, atof;
     the CPU path and GTK both produced 146, and text looked visibly coarse next to any other app.
     Drawing at supersampleFactor times the window size and letting a linear filter average the
     result multiplies the coverage levels available per device pixel, at the price of drawing that
-    many more pixels.
+    many more pixels -- squared. At 2x a Vega 10 APU can't always draw the gallery's Animation page
+    in a refresh; at 1.5x it can (98% of frames on the next vblank), and at 1 it matches vkcube
+    (99%), but 1.5x text is visibly softer than 2x. Text rasterised on the CPU by FreeType, with its
+    256 levels of coverage, would make supersampling unnecessary.
 
     We still configure the surface ourselves so we can choose the present mode.
 */
@@ -102,8 +105,11 @@ public:
             return false;
         queue = wgpuDeviceGetQueue(device);
 
-        // Fifo (vsync on) makes every frame wait for the display: ~16 ms a frame on a Vega 10, against ~1 ms
-        // with Mailbox. Fifo is the only mode every GPU supports, so Mailbox is used only where available.
+        // Fifo: each frame waits for the display to be ready for it, which is what locks an
+        // animation to the refresh; on a compositor with wp_fifo_v1, Mesa paces it with that.
+        // Mailbox doesn't wait. It was used here once, for the frames it didn't spend waiting,
+        // and was then paced by whenever the compositor happened to hand buffers back: frames
+        // 12-22 ms apart, never on the refresh.
         presentMode = WGPUPresentMode_Fifo;
         // The surface's own preferred format. ThorVG used to need this to be BGRA8Unorm, since it
         // drew to the surface directly; now it draws to our offscreen texture and never touches
@@ -111,9 +117,6 @@ public:
         surfaceFormat = WGPUTextureFormat_BGRA8Unorm;
         WGPUSurfaceCapabilities capabilities;
         if (wgpuSurfaceGetCapabilities(surface, adapter, &capabilities) == WGPUStatus_Success) {
-            foreach (i; 0 .. capabilities.presentModeCount)
-                if (capabilities.presentModes[i] == WGPUPresentMode_Mailbox)
-                    presentMode = WGPUPresentMode_Mailbox;
             // Prefer a non-sRGB format. ThorVG's offscreen is plain RGBA8Unorm holding colours
             // that are already sRGB-encoded, and the downsample pass is a straight copy; writing
             // those into an sRGB target would encode them a second time and wash the whole UI out.
@@ -156,17 +159,22 @@ public:
             if (parsed >= 1.0 && parsed <= 4.0)
                 supersampleFactor = cast(float) parsed;
             else
-                fprintf(stderr, "MAYFAIR_SUPERSAMPLE must be between 1 and 4, using %.0f\n", supersampleFactor);
+                fprintf(stderr, "MAYFAIR_SUPERSAMPLE must be between 1 and 4, using %g\n", supersampleFactor);
         }
         if (!createDownsamplePipeline())
             return false;
-        trace("gpu   supersample %.0fx", supersampleFactor);
+        trace("gpu   supersample %gx", supersampleFactor);
         return true;
     }
 
     /// How much bigger than the window ThorVG draws. See the note at the top of the class.
     float renderScale(){
         return supersampleFactor;
+    }
+
+    /// Fifo waits for the display: see initialise().
+    bool pacedByDisplay(){
+        return presentMode == WGPUPresentMode_Fifo;
     }
 
     /// Frees everything. Call before the SDL window is destroyed, as the surface belongs to it.

@@ -35,4 +35,11 @@ interface Renderer
         the device pixel grid; only the ThorVG scene transform is multiplied by this.
     */
     float renderScale();
+
+    /*
+        Whether present() waits for the display to be ready for the frame -- vsync -- so the frames
+        it shows come once a refresh without the loop timing them. The loop's own timer then only
+        keeps a present that stops waiting (a hidden window, say) from running flat out.
+    */
+    bool pacedByDisplay();
 }

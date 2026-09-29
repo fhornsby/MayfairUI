@@ -7,12 +7,24 @@ right it sits is how long the frame took. One strip per trace, side by side, for
     MAYFAIR_RENDERER=cpu MAYFAIR_TRACE=cpu.txt dub run -- Animation
     python3 framepace.py gpu.txt:WebGPU cpu.txt:CPU -o pace.png
 
+A trace can also be a WAYLAND_DEBUG=client log, of this or any other app whose frames ask for
+wp_presentation feedback (Vulkan's Fifo present mode does, through Mesa):
+
+    WAYLAND_DEBUG=client dub run -- Animation 2> shown.log
+    python3 framepace.py shown.log:Shown
+
+Then each dot is a frame as the compositor showed it, at the vblank it went out on: what's on the
+screen, where a Mayfair trace has when the frame was handed over. Locked to the display, every dot
+is on the dashed line; one a refresh late is twice as far out. It has no layout, work or GC to say.
+
 --metric interval (the default) is the time since the previous frame: pacing, what you see.
 --metric work is layout + paint + present: what the frame cost. With a present mode that waits
 for the display, present includes that wait, so work is only meaningful as an upper bound.
 
 Blue dots are frames an animation asked for, grey ones frames an event caused. With
 --animating-only the grey ones are left out, as the gap before them is idle time, not jank.
+Red ones had a garbage collection since the frame before: in the loop's wait, where it's meant to
+be, or in the app's code, mid-frame. Each strip's numbers say how many there were of each.
 """
 import argparse
 import re
@@ -21,23 +33,32 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 FRAME = re.compile(r"^\s*([\d.]+)\s+frame .*?layout ([\d.]+)\s+paint ([\d.]+)\s+present ([\d.]+)"
-                   r"\s+total ([\d.]+) ms(?:\s+animating (\d))?")
+                   r"\s+total ([\d.]+) ms(?:\s+animating (\d))?(?:\s+gc (\d+)\s+between (\d+))?")
 REFRESH = re.compile(r"refresh ([\d.]+) Hz")
+# wp_presentation_feedback.presented(tv_sec_hi, tv_sec_lo, tv_nsec, refresh_ns, seq_hi, seq_lo, flags)
+PRESENTED = re.compile(r"wp_presentation_feedback#\d+\.presented\((\d+), (\d+), (\d+), (\d+), \d+, \d+, \d+\)")
 
 SURFACE, PANEL, GRID = "#0d0f14", "#12151c", "#2a2e38"
 TEXT, MUTED = "#ffffff", "#8b8f99"
-ANIMATED, EVENT = "#3987e5", "#9a9a92"
+ANIMATED, EVENT, COLLECTED = "#3987e5", "#9a9a92", "#e5484d"
 
 
 def load(path):
-    frames, hz = [], 60.0
+    frames, hz, first = [], 60.0, None
     with open(path) as f:
         for line in f:
-            if m := REFRESH.search(line):
+            if m := PRESENTED.search(line):
+                shown = ((int(m[1]) << 32) + int(m[2])) * 1000 + int(m[3]) / 1e6
+                first = shown if first is None else first
+                if int(m[4]):
+                    hz = 1e9 / int(m[4])
+                frames.append({"t": shown - first, "work": 0.0, "animating": True, "gc": 0, "between": 0})
+            elif m := REFRESH.search(line):
                 hz = float(m[1]) or hz
             elif m := FRAME.match(line):
                 frames.append({"t": float(m[1]), "work": float(m[5]),
-                               "animating": m[6] == "1" if m[6] is not None else True})
+                               "animating": m[6] == "1" if m[6] is not None else True,
+                               "gc": int(m[7] or 0), "between": int(m[8] or 0)})
     prev = None
     for fr in frames:
         fr["interval"] = fr["t"] - prev if prev is not None else None
@@ -73,8 +94,10 @@ def main():
 
         ax.set_facecolor(PANEL)
         ax.axvline(budget, color=MUTED, lw=1, ls=(0, (4, 4)), zorder=1)
-        for animated, colour in ((False, EVENT), (True, ANIMATED)):
-            group = [fr for fr in shown if fr["animating"] == animated]
+        # Frames with a collection are drawn last, over the rest, so none hides behind another
+        for colour, group in ((EVENT, [fr for fr in shown if not fr["animating"] and not fr["gc"]]),
+                              (ANIMATED, [fr for fr in shown if fr["animating"] and not fr["gc"]]),
+                              (COLLECTED, [fr for fr in shown if fr["gc"]])):
             ax.scatter([min(fr[args.metric], args.max_ms) for fr in group], [fr["t"] / 1000 for fr in group],
                        s=14, color=colour, edgecolors=PANEL, linewidths=0.6, zorder=3)
         for fr in shown:  # beyond the edge: an arrow says so, and how long it was
@@ -102,12 +125,16 @@ def main():
                      f"{late} over 1.5× budget")
         else:
             stats = f"{len(shown)} frames, none animated"
-        ax.set_title(label, color=TEXT, fontsize=11, loc="left", fontweight="bold", pad=44)
+        collections = sum(fr["gc"] for fr in shown)
+        between = sum(fr["between"] for fr in shown)
+        stats += f"\n{collections} GC: {between} between frames, {collections - between} mid-frame"
+        ax.set_title(label, color=TEXT, fontsize=11, loc="left", fontweight="bold", pad=54)
         ax.text(0, 1.005, stats, transform=ax.transAxes, color=MUTED, fontsize=7.5, va="bottom")
 
     fig.legend(handles=[Line2D([], [], marker="o", ls="", color=ANIMATED, label="animation frame"),
-                        Line2D([], [], marker="o", ls="", color=EVENT, label="event frame")],
-               loc="lower center", ncol=2, frameon=False, labelcolor=MUTED, fontsize=8)
+                        Line2D([], [], marker="o", ls="", color=EVENT, label="event frame"),
+                        Line2D([], [], marker="o", ls="", color=COLLECTED, label="garbage collected")],
+               loc="lower center", ncol=3, frameon=False, labelcolor=MUTED, fontsize=8)
     fig.suptitle(f"Frame pace — {'frame interval' if args.metric == 'interval' else 'frame work time'}",
                  color=TEXT, fontsize=12, x=0.02, ha="left")
     fig.tight_layout(rect=(0, 0.04, 1, 1))
