@@ -605,11 +605,7 @@ void render() nothrow @nogc {
     What the title bar Mayfair draws asks the window to do.
 */
 final class Controls : WindowControls {
-    void close() {
-        SDL_Event quit;
-        quit.type = SDL_EventType.SDL_EVENT_QUIT;
-        SDL_PushEvent(&quit);
-    }
+    void close() { quit(); }
     void minimise() { SDL_MinimizeWindow(window); }
     void toggleMaximised() {
         if (maximised)
@@ -736,6 +732,17 @@ public:
 
     @property inout(Scene) scene() inout {
         return _scene;
+    }
+
+    /*
+        Ends run(), as closing the window does, once what's being handled now is done: for a Quit
+        menu item, say. Needs no App to hand, and is safe from any thread. Before run() it does
+        nothing.
+    */
+    static void quit() nothrow @nogc {
+        SDL_Event event;
+        event.type = SDL_EventType.SDL_EVENT_QUIT;
+        SDL_PushEvent(&event);
     }
 
     void run(){
