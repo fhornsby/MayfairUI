@@ -2,7 +2,7 @@ module mayfair.text.raster;
 
 import core.stdc.math : powf, roundf;
 import core.stdc.stdlib : free, malloc, realloc;
-import core.stdc.string : memset;
+import core.stdc.string : memcpy, memset;
 
 import mayfair.renderers.thorvg;
 import mayfair.text.font;
@@ -30,7 +30,14 @@ import mayfair.theme : Colour, Theme;
 
     A colour glyph -- an emoji from a bitmap font -- isn't drawn, as the outline route doesn't draw
     it either.
+
+    A block bigger than tileSize either way is shown as tiles, each a picture of its own: a GPU
+    won't make a texture past a limit -- WebGPU's is 8192 pixels unless the device offers more --
+    and a line with nowhere to wrap, or a long document in a text area, goes well past it.
 */
+
+/// The most a picture of text is, in pixels, across or down: within any GPU's texture limit.
+enum tileSize = 4096;
 
 /*
     A block of text as a picture: what a widget draws its text with. `paint` goes in the widget's
@@ -52,8 +59,6 @@ public:
     void create() nothrow @nogc
     {
         paint = tvg_scene_new();
-        picture = tvg_picture_new();
-        tvg_scene_add(paint, picture);
         shown = true;
     }
 
@@ -62,10 +67,13 @@ public:
     {
         free(glyphs);
         free(pixels);
+        free(tile);
+        free(tiles);
         glyphs = null;
-        pixels = null;
-        glyphCount = glyphCapacity = pixelCapacity = 0;
-        paint = picture = null;
+        pixels = tile = null;
+        tiles = null;
+        glyphCount = glyphCapacity = pixelCapacity = tileCapacity = tileCount = tilesCapacity = 0;
+        paint = null; // the tiles are in it, and go with it
     }
 
     /// Starts again, for text at `pixelScale` pixels to the point.
@@ -164,14 +172,51 @@ public:
             }
         }
 
-        picture = replacePicture(paint, picture, pixels, w, h);
-        tvg_picture_set_size(picture, w / scale, h / scale);
-        tvg_paint_translate(picture, left / scale, top / scale);
-        shown = true;
+        // As tiles, each a picture where the last one in its place was
+        const across = (w + tileSize - 1) / tileSize, down = (h + tileSize - 1) / tileSize;
+        const count = cast(size_t) across * down;
+        if (!reserveTiles(count))
+        {
+            show(false);
+            return;
+        }
+        size_t i;
+        foreach (ty; 0 .. down)
+            foreach (tx; 0 .. across)
+            {
+                const x = tx * tileSize, y = ty * tileSize;
+                const tw = w - x < tileSize ? w - x : tileSize, th = h - y < tileSize ? h - y : tileSize;
+                const(uint)* from = pixels;
+                if (count > 1)
+                {
+                    // Its rows, together, as a picture has no stride of its own
+                    if (!reserveTile(cast(size_t) tw * th))
+                    {
+                        show(false);
+                        return;
+                    }
+                    foreach (row; 0 .. th)
+                        memcpy(tile + row * tw, pixels + (y + row) * w + x, tw * uint.sizeof);
+                    from = tile;
+                }
+                auto picture = replacePicture(paint, i < tileCount ? tiles[i] : null, from, tw, th);
+                tvg_picture_set_size(picture, tw / scale, th / scale);
+                tvg_paint_translate(picture, (left + x) / scale, (top + y) / scale);
+                tiles[i++] = picture;
+            }
+        if (count < tileCount)
+            foreach (old; tiles[count .. tileCount])
+                tvg_scene_remove(paint, old); // and ThorVG frees it
+        tileCount = count;
+        if (!shown)
+            show(true);
     }
 
 private:
-    Tvg_Paint picture;
+    Tvg_Paint* tiles;       // the pictures showing it, a tile each, in `paint`
+    size_t tileCount, tilesCapacity;
+    uint* tile;             // one tile's pixels, when there's more than one
+    size_t tileCapacity;
     float scale = 1;
     bool shown;
 
@@ -207,10 +252,35 @@ private:
         return true;
     }
 
+    bool reserveTiles(size_t count) nothrow @nogc
+    {
+        if (count <= tilesCapacity)
+            return true;
+        auto grown = cast(Tvg_Paint*) realloc(tiles, count * Tvg_Paint.sizeof);
+        if (!grown)
+            return false;
+        tiles = grown;
+        tilesCapacity = count;
+        return true;
+    }
+
+    bool reserveTile(size_t count) nothrow @nogc
+    {
+        if (count <= tileCapacity)
+            return true;
+        auto grown = cast(uint*) realloc(tile, count * uint.sizeof);
+        if (!grown)
+            return false;
+        tile = grown;
+        tileCapacity = count;
+        return true;
+    }
+
     void show(bool on) nothrow @nogc
     {
-        if (on != shown && picture)
-            tvg_paint_set_opacity(picture, on ? 255 : 0);
+        if (on != shown)
+            foreach (t; tiles[0 .. tileCount])
+                tvg_paint_set_opacity(t, on ? 255 : 0);
         shown = on;
     }
 }
@@ -439,4 +509,57 @@ unittest
     assert(long_ > short_ * 2, "the new text, not the old one stretched");
     assert(long_ > width - 3 && long_ < width + 3, "as wide as it's laid out");
     assert(show("") == 0, "and nothing for no text");
+}
+
+unittest
+{
+    import std.algorithm : canFind;
+    import std.array : replicate;
+    import mayfair.text.fonts : defaultFont;
+
+    // A line far wider than a tile is drawn as several, all of it, and shorter text after it as one
+    tvg_engine_init(1);
+    scope (exit) tvg_engine_term();
+    enum w = tileSize * 2 + 1000, h = 40;
+    auto pixels = new uint[w * h];
+    auto canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
+    scope (exit) tvg_canvas_destroy(canvas);
+    tvg_swcanvas_set_target(canvas, pixels.ptr, w, w, h, TVG_COLORSPACE_ARGB8888);
+
+    TextImage text;
+    text.create();
+    tvg_canvas_add(canvas, text.paint);
+    scope (exit) text.release();
+    auto font = defaultFont(14);
+
+    // Draws `s`, and says which columns have ink in them
+    bool[] show(string s)
+    {
+        auto run = shapeText(font, s);
+        text.begin(1);
+        text.addRun(run, 0, 20, Colour(0, 0, 0));
+        text.finish();
+        pixels[] = 0;
+        tvg_canvas_update(canvas);
+        tvg_canvas_draw(canvas, false);
+        tvg_canvas_sync(canvas);
+        auto inked = new bool[w];
+        foreach (i, p; pixels)
+            if (p >> 24)
+                inked[i % w] = true;
+        return inked;
+    }
+
+    const line = "m".replicate(cast(size_t)((tileSize * 2 + 500) / shapeText(font, "m").width));
+    const width = cast(int) shapeText(font, line).width;
+    assert(width > tileSize * 2 && width < w, "the test's line spans three tiles");
+    auto inked = show(line);
+    assert(text.tileCount == 3, "as three tiles");
+    foreach (x; [100, tileSize - 3, tileSize + 3, tileSize * 2 + 3, width - 5])
+        assert(inked[x - 3 .. x + 3].canFind(true), "drawn all the way along, across the tiles' edges");
+    assert(!inked[width + 3 .. $].canFind(true), "and no further");
+
+    inked = show("Short");
+    assert(text.tileCount == 1, "back to one");
+    assert(!inked[200 .. $].canFind(true), "the long line's other tiles gone");
 }
