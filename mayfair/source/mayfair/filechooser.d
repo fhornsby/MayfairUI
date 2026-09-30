@@ -95,6 +95,15 @@ public:
         show(SDL_FileDialogType.SDL_FILEDIALOG_OPENFILE, owner, true, chosen);
     }
 
+    /// Asks for a folder, and hands `chosen` its path, or null if none was chosen. Filters don't
+    /// apply; the initial directory does. JavaFX's DirectoryChooser.
+    final void showDirectoryDialog(Widget owner, void delegate(string path) chosen)
+    {
+        show(SDL_FileDialogType.SDL_FILEDIALOG_OPENFOLDER, owner, false, (paths) {
+            chosen(paths.length ? paths[0] : null);
+        });
+    }
+
     /// Asks where to save a file, and hands `chosen` the path, or null if the user cancelled.
     final void showSaveDialog(Widget owner, void delegate(string path) chosen)
     {
