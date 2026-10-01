@@ -1,0 +1,11 @@
+{
+	"name": "terminal-example",
+	"description": "A window with a shell in it, to try mayfair-terminal",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-terminal": {
+			"path": ".."
+		}
+	}
+}

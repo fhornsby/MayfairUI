@@ -57,6 +57,7 @@ enum AccessibleRole
     tree,              /// Items in a hierarchy, each opening to show those below it
     treeItem,          /// One of a tree's items; its depth goes in AccessibleNode.level, whether it's open in expanded
     document,          /// A page of formatted text to read, such as a LiteWebView's, named by its title
+    terminal,          /// A terminal emulator's screen, its text in AccessibleNode.value
 }
 
 /// Something assistive technology can ask a widget to do. JavaFX's AccessibleAction.
@@ -347,6 +348,7 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.tree:              return ACCESSKIT_ROLE_TREE;
         case AccessibleRole.treeItem:          return ACCESSKIT_ROLE_TREE_ITEM;
         case AccessibleRole.document:          return ACCESSKIT_ROLE_DOCUMENT;
+        case AccessibleRole.terminal:          return ACCESSKIT_ROLE_TERMINAL;
     }
 }
 

@@ -1,0 +1,14 @@
+{
+	"name": "mayfair-terminal-tests",
+	"description": "End-to-end tests for the Terminal: real windows, real input, real programs",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-terminal": {
+			"path": ".."
+		}
+	},
+	"sourceFiles": [
+		"../../mayfair/tests/source/harness.d"
+	]
+}

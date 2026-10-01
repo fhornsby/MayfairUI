@@ -1,0 +1,39 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A terminal emulator widget for Mayfair, on alacritty_terminal",
+	"license": "MIT",
+	"name": "mayfair-terminal",
+	"targetType": "library",
+	"dependencies": {
+		"mayfair": {
+			"path": "../mayfair"
+		}
+	},
+	"preGenerateCommands": [
+		"$PACKAGE_DIR/native/build.sh $MAYFAIR_PACKAGE_DIR"
+	],
+	"importPaths": [
+		"source",
+		"bindings"
+	],
+	"cSourcePaths": [
+		"bindings"
+	],
+	"cImportPaths": [
+		"native/include"
+	],
+	"lflags": [
+		"$PACKAGE_DIR/native/build/libmayfair_terminal.a"
+	],
+	"libs": [
+		"util"
+	],
+	"toolchainRequirements": {
+		"dmd": "no",
+		"gdc": "no",
+		"ldc": ">=1.30.0"
+	}
+}

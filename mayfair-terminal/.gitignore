@@ -1,0 +1,8 @@
+.dub
+/libmayfair-terminal.a
+/mayfair-terminal-test-*
+# The native half's build output: see native/build.sh
+/native/target/
+/native/build/
+/example/terminal-example
+/tests/mayfair-terminal-tests

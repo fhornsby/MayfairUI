@@ -337,7 +337,7 @@ private uint over(uint dst, Colour colour, ubyte coverage) pure nothrow @nogc
 }
 
 /// One glyph, rendered: how much of each pixel it covers, and where they go from its origin.
-package(mayfair) struct GlyphBitmap
+struct GlyphBitmap
 {
     int left, top;       // from the origin to the top left pixel: right, and up
     int width, height;

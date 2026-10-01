@@ -1,0 +1,20 @@
+[package]
+name = "mayfair_terminal"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A C API on alacritty_terminal, for Mayfair's Terminal widget"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# Without serde, which only alacritty's own config files need
+alacritty_terminal = { version = "=0.26.0", default-features = false }
+
+[profile.release]
+# A panic can't unwind into D, so it ends the process there and then
+panic = "abort"
+lto = true
+codegen-units = 1

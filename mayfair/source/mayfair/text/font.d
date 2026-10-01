@@ -99,6 +99,19 @@ public:
     /// Whether this face has a glyph for `c`. Where it doesn't, shaping falls back to another font.
     bool hasGlyph(dchar c) nothrow @nogc { return FT_Get_Char_Index(_face, c) != 0; }
 
+    /*
+        Glyph `glyph` rendered by FreeType at `scale` pixels to the point: rendered the first time
+        it's asked for, and kept. It's what TextImage draws text with (see mayfair.text.raster),
+        and it's here for a widget that puts its own pixels together, as a terminal's grid does.
+        The glyph ids come from shaping: a PositionedGlyph's, with the font it's in.
+    */
+    const(GlyphBitmap)* glyphBitmap(uint glyph, float scale) nothrow @nogc
+    {
+        if (auto b = _bitmaps.lookup(glyph, scale))
+            return b;
+        return _bitmaps.add(outlineFace(scale), glyph, scale);
+    }
+
 package:
     this(FaceSource source, float sizePoints)
     {
@@ -126,15 +139,6 @@ package:
     }
 
     hb_font_t* hb() nothrow @nogc { return _hb; }
-
-    /// Glyph `glyph` rendered by FreeType at `scale` pixels to the point, for the bitmap route
-    /// (mayfair.text.raster): rendered the first time it's asked for, and kept.
-    const(GlyphBitmap)* glyphBitmap(uint glyph, float scale) nothrow @nogc
-    {
-        if (auto b = _bitmaps.lookup(glyph, scale))
-            return b;
-        return _bitmaps.add(outlineFace(scale), glyph, scale);
-    }
 
     /// The face to load outlines from, sized so that one device pixel really is one pixel to
     /// FreeType, which is what hinting needs to grid-fit against. Resized only when the scale
