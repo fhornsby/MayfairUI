@@ -112,10 +112,11 @@ protected:
 
     override string clean(string text)
     {
-        // Line breaks are "\n", whatever they came in as; other control characters, but tabs, go
+        // Line breaks are "\n", whatever they came in as; tabs are four spaces, the font having no
+        // glyph for one; other control characters go
         bool plain = true;
         foreach (char c; text)
-            if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7F)
+            if ((c < 0x20 && c != '\n') || c == 0x7F)
                 plain = false;
         if (plain)
             return text;
@@ -129,7 +130,12 @@ protected:
                     result ~= '\n';
                 continue;
             }
-            if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7F)
+            if (c == '\t')
+            {
+                result ~= "    ";
+                continue;
+            }
+            if ((c < 0x20 && c != '\n') || c == 0x7F)
                 continue;
             result ~= c;
         }
@@ -186,12 +192,12 @@ protected:
 
     override void handleKey(ref KeyEvent event)
     {
-        // Tab types a tab, as JavaFX's does; Ctrl+Tab is left to move focus
+        // Tab types four spaces; Ctrl+Tab is left to move focus
         if (event.type == KeyEventType.pressed && event.code == KeyCode.tab && !event.control
             && !event.alt && !event.meta && !event.shift && !composing)
         {
             if (canEdit())
-                type("\t");
+                type("    ");
             event.consume();
             return;
         }

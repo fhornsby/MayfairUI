@@ -1,5 +1,6 @@
 module tests.controls;
 
+import std.algorithm.searching : endsWith;
 import core.thread : Thread;
 import core.time : msecs;
 import std.format : format;
@@ -128,8 +129,9 @@ void textAreas()
         d.ui({ d.expect(area.caretPosition, area.text.length, "Ctrl+End: the end of it all"); });
 
         d.key(SDL_Keycode.SDLK_TAB);
-        d.ui({ d.check(area.text[$ - 1] == '\t' && area.focused, "Tab types a tab"); });
-        d.key(SDL_Keycode.SDLK_BACKSPACE);
+        d.ui({ d.check(area.text.endsWith("    ") && area.focused, "Tab types four spaces"); });
+        foreach (i; 0 .. 4)
+            d.key(SDL_Keycode.SDLK_BACKSPACE);
 
         // More lines than it shows: the caret's kept in view
         foreach (i; 0 .. 6)
