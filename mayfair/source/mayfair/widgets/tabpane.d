@@ -232,6 +232,7 @@ private:
     Not a widget itself -- the pane makes the tab's header, and shows the content when it's
     selected.
 */
+@DefaultProperty("content")
 final class Tab
 {
 public:

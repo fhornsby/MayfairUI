@@ -36,10 +36,11 @@ import mayfair.widgets.widget;
 
         status.textProperty.bind(count.map((int n) => format!"Clicked %d times"(n)));
 */
+@DefaultProperty("text")
 class Label : Widget
 {
 public:
-    this(string text)
+    this(string text = null)
     {
         _font = defaultFont(Theme.text_size);
         _text = text;

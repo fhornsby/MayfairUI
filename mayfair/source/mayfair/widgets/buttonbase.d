@@ -30,6 +30,7 @@ import mayfair.widgets.widget;
     Its states for a stylesheet are :hover, :armed (pressed in), :focused, :focus-visible and
     :disabled.
 */
+@DefaultProperty("text")
 abstract class ButtonBase : Widget
 {
 public:

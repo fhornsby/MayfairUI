@@ -66,6 +66,20 @@ enum string declareStyleableProperty(T, string name, string css, string initial,
                                      bool inherits = false) =
     declare!T(name, initial, changed, false, "", css, inherits);
 
+/*
+    Marks a class with the property its children go into when a view (see mayfair.xml) puts them
+    in it without naming one, and that text inside its element sets: JavaFX's @DefaultProperty.
+
+        @DefaultProperty("content")
+        class ScrollPane : Widget
+
+    A class without one, and without a base class with one, has its children add()ed.
+*/
+struct DefaultProperty
+{
+    string name;
+}
+
 private string declare(T)(string name, string initial, string changed, bool readOnly, string setterVisibility,
                           string css, bool inherits, string typeName = null)
 {

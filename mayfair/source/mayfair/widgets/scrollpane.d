@@ -51,6 +51,7 @@ enum ScrollBarPolicy
     Scrolling doesn't redraw the content. It's drawn once, in a layer of its own clipped to the
     pane (see Widget.clipChildren), and scrolling moves the layer.
 */
+@DefaultProperty("content")
 class ScrollPane : Widget
 {
 public:

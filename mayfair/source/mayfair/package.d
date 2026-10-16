@@ -7,3 +7,4 @@ public import mayfair.animation;
 public import mayfair.clipboard;
 public import mayfair.filechooser;
 public import mayfair.properties;
+public import mayfair.xml;

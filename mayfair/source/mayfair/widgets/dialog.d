@@ -36,6 +36,7 @@ enum ButtonKind
     Its style class is "dialog", as well as "popup", with a `.title`, the `.text`, and the
     `.buttons`. To a screen reader it's a dialog named by its title.
 */
+@DefaultProperty("extra")
 class Dialog : Popup
 {
 public:

@@ -43,6 +43,7 @@ enum Side { below, above, right, left }
 
     Its style class is "popup".
 */
+@DefaultProperty("content")
 class Popup : Widget
 {
 public:
