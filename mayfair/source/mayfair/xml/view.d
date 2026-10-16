@@ -99,19 +99,19 @@ struct View
     {
         static assert(hasUDA!(C, View), C.stringof ~ " needs @View(\"file.xml\") to say which view it controls");
         enum file = getUDAs!(C, View)[0].file;
-        return build!(import(file), file, C)(controller);
+        return build!(file, C)(controller);
     }
 
     /// Builds the view in `file`, which has no controller.
     static auto load(string file)()
     {
-        return build!(import(file), file, NoController)(NoController.init);
+        return build!(file, NoController)(NoController.init);
     }
 
     /// Builds a view from XML in the program's own source, `name` naming it in errors.
     static auto parse(string xml, string name = "view")()
     {
-        return build!(xml, name, NoController)(NoController.init);
+        return buildText!(xml, name, NoController)(NoController.init);
     }
 }
 
@@ -121,16 +121,29 @@ enum xml = XmlField.init;
 /// ditto
 struct XmlField {}
 
-/// Builds `text`'s tree for `controller`. Public for the code it's generated into to see, not to call.
-auto build(string text, string file, C)(C controller)
+/// Builds the view in `file` for `controller`. Public for the code it's generated into to see, not to call.
+auto build(string file, C)(C controller)
+{
+    // The file's read here, not passed in, so an error's list of what was being built shows its
+    // name rather than all of it
+    enum parsed = read(import(file), file);
+    mixin(building);
+}
+
+/// The same for XML in the program's source, as View.parse.
+auto buildText(string text, string file, C)(C controller)
 {
     enum parsed = read(text, file);
+    mixin(building);
+}
+
+private enum building = q{
     static assert(parsed.error is null, parsed.error);
     enum Document doc = parsed.doc;
     static if (!is(C == NoController))
         mixin("import " ~ moduleName!C ~ ";");
     mixin(parsed.code);
-}
+};
 
 /// What build() is given for a view with no controller.
 struct NoController {}
@@ -861,7 +874,7 @@ version (unittest)
     class TestCard : Column
     {
         @xml Label title;
-        this() { build!(`<root spacing="4"><Label id="title" text="Ann"/><Button onAction="follow"/></root>`, "card.xml",
+        this() { buildText!(`<root spacing="4"><Label id="title" text="Ann"/><Button onAction="follow"/></root>`, "card.xml",
                         TestCard)(this); }
         void follow() { title.setText("Following " ~ title.text); }
     }
@@ -906,7 +919,7 @@ unittest
 
     // A controller: its fields filled, its methods handlers, then initialise()
     auto c = new TestController;
-    auto root = build!(`<Column>
+    auto root = buildText!(`<Column>
         <Label id="status" text="Ready" onMouseClicked="pressed"/>
         <TextField id="name" text="Ann"/>
         <Button id="unmarked" text="Save" onAction="save" onMousePressed="save"/>
@@ -949,8 +962,8 @@ unittest
     static assert(!__traits(compiles, View.parse!(`<Button onAction="save"/>`)()));        // no controller
     static assert(!__traits(compiles, View.parse!(`<Row><Label Grid.row="1"/></Row>`)())); // not in a Grid
     static assert(!__traits(compiles, View.parse!(`<Dock><left><Label/><Label/></left></Dock>`)()));
-    static assert(!__traits(compiles, build!(`<Column><Label id="status"/></Column>`, "t.xml", TestController)(c))); // no name
-    static assert(!__traits(compiles, build!(`<Column><Button id="status"/><TextField id="name"/></Column>`, "t.xml",
+    static assert(!__traits(compiles, buildText!(`<Column><Label id="status"/></Column>`, "t.xml", TestController)(c))); // no name
+    static assert(!__traits(compiles, buildText!(`<Column><Button id="status"/><TextField id="name"/></Column>`, "t.xml",
                                              TestController)(c))); // status isn't a Button
-    static assert(!__traits(compiles, build!(`<Button id="status" onAction="nothing"/>`, "t.xml", TestController)(c)));
+    static assert(!__traits(compiles, buildText!(`<Button id="status" onAction="nothing"/>`, "t.xml", TestController)(c)));
 }
