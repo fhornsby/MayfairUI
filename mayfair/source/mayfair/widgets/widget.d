@@ -41,6 +41,9 @@ struct Insets
 }
 
 /// A rectangle, in points. JavaFX's Bounds.
+/// How many widgets have backdropBlur on, so a window with none needn't look for them.
+package(mayfair) __gshared int backdropBlurCount;
+
 struct Bounds
 {
     float minX = 0, minY = 0, width = 0, height = 0;
@@ -344,6 +347,19 @@ public:
 
     /// How opaque it is, and everything below it, from 0 to 1.
     mixin(declareStyleableProperty!(float, "opacity", "opacity", "1", q{ invalidate(); }));
+
+    /*
+        Whether what's behind the window shows through blurred where this is, as through frosted
+        glass: macOS's sidebars. `backdrop-blur: true` in CSS. It shows through only a background
+        that's partly transparent, and everything under it in the window has to be too: the root's
+        background, and the scene's fill. The blur is the compositor's, asked for over Wayland's
+        ext-background-effect-v1 (see mayfair.windowing.blur), and how much it blurs is up to the
+        compositor. One that doesn't do it shows the background just translucent.
+    */
+    mixin(declareStyleableProperty!(bool, "backdropBlur", "backdrop-blur", "false", q{
+        backdropBlurCount += _backdropBlur ? 1 : -1;
+        invalidate();
+    }));
 
     /// How much bigger it's drawn than it's laid out, about its centre, with everything below it:
     /// a pressed button shrinking slightly, say. Layout doesn't see it.

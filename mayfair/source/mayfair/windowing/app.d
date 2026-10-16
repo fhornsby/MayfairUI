@@ -21,6 +21,7 @@ import mayfair.windowing.platform;
 import mayfair.filechooser : FileChooser;
 import mayfair.windowing.decorations;
 import mayfair.windowing.wayland : WindowMover;
+import mayfair.windowing.blur : BackgroundBlur;
 
 
 /*
@@ -86,6 +87,7 @@ SDL_Rect textInputRect;
 int textInputCursor;
 bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
 WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
+BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
 ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
@@ -583,6 +585,9 @@ void render() nothrow @nogc {
     if (needsPaint) {
         needsPaint = false;
         paint();
+        // Where to blur behind, worked out from where things were just painted, for the present to commit
+        if (blur.available)
+            blur.setRegion(_scene.backdropBlurRegion(blur.rects[]));
     }
     const afterPaint = traceNow();
     if (needsPresent) {
@@ -788,6 +793,7 @@ public:
         }
         scope(exit) SDL_DestroyWindow(window);
         scope(exit) mover.close(); // before the window, and SDL's connection, go
+        scope(exit) blur.close();
         {
             int cw, ch;
             SDL_GetWindowSize(window, &cw, &ch);
@@ -820,6 +826,13 @@ public:
             _scene.windowControls = new Controls;
             SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
             applyFrame();
+        }
+        if (wayland)
+        {
+            auto props = SDL_GetWindowProperties(window);
+            blur.open(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null),
+                      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null));
+            trace("blur  %s", blur.available ? "the compositor's, behind backdrop-blur".ptr : "none".ptr);
         }
         _scene.nativeWindow = window;
         _scene.attach(renderer.canvas);
@@ -897,6 +910,7 @@ public:
             // The time in SDL_WaitEvent includes SDL handling what the window system sent, e.g. libdecor
             // redrawing the title bar during a resize, as well as time spent idle
             mover.dispatch();
+            blur.dispatch();
             trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
                   traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
 

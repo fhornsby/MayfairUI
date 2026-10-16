@@ -16,6 +16,91 @@ import mayfair.widgets.label : Label;
 import mayfair.widgets.layouts : Alignment;
 import mayfair.animation;
 import core.time : MonoTime;
+import mayfair.widgets.region : CornerRadii;
+
+/// A rectangle with rounded corners, for working out a blur region.
+private struct RoundedArea
+{
+    float x = 0, y = 0, w = 0, h = 0;
+    CornerRadii radii;
+
+    /// How far in from each side it is along the row of points from `row`, at its narrowest.
+    void across(int row, out float left, out float right) const pure nothrow @nogc
+    {
+        import std.math : sqrt;
+        // In from a corner of radius r, d down from its straight edge; at the row's edge nearest
+        // the corner, where it's narrowest
+        static float inset(float r, float d) pure nothrow @nogc
+        {
+            if (r <= 0 || d >= r)
+                return 0;
+            if (d < 0)
+                d = 0;
+            return r - sqrt(r * r - (r - d) * (r - d));
+        }
+        const fromTop = row - y, fromBottom = (y + h) - (row + 1);
+        left = x + max(inset(radii.topLeft, fromTop), inset(radii.bottomLeft, fromBottom));
+        right = x + w - max(inset(radii.topRight, fromTop), inset(radii.bottomRight, fromBottom));
+    }
+
+    private static float max(float a, float b) pure nothrow @nogc { return a > b ? a : b; }
+}
+
+/*
+    `area`, inside `window`, as whole-point rectangles added to `into` from `n`: a row of points at
+    a time, those the same width joined into one. Returns how many there are now.
+*/
+private size_t steps(const RoundedArea area, const RoundedArea window, int[4][] into, size_t n) pure nothrow @nogc
+{
+    import std.math : ceil, floor;
+    alias ceilf = ceil, floorf = floor;
+    const top = cast(int) ceilf(area.y > window.y ? area.y : window.y);
+    const bottom = cast(int) floorf(area.y + area.h < window.y + window.h ? area.y + area.h : window.y + window.h);
+    size_t open = size_t.max; // the rectangle the row before went into, to grow if this one's the same
+    foreach (row; top .. bottom)
+    {
+        float al, ar, wl, wr;
+        area.across(row, al, ar);
+        window.across(row, wl, wr);
+        const l = cast(int) ceilf(al > wl ? al : wl), r = cast(int) floorf(ar < wr ? ar : wr);
+        if (r <= l)
+        {
+            open = size_t.max;
+            continue;
+        }
+        if (open != size_t.max && into[open][0] == l && into[open][2] == r - l)
+        {
+            into[open][3]++;
+            continue;
+        }
+        if (n == into.length)
+            return n;
+        into[n] = [l, row, r - l, 1];
+        open = n++;
+    }
+    return n;
+}
+
+unittest
+{
+    int[4][64] rects;
+    const window = RoundedArea(10, 10, 300, 200, CornerRadii(12));
+    // A square one well inside the window: one rectangle
+    assert(steps(RoundedArea(50, 50, 100, 40), window, rects[], 0) == 1);
+    assert(rects[0] == [50, 50, 100, 40]);
+    // Rounded: narrower at the top and bottom, full width between, symmetrical
+    const n = steps(RoundedArea(50, 50, 100, 40, CornerRadii(8)), window, rects[], 0);
+    assert(n > 3 && rects[0][1] == 50 && rects[0][0] > 50 && rects[0][0] + rects[0][2] < 150);
+    int total;
+    foreach (r; rects[0 .. n])
+        total += r[3];
+    assert(total == 40);
+    // Down the window's left side: cut off by its rounded corners at the top and bottom
+    const m = steps(RoundedArea(10, 10, 80, 200), window, rects[], 0);
+    assert(rects[0][0] > 10 && rects[m - 1][0] > 10 && rects[m / 2][0] == 10);
+    // Outside the window: nothing
+    assert(steps(RoundedArea(400, 50, 20, 20), window, rects[], 0) == 0);
+}
 
 /// Light or dark, as a desktop's preference or a scene's own choice. JavaFX's ColourScheme, and
 /// `system` for following the desktop's.
@@ -677,6 +762,50 @@ package(mayfair):
 
     float frameMargin = 0, frameRadius = 0;
     float contentWidth = 0, contentHeight = 0; // as of the last layout
+
+    /*
+        Where the window's background should be blurred, as of the last paint: the widgets with
+        backdropBlur on, each its background's rounded rectangle, and inside the window's own
+        rounded corners. As rectangles x, y, width, height in the window's points, for a Wayland
+        region, which is made of whole ones; the curves go in steps of a point. Fills `into` and
+        returns how many, stopping when it's full.
+    */
+    size_t backdropBlurRegion(int[4][] into) nothrow @nogc
+    {
+        size_t n;
+        if (backdropBlurCount <= 0 || !_root)
+            return 0;
+        const window = RoundedArea(frameMargin, frameMargin, contentWidth, contentHeight, CornerRadii(frameRadius));
+        void gather(Widget w)
+        {
+            if (!w.visible)
+                return;
+            if (w.backdropBlur && w.effectiveOpacity > 0)
+            {
+                const b = w.boundsInScene;
+                auto fills = w.background.fills;
+                auto area = RoundedArea(b.minX, b.minY, b.width, b.height, fills.length ? fills[0].radii : CornerRadii.init);
+                if (fills.length)
+                {
+                    const i = fills[0].insets;
+                    area.x += i.left;
+                    area.y += i.top;
+                    area.w -= i.left + i.right;
+                    area.h -= i.top + i.bottom;
+                }
+                n = steps(area, window, into, n);
+            }
+            foreach (c; w.children)
+                gather(c);
+        }
+        gather(_root);
+        if (_titleBar)
+            gather(_titleBar);
+        foreach (p; popups)
+            if (p._shownAmount > 0)
+                gather(p);
+        return n;
+    }
 
     WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
     void* nativeWindow;            // the SDL_Window it's in, from the App, for what the desktop shows over it
