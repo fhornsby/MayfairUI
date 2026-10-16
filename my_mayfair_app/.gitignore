@@ -1,0 +1,20 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/my_mayfair_app
+my_mayfair_app.so
+my_mayfair_app.dylib
+my_mayfair_app.dll
+my_mayfair_app.a
+my_mayfair_app.lib
+my_mayfair_app-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+# profiling output
+/trace*.txt
+/strace.log
+/perf.data

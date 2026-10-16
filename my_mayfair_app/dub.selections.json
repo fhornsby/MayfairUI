@@ -1,0 +1,7 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"mayfair": {"path":"../mayfair"},
+		"sdl-d": "3.2.27"
+	}
+}

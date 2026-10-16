@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import counter?>
+<?import profilecard?>
+<?import rating?>
+<!-- The window's content: a sidebar down the left, and in the middle a button with a label
+     saying how its request went, and three widgets of the app's own: a Counter, made in code; a
+     ProfileCard, with a view of its own in profilecard.xml; and a Rating, whose score the label
+     under it follows. -->
+<Dock>
+    <left>
+        <NavigationList style="background-colour: var(--field);">
+            <NavigationItem text="Home" iconName="go-home-symbolic"/>
+            <NavigationItem text="Settings" iconName="preferences-system-symbolic"/>
+        </NavigationList>
+    </left>
+    <centre>
+        <Column spacing="12" alignment="centre-left">
+            <Label id="label"/>
+            <Button text="Say hello" onAction="sayHello"/>
+            <Counter count="3"/>
+            <ProfileCard name="Ada Lovelace" role="Programmer"/>
+            <Rating id="stars" rating="3"/>
+            <Label id="ratingLabel"/>
+        </Column>
+    </centre>
+</Dock>

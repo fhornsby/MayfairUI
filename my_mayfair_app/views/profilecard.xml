@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What's in a ProfileCard. <root> is the card itself, which is a Column. -->
+<root spacing="4" alignment="centre" padding="12">
+    <Icon iconName="avatar-default-symbolic"/>
+    <Label id="nameLabel"/>
+    <Label id="roleLabel"/>
+    <Button id="followButton" text="Follow" onAction="follow"/>
+</root>
