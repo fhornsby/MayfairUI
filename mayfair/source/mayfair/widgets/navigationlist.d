@@ -20,6 +20,12 @@ import mayfair.widgets.widget;
             .add("Displays", "video-display-symbolic");
         sidebar.selectedIndexProperty.addListener((int was, int now) { showPage(now); });
 
+    or in a view, an entry to each NavigationItem:
+
+        <NavigationList>
+            <NavigationItem text="Wi-Fi" iconName="network-wireless-symbolic"/>
+        </NavigationList>
+
     One is always selected once there are any -- the first, to start with -- and clicking it again
     leaves it so, which is what makes it a place rather than a switch. From the keyboard it's one
     stop for Tab, at the selected entry, and Up and Down, Home and End move the selection, which
@@ -42,9 +48,15 @@ public:
     /// Adds an entry saying `text`, with the desktop theme's icon `iconName` before it if there's one.
     final NavigationList add(string text, string iconName = null)
     {
-        auto item = new NavigationItem(this, text);
-        if (iconName.length)
-            item.setGraphic(new Icon(iconName));
+        return add(new NavigationItem(text, iconName));
+    }
+
+    /// Adds `item` as the last entry.
+    final NavigationList add(NavigationItem item)
+    {
+        if (item._list)
+            throw new Exception("a navigation item is in one list at a time");
+        item._list = this;
         _items ~= item;
         adopt(item);
         item.setGrow(0);
@@ -111,10 +123,12 @@ private:
 final class NavigationItem : ButtonBase
 {
 public:
-    this(NavigationList list, string text)
+    /// An entry saying `text`, with the desktop theme's icon `iconName` before it if there's one.
+    this(string text = null, string iconName = null)
     {
         super(text);
-        _list = list;
+        if (iconName.length)
+            setGraphic(new Icon(iconName));
         styleClass.add("navigation-item");
         setAccessibleRole(AccessibleRole.listBoxOption);
         setMaxWidth(float.infinity); // the width of the list, so it's all somewhere to click
@@ -125,7 +139,8 @@ public:
 
     override void fire()
     {
-        _list.setSelectedIndex(_list.indexOf(this));
+        if (_list)
+            _list.setSelectedIndex(_list.indexOf(this));
         super.fire();
     }
 
@@ -134,7 +149,7 @@ protected:
 
     override void handleKey(ref KeyEvent event)
     {
-        if (event.type == KeyEventType.pressed && !event.control && !event.alt)
+        if (_list && event.type == KeyEventType.pressed && !event.control && !event.alt)
         {
             const i = _list.indexOf(this);
             int to = -1;
