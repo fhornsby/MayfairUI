@@ -44,11 +44,14 @@ import mayfair.xml.parser;
     As in FXML:
 
     - An element whose name starts with a capital is an object: `<Column>` is `new Column`. Mayfair's
-      classes are all known; others need their module named first, `<?import my.widgets?>`, unless
-      they're in the controller's own module.
+      classes are all known; others -- an app's own widgets, or another library's, like
+      mayfair.terminal's Terminal -- need their module named first, `<?import mayfair.terminal?>`,
+      unless they're in the controller's own module. Nothing needs registering: what works on
+      Mayfair's classes works on theirs.
     - Its attributes set its properties: spacing="8" is setSpacing(8). A value is read as CSS reads
-      it -- `centre` for Pos.centre, `8 16` for Insets, `#3584e4` for a Colour -- and an Image is a
-      file, compiled in. `styleClass` takes classes separated by spaces, and `stylesheets` CSS
+      it -- `centre` for Pos.centre, `8 16` for Insets, `#3584e4` for a Colour -- an array is its
+      items separated by spaces, quoted if they have spaces of their own (`bash -c 'echo hi'`), and
+      an Image is a file, compiled in. `styleClass` takes classes separated by spaces, and `stylesheets` CSS
       files, compiled in too.
     - Attributes named as a constructor's parameters are passed to it: `<Icon iconName="go-home"/>`
       is `new Icon(iconName: "go-home")`.
@@ -468,6 +471,19 @@ Converted!P convert(P)(string text)
         else
             r.value = cast(P)(negative ? -n : n);
     }
+    else static if (isDynamicArray!P && !isSomeString!P)
+    {
+        // Items separated by spaces, in quotes if they have spaces of their own: a command line
+        string error;
+        foreach (item; items(text, error))
+        {
+            auto c = convert!(typeof(P.init[0]))(item);
+            if (c.error)
+                return Converted!P(P.init, c.error);
+            r.value ~= c.value;
+        }
+        r.error = error;
+    }
     else static if (isFloatingPoint!P && !is(P == float))
     {
         auto f = convert!float(text);
@@ -638,6 +654,42 @@ string idOf(const Attribute[] attributes) pure nothrow @safe @nogc
     return null;
 }
 
+/// `text`'s items, separated by spaces, with those in quotes ('' or "") kept whole.
+string[] items(string text, out string error) pure @safe
+{
+    string[] result;
+    size_t i;
+    while (i < text.length)
+    {
+        if (text[i] == ' ' || text[i] == '\t' || text[i] == '\n')
+        {
+            i++;
+            continue;
+        }
+        if (text[i] == '"' || text[i] == '\'')
+        {
+            const quote = text[i];
+            const start = ++i;
+            while (i < text.length && text[i] != quote)
+                i++;
+            if (i == text.length)
+            {
+                error = "a quote in \"" ~ text ~ "\" is never closed";
+                return null;
+            }
+            result ~= text[start .. i++];
+        }
+        else
+        {
+            const start = i;
+            while (i < text.length && text[i] != ' ' && text[i] != '\t' && text[i] != '\n')
+                i++;
+            result ~= text[start .. i];
+        }
+    }
+    return result;
+}
+
 string[] words(string text) pure @safe
 {
     string[] result;
@@ -774,6 +826,11 @@ unittest
     assert(c.unmarked is null);
     (cast(Button) root.children[2]).fire();
     assert(c.saves == 1 && c.status.text == "Saved Ann");
+
+    // Arrays, from items separated by spaces
+    auto combo = View.parse!(`<ComboBox items="Leeds 'New York' &quot;St Ives&quot;"/>`)();
+    assert(combo.items == ["Leeds", "New York", "St Ives"]);
+    static assert(!__traits(compiles, View.parse!(`<ComboBox items="'Leeds"/>`)()));
 
     // Mistakes are compile errors
     static assert(!__traits(compiles, View.parse!(`<Column spcing="8"/>`)()));             // no such property
