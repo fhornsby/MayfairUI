@@ -87,7 +87,7 @@ public:
         const px = cast(long) floor(x * _pixelScale), py = cast(long) floor(y * _pixelScale);
         if (px < 0 || py < 0 || px >= _pw || py >= _ph)
             return Colour(0, 0, 0, 0);
-        return unpremultiply(_pixels[py * _pw + px]);
+        return unpremultiply(_pixels[cast(size_t)(py * _pw + px)]);
     }
 
     /// Its pixels as a PNG file's bytes, or null before it's been in a window.
@@ -282,7 +282,7 @@ private:
         if (y1 > _ph) y1 = _ph;
         foreach (y; y0 .. y1)
             if (x0 < x1)
-                _pixels[y * _pw + x0 .. y * _pw + x1] = 0;
+                _pixels[cast(size_t)(y * _pw + x0) .. cast(size_t)(y * _pw + x1)] = 0;
     }
 
     /// Puts the pixels as they are in the window: ThorVG takes a copy, so drawing can go on in them.

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mayfair</title>
+<style>
+    /* The app is the whole page: SDL sizes the canvas to it (see App.run) */
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #f8fafc; }
+    canvas { display: block; outline: none; }
+    #status { position: fixed; inset: 0; display: grid; place-items: center;
+              font: 14px system-ui, sans-serif; color: #64748b; }
+    @media (prefers-color-scheme: dark) { html, body { background: #0f172a; } #status { color: #94a3b8; } }
+</style>
+</head>
+<body>
+<div id="status">Loading…</div>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<script>
+    // Emscripten's settings for the page: where to draw, and what to say while it loads or if it fails
+    var status = document.getElementById('status');
+    var Module = {
+        canvas: document.getElementById('canvas'),
+        setStatus: function (text) { status.textContent = text || ''; status.hidden = !text; },
+        onRuntimeInitialized: function () { status.hidden = true; },
+        printErr: function (text) { console.error(text); },
+    };
+    window.onerror = function () { Module.setStatus('Something went wrong: see the console'); };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

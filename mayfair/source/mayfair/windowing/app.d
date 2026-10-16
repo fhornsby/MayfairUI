@@ -791,6 +791,8 @@ public:
             fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
             return;
         }
+        version (Emscripten)
+            SDL_SetWindowFillDocument(window, true); // the page is the window: it fills it, and follows it as it's resized
         scope(exit) SDL_DestroyWindow(window);
         scope(exit) mover.close(); // before the window, and SDL's connection, go
         scope(exit) blur.close();
@@ -869,64 +871,107 @@ public:
         running = true;
         render();
 
-        // Sleep until an event arrives, then handle everything pending before rendering once.
-        // Rendering after SDL has handled all the events matters when resizing on Wayland: SDL applies a new
-        // size and only then tells the compositor it accepted it, and a frame committed in between doesn't
-        // count as the answer. It also means a burst of events costs one frame instead of one each.
-        // While an animation runs, the wait is cut short when its next frame is due.
-        SDL_Event event;
-        while (running) {
-            // Before the wait, which it then shortens by as long as it took
-            collectGarbage(animationsRunning());
-            const waitStart = traceNow();
-            bool gotEvent;
-            // While something's animating, the next frame is when the display's ready for it, and
-            // not before: the repick below waits for it too, rather than the loop going round as
-            // fast as it can -- which, with a present mode that doesn't wait for the display, is
-            // hundreds of frames a second nobody sees
-            if (animationsRunning()) {
-                gotEvent = SDL_WaitEventTimeout(&event, msUntilNextPulse());
-            } else if (repickPending) {
-                gotEvent = SDL_PollEvent(&event); // it's for update(), which should run now
-            } else if (FileChooser.waiting()) {
-                // The dialog's answer comes over D-Bus, and SDL only reads that when it pumps
-                // events: waiting on the window system alone, it'd sit there until the next
-                // input. So while one's up, the loop looks in now and then.
-                gotEvent = SDL_WaitEventTimeout(&event, 100);
-            } else {
-                if (!SDL_WaitEvent(&event))
-                    break;
-                gotEvent = true;
-            }
-            const woke = traceNow();
-
-            int handled = 0;
-            if (gotEvent) {
-                do {
-                    handleEvent(event);
-                    handled++;
-                } while (SDL_PollEvent(&event));
-            }
-            // The time in SDL_WaitEvent includes SDL handling what the window system sent, e.g. libdecor
-            // redrawing the title bar during a resize, as well as time spent idle
-            mover.dispatch();
-            blur.dispatch();
-            trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
-                  traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
-
-            update();
-
-            if (running) {
-                if (tracing()) {
-                    import core.memory : GC;
-                    collections = GC.profileStats().numCollections; // for the frame's trace line
-                }
-                render();
-                updateAccessibility();
-            }
+        version (Emscripten)
+        {
+            // A browser page can't sit and wait: it hands control back to the browser after each
+            // frame, and the browser calls it again when it's ready for the next. So in a browser
+            // each frame is one turn of the loop, waiting for nothing. Starting the browser's loop
+            // throws past run() and main(), leaving everything above as it is for as long as the
+            // page is open: none of the scope(exit)s run, and the D runtime isn't shut down.
+            browserApp = this;
+            emscripten_set_main_loop(&browserFrame, 0, true);
         }
+        while (running && turn(true)) {}
     }
 
+    /*
+        One turn of the loop: sleep until an event arrives -- if `wait` says to -- then handle
+        everything pending before rendering once. Rendering after SDL has handled all the events
+        matters when resizing on Wayland: SDL applies a new size and only then tells the compositor
+        it accepted it, and a frame committed in between doesn't count as the answer. It also means a
+        burst of events costs one frame instead of one each. While an animation runs, the wait is
+        cut short when its next frame is due. False if SDL can't wait any more, to stop.
+    */
+    private bool turn(bool wait) {
+        SDL_Event event;
+        // Before the wait, which it then shortens by as long as it took
+        collectGarbage(animationsRunning());
+        const waitStart = traceNow();
+        bool gotEvent;
+        // While something's animating, the next frame is when the display's ready for it, and
+        // not before: the repick below waits for it too, rather than the loop going round as
+        // fast as it can -- which, with a present mode that doesn't wait for the display, is
+        // hundreds of frames a second nobody sees
+        if (!wait) {
+            gotEvent = SDL_PollEvent(&event);
+        } else if (animationsRunning()) {
+            gotEvent = SDL_WaitEventTimeout(&event, msUntilNextPulse());
+        } else if (repickPending) {
+            gotEvent = SDL_PollEvent(&event); // it's for update(), which should run now
+        } else if (FileChooser.waiting()) {
+            // The dialog's answer comes over D-Bus, and SDL only reads that when it pumps
+            // events: waiting on the window system alone, it'd sit there until the next
+            // input. So while one's up, the loop looks in now and then.
+            gotEvent = SDL_WaitEventTimeout(&event, 100);
+        } else {
+            if (!SDL_WaitEvent(&event))
+                return false;
+            gotEvent = true;
+        }
+        const woke = traceNow();
+
+        int handled = 0;
+        if (gotEvent) {
+            do {
+                handleEvent(event);
+                handled++;
+            } while (SDL_PollEvent(&event));
+        }
+        // The time in SDL_WaitEvent includes SDL handling what the window system sent, e.g. libdecor
+        // redrawing the title bar during a resize, as well as time spent idle
+        mover.dispatch();
+        blur.dispatch();
+        trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
+              traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
+
+        update();
+
+        if (running) {
+            if (tracing()) {
+                import core.memory : GC;
+                collections = GC.profileStats().numCollections; // for the frame's trace line
+            }
+            render();
+            updateAccessibility();
+        }
+        return true;
+    }
+
+}
+
+version (Emscripten)
+{
+    // The browser's loop, which calls browserFrame once a frame: see App.run
+    private extern (C) void emscripten_set_main_loop(void function() nothrow, int fps, bool simulateInfiniteLoop) nothrow;
+    private extern (C) void emscripten_cancel_main_loop() nothrow;
+    // SDL 3.4's, newer than the sdl-d binding, and Emscripten's SDL is 3.4
+    private extern (C) bool SDL_SetWindowFillDocument(SDL_Window* window, bool fill) nothrow @nogc;
+    private __gshared App browserApp;
+
+    private extern (C) void browserFrame() nothrow
+    {
+        try
+        {
+            if (!browserApp.running || !browserApp.turn(false))
+                emscripten_cancel_main_loop();
+        }
+        catch (Throwable t)
+        {
+            // Nothing above to catch it, as there is in run(): say what it was, and stop
+            try fprintf(stderr, "%.*s\n", cast(int) t.toString().length, t.toString().ptr); catch (Throwable) {}
+            emscripten_cancel_main_loop();
+        }
+    }
 }
 
 /*
@@ -936,6 +981,9 @@ public:
 */
 private Renderer chooseRenderer() nothrow
 {
+    version (Emscripten)
+        return new CpuRenderer; // the only one in the browser, for now
+    else {
     const(char)* choice = getenv("MAYFAIR_RENDERER");
     if (choice && *choice) {
         if (strcmp(choice, "cpu") == 0) return new CpuRenderer;
@@ -943,6 +991,7 @@ private Renderer chooseRenderer() nothrow
         fprintf(stderr, "Unknown MAYFAIR_RENDERER '%s', using the default\n", choice);
     }
     return new WebGpuRenderer;
+    }
 }
 
 private KeyEvent keyEvent(ref const SDL_KeyboardEvent key, KeyEventType type) nothrow @nogc

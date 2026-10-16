@@ -333,6 +333,7 @@ private string buttonLayout()
     if (layout.length)
         return layout;
     layout = ":minimize,maximize,close";
+    version (Emscripten) {} else // a browser has no programs to run, and no desktop to ask
     try
     {
         import std.process : execute;

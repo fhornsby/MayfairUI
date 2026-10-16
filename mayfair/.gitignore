@@ -19,3 +19,6 @@ mayfair-test-*
 /vendor/build/
 /vendor/wgpu-native/
 /vendor/accesskit/
+/vendor/build-wasm/
+# The browser build's objects: see web/build.sh
+/web/build/

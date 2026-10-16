@@ -411,9 +411,10 @@ unittest
 */
 string desktopIconTheme()
 {
-    import std.process : execute;
+    version (Emscripten) {} else // a browser has no programs to run, and no desktop to ask
     try
     {
+        import std.process : execute;
         const r = execute(["gsettings", "get", "org.gnome.desktop.interface", "icon-theme"]);
         if (r.status == 0)
         {
