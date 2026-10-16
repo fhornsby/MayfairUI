@@ -53,6 +53,8 @@ import mayfair.xml.parser;
       items separated by spaces, quoted if they have spaces of their own (`bash -c 'echo hi'`), and
       an Image is a file, compiled in. `styleClass` takes classes separated by spaces, and `stylesheets` CSS
       files, compiled in too.
+    - A class template says what it's of with `of`, which Java's erased generics never needed:
+      `<ListView of="string" items="a b c"/>` is a ListView!string.
     - Attributes named as a constructor's parameters are passed to it: `<Icon iconName="go-home"/>`
       is `new Icon(iconName: "go-home")`.
     - `id` sets the widget's id, for CSS, and fills the controller's field of that name if it's
@@ -65,6 +67,27 @@ import mayfair.xml.parser;
       for a property that takes a widget, or text: `<Dock><left><NavigationList/></left></Dock>`.
     - Attributes named for the parent's class go to its add(), by its parameters' names:
       `<Label Grid.column="1" Grid.row="2"/>` in a Grid is grid.add(label, column: 1, row: 2).
+    - What to show of an item is the name of what to read from it, as PropertyValueFactory's is:
+      `<TableColumn of="Person" title="Name" text="name"/>` shows each person's name.
+
+    A widget can have a view of its own, laying out what's in it, as FXML's fx:root does. The
+    widget is its view's controller, and its root element is <root>, standing for the widget:
+
+        <!-- card.xml -->
+        <root spacing="4" styleClass="card">
+            <Label id="title"/>
+            <Button text="Follow" onAction="follow"/>
+        </root>
+
+        @View("card.xml")
+        class Card : Column
+        {
+            @xml Label title;
+            this() { View.load(this); }
+            void follow() { ... }
+        }
+
+    Then <Card/> goes in other views like any widget.
 */
 struct View
 {
@@ -146,7 +169,7 @@ private string generate(const Document doc, string file) pure @safe
         code ~= "import " ~ m ~ ";\n";
     size_t n;
     string[] ids;
-    const root = emit(doc.root, "doc.root", file, code, n, ids);
+    const root = emit(doc.root, "doc.root", file, code, n, ids, true);
     string list;
     foreach (i, id; ids)
         list ~= (i ? ", " : "") ~ quoted(id);
@@ -155,19 +178,52 @@ private string generate(const Document doc, string file) pure @safe
     return code;
 }
 
-private string emit(const Element e, string path, string file, ref string code, ref size_t n, ref string[] ids) pure @safe
+private string emit(const Element e, string path, string file, ref string code, ref size_t n, ref string[] ids,
+                    bool isRoot = false) pure @safe
 {
     const v = "_mayfairW" ~ decimal(n++);
-    const loc = quoted(file ~ ":" ~ decimal(e.line));
-    if (!isUpper(e.name[0]))
-        fail(file, e.line, "<" ~ e.name ~ "> sets a property, so it goes inside the element it's a property of");
-    foreach (c; e.name)
-        if (!(isUpper(c) || isLower(c) || (c >= '0' && c <= '9') || c == '_' || c == '.'))
-            fail(file, e.line, "<" ~ e.name ~ "> can't be a D class's name");
+    const at = file ~ ":" ~ decimal(e.line);
+    const loc = quoted(at);
+    if (isRoot && e.name == "root")
+    {
+        // FXML's fx:root: the controller is the root, a widget whose own view this is
+        if (e.attribute("of"))
+            fail(file, e.line, "<root> is the controller's own class, which says what it's of");
+        code ~= "static assert(is(C == class) && !is(C == .NoController), " ~ quoted(at ~ ": <root> is the controller itself, "
+              ~ "a widget whose view this is; it loads its view with View.load(this)") ~ ");\n";
+        code ~= "auto " ~ v ~ " = controller;\n";
+        code ~= ".configure!(" ~ path ~ ".attributes, " ~ loc ~ ", [])(" ~ v ~ ", controller);\n";
+    }
+    else
+    {
+        if (!isUpper(e.name[0]))
+            fail(file, e.line, "<" ~ e.name ~ "> sets a property, so it goes inside the element it's a property of");
+        foreach (c; e.name)
+            if (!(isUpper(c) || isLower(c) || (c >= '0' && c <= '9') || c == '_' || c == '.'))
+                fail(file, e.line, "<" ~ e.name ~ "> can't be a D class's name");
 
-    code ~= "static assert(is(" ~ e.name ~ "), " ~ quoted(file ~ ":" ~ decimal(e.line) ~ ": there's no class " ~ e.name
-          ~ " here; if it's an app's own, name its module with <?import?>") ~ ");\n";
-    code ~= "auto " ~ v ~ " = .create!(" ~ e.name ~ ", " ~ path ~ ".attributes, " ~ loc ~ ")(controller);\n";
+        // A class template's arguments, as of="string" says: ListView!(string)
+        string type = e.name;
+        if (auto of = e.attribute("of"))
+        {
+            foreach (c; of.value)
+                if (!(isUpper(c) || isLower(c) || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ','
+                      || c == ' ' || c == '[' || c == ']' || c == '!' || c == '(' || c == ')' || c == '*'))
+                    fail(file, e.line, "of=\"" ~ of.value ~ "\" isn't a list of D types");
+            type = e.name ~ "!(" ~ of.value ~ ")";
+            code ~= "static assert(__traits(compiles, __traits(isTemplate, " ~ e.name ~ ")) && __traits(isTemplate, " ~ e.name
+                  ~ "), " ~ quoted(at ~ ": " ~ e.name ~ " isn't a class template, so it isn't of anything") ~ ");\n";
+            code ~= "static assert(is(" ~ type ~ "), " ~ quoted(at ~ ": there's no " ~ e.name ~ " of " ~ of.value ~ " here; "
+                  ~ "if a type in it is an app's own, name its module with <?import?>") ~ ");\n";
+        }
+        else
+            code ~= "static if (!is(" ~ e.name ~ ")) static assert(!(__traits(compiles, __traits(isTemplate, " ~ e.name
+                  ~ ")) && __traits(isTemplate, " ~ e.name ~ ")), " ~ quoted(at ~ ": " ~ e.name ~ " is a class template: say what "
+                  ~ "it's of, as in of=\"string\"") ~ ");\n"
+                  ~ "static assert(is(" ~ e.name ~ "), " ~ quoted(at ~ ": there's no class " ~ e.name
+                  ~ " here; if it's an app's own, name its module with <?import?>") ~ ");\n";
+        code ~= "auto " ~ v ~ " = .create!(" ~ type ~ ", " ~ path ~ ".attributes, " ~ loc ~ ")(controller);\n";
+    }
     if (auto id = e.attribute("id"))
     {
         foreach (seen; ids)
@@ -242,12 +298,18 @@ T create(T, Attribute[] attributes, string loc, C)(C controller)
         auto object = new T;
     }
 
+    .configure!(attributes, loc, used)(object, controller);
+    return object;
+}
+
+/// Sets `object` from its attributes, but those its constructor took, and fills in its controller field.
+void configure(Attribute[] attributes, string loc, string[] used, T, C)(T object, C controller)
+{
     static foreach (a; attributes)
-        static if (!contains(a.name, '.') && !isIn(a.name, used))
+        static if (!contains(a.name, '.') && a.name != "of" && !isIn(a.name, used))
             .assign!(loc, a.name, a.value)(object, controller);
     static if (hasId(attributes))
         .inject!(loc, idOf(attributes))(controller, object);
-    return object;
 }
 
 /// Sets `object`'s property `name` from the text of an attribute or property element.
@@ -266,7 +328,8 @@ void assign(string loc, string name, string text, T, C)(T object, C controller)
     }
     else
     {
-        enum setter = "set" ~ capitalised(name);
+        // setName(value), or failing that name(value), as a class that isn't a widget may have
+        enum setter = __traits(hasMember, T, "set" ~ capitalised(name)) ? "set" ~ capitalised(name) : name;
         static assert(__traits(hasMember, T, setter), loc ~ ": " ~ T.stringof ~ " has no property " ~ name);
         alias overloads = __traits(getOverloads, T, setter);
         enum index = settable!(overloads)(text);
@@ -407,6 +470,17 @@ template value(P, string text, string loc)
     static if (is(P : Image))
     {
         P value() { return Image.fromData(import(text), text); }
+    }
+    else static if (isCallable!P && Parameters!P.length == 1 && !is(ReturnType!P == void))
+    {
+        // What to show of an item, by the name of its field or property: JavaFX's PropertyValueFactory
+        alias Item = Parameters!P[0];
+        static assert(__traits(hasMember, Item, text), loc ~ ": " ~ Item.stringof ~ " has no " ~ text);
+        P value()
+        {
+            import std.conv : to;
+            return delegate(Item item) { return to!(ReturnType!P)(__traits(getMember, item, text)); };
+        }
     }
     else static if (__traits(compiles, { enum c = convert!P(text); }))
     {
@@ -633,7 +707,7 @@ string[] names(const Attribute[] attributes, bool dotted = false) pure @safe
 {
     string[] result;
     foreach (a; attributes)
-        if (contains(a.name, '.') == dotted)
+        if (contains(a.name, '.') == dotted && a.name != "of")
             result ~= dotted ? a.name[indexOf(a.name, '.') + 1 .. $] : a.name;
     return result;
 }
@@ -777,6 +851,21 @@ version (unittest)
         void initialise() { initialised++; assert(status !is null); }
     }
 
+    struct TestPerson
+    {
+        string name;
+        int age;
+    }
+
+    @View("card.xml")
+    class TestCard : Column
+    {
+        @xml Label title;
+        this() { build!(`<root spacing="4"><Label id="title" text="Ann"/><Button onAction="follow"/></root>`, "card.xml",
+                        TestCard)(this); }
+        void follow() { title.setText("Following " ~ title.text); }
+    }
+
     // Grid's add() by its parameters' names, a property element, default properties, and text
     enum layoutView = `<?xml version="1.0"?>
 <Dock>
@@ -826,6 +915,26 @@ unittest
     assert(c.unmarked is null);
     (cast(Button) root.children[2]).fire();
     assert(c.saves == 1 && c.status.text == "Saved Ann");
+
+    // Class templates, and what to show of an item
+    auto list = View.parse!(`<ListView of="string" items="a b c"/>`)();
+    static assert(is(typeof(list) == ListView!string));
+    assert(list.items == ["a", "b", "c"]);
+    auto table = View.parse!(`<TableView of="TestPerson">
+        <TableColumn of="TestPerson" title="Name" text="name" width="120"/>
+        <TableColumn of="TestPerson" title="Age" text="age"/>
+    </TableView>`)();
+    static assert(is(typeof(table) == TableView!TestPerson));
+    static assert(!__traits(compiles, View.parse!(`<ListView/>`)()));                        // of what?
+    static assert(!__traits(compiles, View.parse!(`<Column of="string"/>`)()));              // not a template
+    static assert(!__traits(compiles, View.parse!(`<TableColumn of="TestPerson" title="A" text="nme"/>`)()));
+
+    // A widget with a view of its own
+    auto card = new TestCard;
+    assert(card.spacing == 4 && card.children.length == 2 && card.title.text == "Ann");
+    (cast(Button) card.children[1]).fire();
+    assert(card.title.text == "Following Ann");
+    static assert(!__traits(compiles, View.parse!(`<root/>`)()));                            // no widget to be
 
     // Arrays, from items separated by spaces
     auto combo = View.parse!(`<ComboBox items="Leeds 'New York' &quot;St Ives&quot;"/>`)();
