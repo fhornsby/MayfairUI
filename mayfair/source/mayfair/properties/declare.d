@@ -67,6 +67,62 @@ enum string declareStyleableProperty(T, string name, string css, string initial,
     declare!T(name, initial, changed, false, "", css, inherits);
 
 /*
+    Properties from fields marked @observable, for a class of an app's own: the same getter,
+    setters and Property as declareProperty makes, without spelling them out as text.
+
+        class Counter : Row
+        {
+            mixin Properties;                   // once, in each class with any
+
+            @observable private int _count;     // count(), setCount(), count(3) and countProperty
+            @observable private int _step = 1;
+
+            void countChanged() { refresh(); }  // if it's there, called whenever count changes
+        }
+
+    A field's name starts with an underscore, which the property's doesn't: _count makes count.
+    Observable, because what it makes can be watched -- listened to, or bound to and from -- as
+    any Property can, besides being set from code and from a view.
+*/
+mixin template Properties()
+{
+    import mayfair.properties.declare : isObservableField, observableProperty;
+    static foreach (_mayfairMember; __traits(derivedMembers, typeof(this)))
+        static if (isObservableField!(typeof(this), _mayfairMember))
+            mixin(observableProperty!(typeof(__traits(getMember, typeof(this), _mayfairMember)))(_mayfairMember));
+}
+
+/// Marks a field as a property's value: see Properties.
+enum observable = ObservableField.init;
+
+/// ditto
+struct ObservableField {}
+
+/// Whether C's member `m` is a field marked @observable. For Properties, which has to see it.
+template isObservableField(C, string m)
+{
+    import std.traits : hasUDA, isSomeFunction;
+    static if (__traits(compiles, __traits(getMember, C, m)) && !isSomeFunction!(__traits(getMember, C, m))
+               && __traits(compiles, hasUDA!(__traits(getMember, C, m), ObservableField))
+               && hasUDA!(__traits(getMember, C, m), ObservableField))
+    {
+        static assert(m.length > 1 && m[0] == '_', C.stringof ~ "." ~ m ~ " is @observable, so its name starts with an "
+                      ~ "underscore: _" ~ m ~ " makes the property " ~ m);
+        enum isObservableField = true;
+    }
+    else
+        enum isObservableField = false;
+}
+
+/// The code for the property whose value is the field `field`. For Properties.
+string observableProperty(T)(string field)
+{
+    const name = field[1 .. $];
+    const changed = "static if (__traits(hasMember, typeof(this), \"" ~ name ~ "Changed\")) " ~ name ~ "Changed();";
+    return declare!T(name, "", changed, false, "", null, false, "typeof(" ~ field ~ ")", true);
+}
+
+/*
     Marks a class with the property its children go into when a view (see mayfair.xml) puts them
     in it without naming one, and that text inside its element sets: JavaFX's @DefaultProperty.
 
@@ -81,7 +137,7 @@ struct DefaultProperty
 }
 
 private string declare(T)(string name, string initial, string changed, bool readOnly, string setterVisibility,
-                          string css, bool inherits, string typeName = null)
+                          string css, bool inherits, string typeName = null, bool hasField = false)
 {
     const type = typeName.length ? typeName : T.stringof;
     const field = "_" ~ name;
@@ -93,7 +149,8 @@ private string declare(T)(string name, string initial, string changed, bool read
     const propertyType = readOnly ? "ReadOnlyWrapper!(" ~ type ~ ")" : "Property!(" ~ type ~ ")";
 
     string code;
-    code ~= "private " ~ type ~ " " ~ field ~ " = " ~ initial ~ ";\n";
+    if (!hasField)
+        code ~= "private " ~ type ~ " " ~ field ~ " = " ~ initial ~ ";\n";
     code ~= "private " ~ propertyType ~ " " ~ object ~ ";\n";
     code ~= "final " ~ type ~ " " ~ name ~ "() " ~ getterAttributes ~ " { return " ~ field ~ "; }\n";
 
@@ -235,6 +292,35 @@ unittest
 
         void work() { _setBusy(true); }
     }
+
+    // The same from fields
+    static class Base { int reactions; }
+    static class Counter : Base
+    {
+        mixin Properties;
+        @observable private int _count;
+        @observable private string _title = "Hi";
+        void countChanged() { reactions++; }
+    }
+    static class Fancier : Counter
+    {
+        mixin Properties;
+        @observable private bool _shiny;
+    }
+    auto c = new Counter;
+    assert(c.count == 0 && c.title == "Hi");
+    assert(c.count(3) is c && c.reactions == 1);
+    c.setCount(3);
+    assert(c.reactions == 1); // no change, no reaction
+    int countHeard;
+    c.countProperty.addListener((int was, int now) { countHeard = now; });
+    c.countProperty.set(7);
+    assert(c.count == 7 && countHeard == 7 && c.reactions == 2);
+    auto f = new Fancier;
+    f.setShiny(true);
+    f.setTitle("Bye");
+    assert(f.shiny && f.title == "Bye");
+    static assert(!__traits(compiles, { static class Bad { mixin Properties; @observable int count; } }));
 
     auto t = new Thing;
     assert(t.text == "start");
