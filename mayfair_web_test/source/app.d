@@ -16,7 +16,7 @@ class Main
 
 void main()
 {
-    auto app = new App("Mayfair in a browser");
+    auto app = new App("Mayfair Webapp");
     app.scene = new Scene(View.load(new Main));
     app.run();
 }

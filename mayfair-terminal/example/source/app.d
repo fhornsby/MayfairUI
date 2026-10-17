@@ -8,6 +8,21 @@ import mayfair.terminal;
         dub run                     the shell
         dub run -- htop             a program, and its arguments
 */
+
+/*
+    The title bar: the window's name, and the switch between light and dark at the end. Given
+    to the scene, it makes the window draw its own decorations.
+*/
+TitleBar buildTitleBar(Scene scene)
+{
+    auto dark = new ToggleButton("Dark").graphic(new Icon("weather-clear-night-symbolic"))
+        .tooltip("Switch between light and dark");
+    dark.setOnAction({
+        scene.setColourScheme(dark.selected ? ColourScheme.dark : ColourScheme.light);
+    });
+    return new TitleBar("Terminal").addEnd(dark);
+}
+
 void main(string[] args)
 {
     auto app = new App("Terminal");
@@ -16,7 +31,8 @@ void main(string[] args)
         writeln("exited with ", status);
         App.quit();
     });
-    app.scene = new Scene(terminal);
+    auto scene = new Scene(terminal);
+    app.scene = scene.titleBar(buildTitleBar(scene));
     terminal.requestFocus();
     app.run();
 }

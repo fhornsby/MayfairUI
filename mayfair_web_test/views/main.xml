@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The page's content: what source/app.d's Main controls. -->
 <Column spacing="12" alignment="centre" padding="24">
+    <Label text ="Hello from a Mayfair Web App"/>
     <Button text="Click me" onAction="clicked"/>
     <CheckBox text="A check box"/>
     <Slider/>
