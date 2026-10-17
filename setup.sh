@@ -55,9 +55,10 @@ packages=(
     cargo rustc
     # SDL3, which Mayfair links, with the Wayland and X11 libraries it uses
     libsdl3-dev libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0 libdecor-0-0
-    # WebGPU runs on Vulkan. Mesa's drivers include lavapipe, a software Vulkan, so a VM without
-    # GPU passthrough still runs; vulkaninfo is there to check what it found
-    libvulkan1 mesa-vulkan-drivers vulkan-tools
+    # WebGPU runs on Vulkan; vulkaninfo is there to check what it found. Where Vulkan is only
+    # Mesa's software lavapipe -- a VM on virgl, say -- Mayfair falls back to OpenGL ES through
+    # EGL, which virgl does pass to the host's GPU, and failing that to its CPU renderer
+    libvulkan1 mesa-vulkan-drivers vulkan-tools libegl1 libgles2 libgl1-mesa-dri mesa-utils
     # At run time Mayfair asks gsettings for the icon theme and the titlebar button layout, and
     # looks in /usr/share/fonts for fonts it doesn't carry itself
     libglib2.0-bin adwaita-icon-theme fonts-noto-core fonts-noto-color-emoji
