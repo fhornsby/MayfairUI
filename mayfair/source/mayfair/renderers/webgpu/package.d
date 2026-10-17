@@ -3,11 +3,11 @@ module mayfair.renderers.webgpu;
 // wgpu-native's C API, generated from its headers by ImportC (bindings/webgpu_c.c)
 public import webgpu_c;
 import mayfair.renderers.renderer;
+import mayfair.log;
 import mayfair.renderers.thorvg;
 import mayfair.trace;
 import sdl;
 import sdl.cpuinfo;
-import core.stdc.stdio : fprintf, stderr;
 import core.stdc.string : strcmp;
 import core.stdc.stdlib : getenv, atof;
 
@@ -90,7 +90,7 @@ public:
         descriptor.nextInChain = &extras.chain;
         instance = wgpuCreateInstance(&descriptor);
         if (!instance) {
-            fprintf(stderr, "wgpuCreateInstance failed\n");
+            logWarning("wgpuCreateInstance failed");
             return false;
         }
 
@@ -120,7 +120,7 @@ public:
             scope(exit) wgpuAdapterInfoFreeMembers(info);
             trace("gpu   adapter %.*s, type %d", cast(int) info.device.length, info.device.data, cast(int) info.adapterType);
             if (info.adapterType == WGPUAdapterType_CPU && !acceptSoftware) {
-                fprintf(stderr, "Vulkan is only available in software here (%.*s)\n",
+                logInfo("Vulkan is only available in software here (%.*s)",
                         cast(int) info.device.length, info.device.data);
                 return false;
             }
@@ -176,12 +176,12 @@ public:
         trace("gpu   present mode %s", presentMode == WGPUPresentMode_Mailbox ? "Mailbox".ptr : "Fifo".ptr);
 
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_engine_init failed\n");
+            logWarning("tvg_engine_init failed");
             return false;
         }
         _canvas = tvg_wgcanvas_create(TVG_ENGINE_OPTION_DEFAULT);
         if (!_canvas) {
-            fprintf(stderr, "tvg_wgcanvas_create failed\n");
+            logWarning("tvg_wgcanvas_create failed");
             return false;
         }
 
@@ -191,7 +191,7 @@ public:
             if (parsed >= 1.0 && parsed <= 4.0)
                 supersampleFactor = cast(float) parsed;
             else
-                fprintf(stderr, "MAYFAIR_SUPERSAMPLE must be between 1 and 4, using %g\n", supersampleFactor);
+                logWarning("MAYFAIR_SUPERSAMPLE must be between 1 and 4, using %g", supersampleFactor);
         }
         if (!createDownsamplePipeline())
             return false;
@@ -269,7 +269,7 @@ public:
             offscreenDesc.usage |= WGPUTextureUsage_CopySrc;
         WGPUTexture nextOffscreen = wgpuDeviceCreateTexture(device, &offscreenDesc);
         if (!nextOffscreen) {
-            fprintf(stderr, "could not create the %ux%u offscreen target\n", rw, rh);
+            logWarning("could not create the %ux%u offscreen target", rw, rh);
             return false;
         }
         WGPUTextureView nextView = wgpuTextureCreateView(nextOffscreen, null);
@@ -287,7 +287,7 @@ public:
         enum textureTarget = 1; // target type 1 = a texture ThorVG draws to
         if (tvg_wgcanvas_set_target(_canvas, cast(void*) device, cast(void*) instance, cast(void*) nextOffscreen,
                                     rw, rh, TVG_COLORSPACE_ABGR8888S, textureTarget) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_wgcanvas_set_target failed for %ux%u\n", rw, rh);
+            logWarning("tvg_wgcanvas_set_target failed for %ux%u", rw, rh);
             wgpuTextureViewRelease(nextView);
             wgpuTextureRelease(nextOffscreen);
             return false;
@@ -473,7 +473,7 @@ private:
         moduleDesc.nextInChain = &wgslSource.chain;
         WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(device, &moduleDesc);
         if (!shaderModule) {
-            fprintf(stderr, "could not compile the downsample shader\n");
+            logWarning("could not compile the downsample shader");
             return false;
         }
         scope(exit) wgpuShaderModuleRelease(shaderModule);
@@ -533,7 +533,7 @@ private:
         pipelineDesc.fragment = &fragment;
         downsamplePipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
         if (!downsamplePipeline) {
-            fprintf(stderr, "could not create the downsample pipeline\n");
+            logWarning("could not create the downsample pipeline");
             return false;
         }
         return true;
@@ -551,7 +551,7 @@ private:
         desc.entries = entries.ptr;
         downsampleBind = wgpuDeviceCreateBindGroup(device, &desc);
         if (!downsampleBind) {
-            fprintf(stderr, "could not create the downsample bind group\n");
+            logWarning("could not create the downsample bind group");
             return false;
         }
         return true;
@@ -582,7 +582,7 @@ private WGPUSurface createSurface(WGPUInstance instance, SDL_Window* window) @no
         return wgpuInstanceCreateSurface(instance, &descriptor);
     }
 
-    fprintf(stderr, "WebGPU: SDL video driver '%s' isn't supported yet\n", driver);
+    logWarning("WebGPU: SDL video driver '%s' isn't supported yet", driver);
     return null;
 }
 
@@ -618,9 +618,9 @@ private void printWgpuMessage(const(char)* context, WGPUStringView message) noth
 {
     // A length of WGPU_STRLEN (size_t.max) means the string is null-terminated
     if (message.length == size_t.max)
-        fprintf(stderr, "%s: %s\n", context, message.data);
+        logWarning("%s: %s", context, message.data);
     else
-        fprintf(stderr, "%s: %.*s\n", context, cast(int) message.length, message.data);
+        logWarning("%s: %.*s", context, cast(int) message.length, message.data);
 }
 
 private extern(C) void snapshotMapped(WGPUMapAsyncStatus status, WGPUStringView, void* mapped, void*) nothrow @nogc

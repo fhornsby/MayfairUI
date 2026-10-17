@@ -1,10 +1,10 @@
 module mayfair.windowing.app;
 import std.stdio;
+import mayfair.log;
 import sdl;
 import sdl.hints;
 import sdl.error;
 import sdl.surface;
-import core.stdc.stdio : fprintf, stderr;
 import core.stdc.stdlib : getenv;
 import core.stdc.string : strcmp, strlen;
 import std.string;
@@ -461,7 +461,7 @@ void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
                     try
                         task();
                     catch (Exception e)
-                        fprintf(stderr, "Platform.runLater task failed: %.*s\n", cast(int) e.msg.length, e.msg.ptr);
+                        logError("Platform.runLater task failed: %.*s", cast(int) e.msg.length, e.msg.ptr);
                 }
             }
             else if (event.type == accessibilityEventType) {
@@ -753,6 +753,9 @@ public:
     void run(){
         SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
 
+        // Before stderr is quietened below, so a word about MAYFAIR_RENDERER gets out
+        auto candidates = chooseRenderers();
+
         // Who draws the title bar: the app, if it gave the scene one; otherwise the desktop, where
         // it will -- and where it won't, as on GNOME, a plain one of Mayfair's. Decided before SDL
         // starts, as SDL would otherwise have libdecor draw it, with GTK.
@@ -767,7 +770,7 @@ public:
 
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             quietStderr(false);
-            fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+            logError("SDL_Init failed: %s", SDL_GetError());
             return;
         }
         scope(exit) SDL_Quit();
@@ -791,7 +794,6 @@ public:
 
         // The first renderer that starts, in a window made for it. Most share one; OpenGL needs its
         // own, as SDL can't make a window an OpenGL one once it's made.
-        auto candidates = chooseRenderers();
         SDL_WindowFlags madeFor;
         foreach (i, candidate; candidates) {
             if (!window || candidate.windowFlags() != madeFor) {
@@ -810,7 +812,7 @@ public:
                     keepLibdecorPluginsAway(false);
                 }
                 if (!window) {
-                    fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+                    logError("SDL_CreateWindow failed: %s", SDL_GetError());
                     return;
                 }
                 version (Emscripten)
@@ -826,10 +828,12 @@ public:
             }
             candidate.release();
             if (i + 1 < candidates.length)
-                fprintf(stderr, "The %s renderer couldn't start, so using %s\n", candidate.name(), candidates[i + 1].name());
+                logInfo("Using the %s renderer, as %s couldn't start", candidates[i + 1].name(), candidate.name());
         }
-        if (!renderer)
+        if (!renderer) {
+            logError("No renderer could start");
             return;
+        }
 
         if (!_scene)
             _scene = new Scene(new Widget); // nothing to show, but everything below still works
@@ -989,7 +993,7 @@ version (Emscripten)
         catch (Throwable t)
         {
             // Nothing above to catch it, as there is in run(): say what it was, and stop
-            try fprintf(stderr, "%.*s\n", cast(int) t.toString().length, t.toString().ptr); catch (Throwable) {}
+            try logError("%.*s", cast(int) t.toString().length, t.toString().ptr); catch (Throwable) {}
             emscripten_cancel_main_loop();
         }
     }
@@ -1013,7 +1017,7 @@ private Renderer[] chooseRenderers() nothrow
         if (strcmp(choice, "cpu") == 0) return [cast(Renderer) new CpuRenderer];
         if (strcmp(choice, "opengl") == 0) return [cast(Renderer) new OpenGlRenderer(true)];
         if (strcmp(choice, "webgpu") == 0) return [cast(Renderer) new WebGpuRenderer(true)];
-        fprintf(stderr, "Unknown MAYFAIR_RENDERER '%s', using the default\n", choice);
+        logWarning("Unknown MAYFAIR_RENDERER '%s', using the default", choice);
     }
     return [cast(Renderer) new WebGpuRenderer, new OpenGlRenderer, new CpuRenderer];
     }

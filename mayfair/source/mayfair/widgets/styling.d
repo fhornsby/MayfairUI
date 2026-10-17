@@ -1,6 +1,6 @@
 module mayfair.widgets.styling;
 
-import core.stdc.stdio : fprintf, stderr;
+import mayfair.log;
 import core.time : usecs;
 import mayfair.animation;
 import mayfair.css;
@@ -1024,7 +1024,7 @@ const(Declared)* find(const(Declared)[] declared, string name) nothrow @nogc
 
 void warn(string property, string what)
 {
-    fprintf(stderr, "CSS: %.*s: %.*s\n", cast(int) property.length, property.ptr, cast(int) what.length, what.ptr);
+    logWarning("CSS: %.*s: %.*s", cast(int) property.length, property.ptr, cast(int) what.length, what.ptr);
 }
 
 /// The built-in theme, until an app gives its scene another. See theme/mayfair.css.

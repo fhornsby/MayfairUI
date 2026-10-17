@@ -1,6 +1,7 @@
 module mayfair.trace;
 
-import core.stdc.stdio : FILE, fopen, fclose, fprintf, fputc, setvbuf, stderr, _IOLBF;
+import core.stdc.stdio : FILE, fopen, fclose, fprintf, fputc, setvbuf, _IOLBF;
+import mayfair.log;
 import core.stdc.stdlib : getenv;
 import sdl.timer : SDL_GetTicksNS;
 
@@ -24,7 +25,7 @@ void traceOpen() nothrow @nogc {
         return;
     traceFile = fopen(path, "w");
     if (!traceFile) {
-        fprintf(stderr, "Couldn't open trace file %s\n", path);
+        logWarning("Couldn't open trace file %s", path);
         return;
     }
     setvbuf(traceFile, null, _IOLBF, 0); // write out every line, so nothing is lost if the app crashes

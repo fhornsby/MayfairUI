@@ -1,13 +1,13 @@
 module mayfair.renderers.cpu;
 
 import mayfair.renderers.renderer;
+import mayfair.log;
 import mayfair.renderers.thorvg;
 import mayfair.trace;
 import sdl;
 import sdl.cpuinfo;
 import sdl.surface;
 import sdl.error;
-import core.stdc.stdio : fprintf, stderr;
 
 
 /*
@@ -37,17 +37,17 @@ private:
     bool useWindowBuffer(){
         auto surface = cast(SDL_SurfaceFields*) SDL_GetWindowSurface(window);
         if (!surface) {
-            fprintf(stderr, "SDL_GetWindowSurface failed: %s\n", SDL_GetError());
+            logWarning("SDL_GetWindowSurface failed: %s", SDL_GetError());
             return false;
         }
         if (surface.w != width || surface.h != height) {
             // Also catches the mirrored struct below not matching SDL's, rather than drawing through a
             // wrong pointer
-            fprintf(stderr, "Window buffer is %dx%d, expected %ux%u\n", surface.w, surface.h, width, height);
+            logWarning("Window buffer is %dx%d, expected %ux%u", surface.w, surface.h, width, height);
             return false;
         }
         if (surface.flags & SDL_SURFACE_LOCK_NEEDED) {
-            fprintf(stderr, "Window buffer needs locking, which isn't supported yet\n");
+            logWarning("Window buffer needs locking, which isn't supported yet");
             return false;
         }
 
@@ -62,7 +62,7 @@ private:
                 colourSpace = TVG_COLORSPACE_ABGR8888;
                 break;
             default:
-                fprintf(stderr, "Unsupported window buffer format 0x%08x\n", surface.format);
+                logWarning("Unsupported window buffer format 0x%08x", surface.format);
                 return false;
         }
 
@@ -72,7 +72,7 @@ private:
         pixels = cast(uint*) surface.pixels;
         stride = surface.pitch / 4;
         if (tvg_swcanvas_set_target(_canvas, pixels, stride, width, height, colourSpace) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_swcanvas_set_target failed for %ux%u\n", width, height);
+            logWarning("tvg_swcanvas_set_target failed for %ux%u", width, height);
             return false;
         }
         return true;
@@ -87,12 +87,12 @@ public:
     bool initialise(SDL_Window* window){
         this.window = window;
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_engine_init failed\n");
+            logWarning("tvg_engine_init failed");
             return false;
         }
         _canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_DEFAULT);
         if (!_canvas) {
-            fprintf(stderr, "tvg_swcanvas_create failed\n");
+            logWarning("tvg_swcanvas_create failed");
             return false;
         }
         return true;

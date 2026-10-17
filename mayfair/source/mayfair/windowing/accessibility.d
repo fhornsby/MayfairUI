@@ -1,6 +1,7 @@
 module mayfair.windowing.accessibility;
 
 import core.stdc.stdlib : calloc, free, malloc;
+import mayfair.log;
 import core.stdc.string : memcpy, strlen;
 import sdl;
 import mayfair.accessibility;
@@ -229,8 +230,7 @@ private extern(C) accesskit_tree_update* buildUpdate(void* userdata) nothrow
         // Widgets' own failures are caught where they happen, so this is the kit's. It mustn't
         // return null, and an exception mustn't cross into Rust; and a first tree has to be a
         // whole one, or AccessKit panics. The window on its own is the smallest whole tree.
-        import core.stdc.stdio : fprintf, stderr;
-        fprintf(stderr, "Accessibility update failed: %.*s\n", cast(int) e.msg.length, e.msg.ptr);
+        logWarning("Accessibility update failed: %.*s", cast(int) e.msg.length, e.msg.ptr);
         auto update = accesskit_tree_update_with_focus(0);
         if (context.full)
         {

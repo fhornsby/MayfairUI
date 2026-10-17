@@ -1,6 +1,7 @@
 module mayfair.widgets.widget;
 
 import core.atomic : atomicExchange, atomicLoad, cas;
+import mayfair.log;
 import mayfair.accessibility;
 import mayfair.properties;
 import mayfair.renderers.thorvg;
@@ -1049,8 +1050,7 @@ package:
         {
             // What the widget managed to say before it threw is still better than nothing, and
             // one widget mustn't cost the rest of the tree its update
-            import core.stdc.stdio : fprintf, stderr;
-            fprintf(stderr, "%.*s.describeAccessible failed: %.*s\n", cast(int) typeid(this).name.length,
+            logWarning("%.*s.describeAccessible failed: %.*s", cast(int) typeid(this).name.length,
                     typeid(this).name.ptr, cast(int) e.msg.length, e.msg.ptr);
         }
         // The app's words win over the widget's own
@@ -1214,14 +1214,13 @@ private:
 
     void parseShape()
     {
-        import core.stdc.stdio : fprintf, stderr;
         svgShape = SvgPath.init;
         if (_shapePath.length)
         {
             try
                 svgShape = SvgPath.parse(_shapePath);
             catch (Exception e)
-                fprintf(stderr, "shape: %.*s\n", cast(int) e.msg.length, e.msg.ptr);
+                logWarning("shape: %.*s", cast(int) e.msg.length, e.msg.ptr);
         }
         svgScratch = new Tvg_Point[svgShape.points.length];
         invalidate();
@@ -1312,14 +1311,13 @@ private:
 
     void parseInlineStyle()
     {
-        import core.stdc.stdio : fprintf, stderr;
         inlineDeclarations = null;
         if (!_style.length)
             return;
         try
             inlineDeclarations = parseDeclarations(_style);
         catch (CssException e)
-            fprintf(stderr, "%.*s's style: %.*s\n", cast(int) typeid(this).name.length, typeid(this).name.ptr,
+            logWarning("%.*s's style: %.*s", cast(int) typeid(this).name.length, typeid(this).name.ptr,
                     cast(int) e.msg.length, e.msg.ptr);
     }
     float _childOffsetX = 0, _childOffsetY = 0; // from scrollChildren()

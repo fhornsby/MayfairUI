@@ -1,13 +1,13 @@
 module mayfair.renderers.opengl;
 
 import mayfair.renderers.renderer;
+import mayfair.log;
 import mayfair.renderers.thorvg;
 import mayfair.trace;
 import sdl;
 import sdl.cpuinfo;
 import sdl.error;
 import sdl.video;
-import core.stdc.stdio : fprintf, stderr;
 import core.stdc.string : strstr;
 import core.stdc.stdlib : getenv;
 
@@ -63,11 +63,11 @@ public:
 
         context = SDL_GL_CreateContext(window);
         if (!context) {
-            fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+            logWarning("SDL_GL_CreateContext failed: %s", SDL_GetError());
             return false;
         }
         if (!SDL_GL_MakeCurrent(window, context)) {
-            fprintf(stderr, "SDL_GL_MakeCurrent failed: %s\n", SDL_GetError());
+            logWarning("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
             return false;
         }
 
@@ -77,7 +77,7 @@ public:
         const(char)* device = glGetString ? glGetString(GL_RENDERER) : null;
         trace("gl    device %s", device ? device : "unknown".ptr);
         if (device && isSoftware(device) && !acceptSoftware) {
-            fprintf(stderr, "OpenGL is only available in software here (%s)\n", device);
+            logInfo("OpenGL is only available in software here (%s)", device);
             return false;
         }
 
@@ -85,12 +85,12 @@ public:
         vsync = SDL_GL_SetSwapInterval(1);
 
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_engine_init failed\n");
+            logWarning("tvg_engine_init failed");
             return false;
         }
         _canvas = tvg_glcanvas_create(TVG_ENGINE_OPTION_DEFAULT);
         if (!_canvas) {
-            fprintf(stderr, "tvg_glcanvas_create failed\n");
+            logWarning("tvg_glcanvas_create failed");
             tvg_engine_term();
             return false;
         }
@@ -121,7 +121,7 @@ public:
         enum windowFramebuffer = 0;
         if (tvg_glcanvas_set_target(_canvas, SDL_EGL_GetCurrentDisplay(), SDL_EGL_GetWindowSurface(window), context,
                                     windowFramebuffer, w, h, TVG_COLORSPACE_ABGR8888S) != TVG_RESULT_SUCCESS) {
-            fprintf(stderr, "tvg_glcanvas_set_target failed for %ux%u\n", w, h);
+            logWarning("tvg_glcanvas_set_target failed for %ux%u", w, h);
             return false;
         }
         width = w;

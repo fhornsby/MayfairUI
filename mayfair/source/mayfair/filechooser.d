@@ -1,6 +1,6 @@
 module mayfair.filechooser;
 
-import core.stdc.stdio : fprintf, stderr;
+import mayfair.log;
 import std.string : fromStringz, toStringz;
 import sdl.dialog : SDL_FileDialogType, SDL_PROP_FILE_DIALOG_ACCEPT_STRING, SDL_PROP_FILE_DIALOG_FILTERS_POINTER,
     SDL_PROP_FILE_DIALOG_LOCATION_STRING, SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER,
@@ -186,7 +186,7 @@ extern(C) void answered(void* data, const(const(char)*)* list, int filter) nothr
     try
         hand(data, list);
     catch (Exception e)
-        fprintf(stderr, "FileChooser: the answer was lost: %.*s\n", cast(int) e.msg.length, e.msg.ptr);
+        logWarning("FileChooser: the answer was lost: %.*s", cast(int) e.msg.length, e.msg.ptr);
 }
 
 void hand(void* data, const(const(char)*)* list)
@@ -212,7 +212,7 @@ void hand(void* data, const(const(char)*)* list)
         outstanding.remove(data);
         asked--;
         if (error.length)
-            fprintf(stderr, "FileChooser: no dialog to show: %.*s\n", cast(int) error.length, error.ptr);
+            logWarning("FileChooser: no dialog to show: %.*s", cast(int) error.length, error.ptr);
         request.chosen(paths);
     });
 }
