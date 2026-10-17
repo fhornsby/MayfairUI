@@ -122,8 +122,14 @@ fi
 # libwebp's decoder (BSD) -- which -Dstatic=true picks over the system's libpng, libjpeg and libwebp,
 # so an app has nothing more to ship or find. Lottie brings RapidJSON (MIT) and, for expressions,
 # JerryScript (Apache-2.0). The options are in the stamp, so changing them here reconfigures.
-THORVG_OPTIONS="--buildtype=release -Ddefault_library=static -Dengines=cpu,wg -Dbindings=capi
-    -Dloaders=svg,ttf,lottie,png,jpg,webp -Dstatic=true -Dextra=lottie_exp"
+#
+# Three engines: wg for WebGPU, the default; gl for machines whose GPU does OpenGL but not Vulkan, a
+# VM on virgl say; cpu for the rest (see chooseRenderers in mayfair.windowing.app). gl is built for
+# OpenGL ES, which it reaches through EGL and libGLESv2.so.2 -- what SDL uses on Wayland, and what
+# every Mesa install has. Its desktop-GL variant looks for libGL.so, which only the -dev package
+# provides, and through GLX. Both are loaded at run time, so a machine without them still starts.
+THORVG_OPTIONS="--buildtype=release -Ddefault_library=static -Dengines=cpu,wg,gl -Dbindings=capi
+    -Dloaders=svg,ttf,lottie,png,jpg,webp -Dstatic=true -Dextra=lottie_exp,opengl_es"
 if [ ! -f build/thorvg/build.ninja ] || [ "$(cat build/thorvg/options.stamp 2>/dev/null)" != "$THORVG_OPTIONS" ]; then
     rm -rf build/thorvg
     # shellcheck disable=SC2086 # the options are words

@@ -62,8 +62,19 @@ private:
     WGPURenderPipeline downsamplePipeline;
     WGPUBindGroupLayout downsampleLayout;
     WGPUBindGroup downsampleBind;
+    bool acceptSoftware;
 
 public:
+    /// `acceptSoftware`: use a software Vulkan device rather than fail, when this renderer was asked for
+    this(bool acceptSoftware = false){
+        this.acceptSoftware = acceptSoftware;
+    }
+
+    /// Vulkan draws to any window: wgpu makes its surface from the native handle
+    SDL_WindowFlags windowFlags(){
+        return cast(SDL_WindowFlags) 0;
+    }
+
     /// Sets up WebGPU and ThorVG for `window`. Prints the reason and returns false on failure.
     bool initialise(SDL_Window* window){
         // Only the backend Mayfair draws with. By default wgpu looks at every one it has, and
@@ -97,6 +108,23 @@ public:
         wgpuInstanceRequestAdapter(instance, &adapterOptions, adapterCallback);
         if (!adapter)
             return false;
+
+        /*
+            A CPU adapter is Mesa's lavapipe: Vulkan emulated in software, which is what a machine
+            with no Vulkan driver for its GPU is left with -- a VM on virgl, which passes through
+            OpenGL only, above all. ThorVG's WebGPU engine on it is many times slower than its own
+            CPU engine, so it's turned down, and the app falls back (see chooseRenderers).
+        */
+        WGPUAdapterInfo info;
+        if (wgpuAdapterGetInfo(adapter, &info) == WGPUStatus_Success) {
+            scope(exit) wgpuAdapterInfoFreeMembers(info);
+            trace("gpu   adapter %.*s, type %d", cast(int) info.device.length, info.device.data, cast(int) info.adapterType);
+            if (info.adapterType == WGPUAdapterType_CPU && !acceptSoftware) {
+                fprintf(stderr, "Vulkan is only available in software here (%.*s)\n",
+                        cast(int) info.device.length, info.device.data);
+                return false;
+            }
+        }
 
         WGPUDeviceDescriptor deviceDescriptor;
         deviceDescriptor.uncapturedErrorCallbackInfo.callback = &mayfairWgpuError;

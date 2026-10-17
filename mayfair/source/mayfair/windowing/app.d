@@ -649,7 +649,7 @@ void updateShape(bool flat) {
     import core.stdc.string : strcmp;
     // Only for a renderer SDL doesn't draw through: SDL applies a shape's alpha to what it draws
     // itself, which would cut the CPU renderer's shadow off where the shape does
-    if (strcmp(renderer.name(), "webgpu") != 0)
+    if (strcmp(renderer.name(), "cpu") == 0)
         return;
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
@@ -781,33 +781,54 @@ public:
         const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
-        window = SDL_CreateWindow(title.toStringz(), width + 2 * margin, height + 2 * margin, flags);
-        if (drawsDecorations && wayland)
-        {
-            quietStderr(false);
-            keepLibdecorPluginsAway(false);
-        }
-        if (!window) {
-            fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
-            return;
-        }
-        version (Emscripten)
-            SDL_SetWindowFillDocument(window, true); // the page is the window: it fills it, and follows it as it's resized
-        scope(exit) SDL_DestroyWindow(window);
+
+        // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
+        scope(exit) if (window) SDL_DestroyWindow(window);
         scope(exit) mover.close(); // before the window, and SDL's connection, go
         scope(exit) blur.close();
-        {
-            int cw, ch;
-            SDL_GetWindowSize(window, &cw, &ch);
-            trace("window %dx%d asked %dx%d, decorations %s, flags %llx", cw, ch, width + 2 * margin,
-                  height + 2 * margin, drawsDecorations ? "ours".ptr : "the desktop's".ptr, SDL_GetWindowFlags(window));
-        }
-
-        renderer = chooseRenderer();
-        // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
-        scope(exit) renderer.release();
+        scope(exit) if (renderer) renderer.release();
         scope(exit) releaseKeptDecodings(); // before the renderer's engine goes, and after the scene's pictures
-        if (!renderer.initialise(window))
+
+        // The first renderer that starts, in a window made for it. Most share one; OpenGL needs its
+        // own, as SDL can't make a window an OpenGL one once it's made.
+        auto candidates = chooseRenderers();
+        SDL_WindowFlags madeFor;
+        foreach (i, candidate; candidates) {
+            if (!window || candidate.windowFlags() != madeFor) {
+                if (window)
+                    SDL_DestroyWindow(window);
+                madeFor = candidate.windowFlags();
+                if (drawsDecorations && wayland)
+                {
+                    keepLibdecorPluginsAway(true);
+                    quietStderr(true);
+                }
+                window = SDL_CreateWindow(title.toStringz(), width + 2 * margin, height + 2 * margin, flags | madeFor);
+                if (drawsDecorations && wayland)
+                {
+                    quietStderr(false);
+                    keepLibdecorPluginsAway(false);
+                }
+                if (!window) {
+                    fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+                    return;
+                }
+                version (Emscripten)
+                    SDL_SetWindowFillDocument(window, true); // the page is the window: it fills it, and follows it as it's resized
+                int cw, ch;
+                SDL_GetWindowSize(window, &cw, &ch);
+                trace("window %dx%d asked %dx%d, decorations %s, flags %llx", cw, ch, width + 2 * margin,
+                      height + 2 * margin, drawsDecorations ? "ours".ptr : "the desktop's".ptr, SDL_GetWindowFlags(window));
+            }
+            if (candidate.initialise(window)) {
+                renderer = candidate;
+                break;
+            }
+            candidate.release();
+            if (i + 1 < candidates.length)
+                fprintf(stderr, "The %s renderer couldn't start, so using %s\n", candidate.name(), candidates[i + 1].name());
+        }
+        if (!renderer)
             return;
 
         if (!_scene)
@@ -975,22 +996,26 @@ version (Emscripten)
 }
 
 /*
-    Which renderer to use. WebGPU is the default everywhere. The CPU one is there for machines without
-    working Vulkan, and for compositors where resizing a GPU surface is slow (GNOME resizes a Vulkan
-    surface far less smoothly than KDE does). Set MAYFAIR_RENDERER=cpu or webgpu to choose.
+    Which renderers to try, in order. WebGPU first, everywhere: it's the default. When it can't
+    start, or the only Vulkan is in software -- a VM whose virtual GPU passes OpenGL through but not
+    Vulkan, say -- OpenGL, if it's on real hardware; then the CPU, which always can. The CPU one is
+    also there for compositors where resizing a GPU surface is slow (GNOME resizes a Vulkan surface
+    far less smoothly than KDE does). MAYFAIR_RENDERER=webgpu, opengl or cpu uses that one only,
+    software or not.
 */
-private Renderer chooseRenderer() nothrow
+private Renderer[] chooseRenderers() nothrow
 {
     version (Emscripten)
-        return new CpuRenderer; // the only one in the browser, for now
+        return [cast(Renderer) new CpuRenderer]; // the only one in the browser, for now
     else {
     const(char)* choice = getenv("MAYFAIR_RENDERER");
     if (choice && *choice) {
-        if (strcmp(choice, "cpu") == 0) return new CpuRenderer;
-        if (strcmp(choice, "webgpu") == 0) return new WebGpuRenderer;
+        if (strcmp(choice, "cpu") == 0) return [cast(Renderer) new CpuRenderer];
+        if (strcmp(choice, "opengl") == 0) return [cast(Renderer) new OpenGlRenderer(true)];
+        if (strcmp(choice, "webgpu") == 0) return [cast(Renderer) new WebGpuRenderer(true)];
         fprintf(stderr, "Unknown MAYFAIR_RENDERER '%s', using the default\n", choice);
     }
-    return new WebGpuRenderer;
+    return [cast(Renderer) new WebGpuRenderer, new OpenGlRenderer, new CpuRenderer];
     }
 }
 

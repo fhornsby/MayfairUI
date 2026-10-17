@@ -8,6 +8,10 @@ import sdl;
 interface Renderer
 {
 @nogc nothrow:
+    /// What the window must be created with for this renderer: SDL_WINDOW_OPENGL, say. Asked
+    /// before initialise(), as SDL can't add it to a window afterwards.
+    SDL_WindowFlags windowFlags();
+
     /// Sets up for `window`. Prints the reason and returns false on failure.
     bool initialise(SDL_Window* window);
 

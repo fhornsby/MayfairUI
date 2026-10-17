@@ -79,6 +79,11 @@ private:
     }
 
 public:
+    /// SDL_GetWindowSurface works on a plain window
+    SDL_WindowFlags windowFlags(){
+        return cast(SDL_WindowFlags) 0;
+    }
+
     bool initialise(SDL_Window* window){
         this.window = window;
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {

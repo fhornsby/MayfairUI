@@ -71,13 +71,13 @@ objects=$here/build/obj
 rm -rf "$objects"
 mkdir -p "$objects" "$out"
 
-# Mayfair, less the WebGPU renderer, and the C bindings, less wgpu-native's; then the stand-ins for
+# Mayfair, less the WebGPU and OpenGL renderers, and the C bindings, less wgpu-native's; then the stand-ins for
 # what isn't built for the browser
 echo "Compiling Mayfair"
 # shellcheck disable=SC2046,SC2086 # the lists are words
 ldc2 -mtriple=wasm32-unknown-emscripten -O -c -oq -od="$objects" \
     -I"$mayfair/source" -I"$mayfair/bindings" -I"$sdl" -J"$mayfair/fonts" -J"$mayfair/themes" $cimports \
-    $(find "$mayfair/source" -name '*.d' -not -path '*/renderers/webgpu/*') \
+    $(find "$mayfair/source" -name '*.d' -not -path '*/renderers/webgpu/*' -not -path '*/renderers/opengl/*') \
     $(ls "$mayfair"/bindings/*.c | grep -v webgpu_c) \
     $(find "$sdl" -name '*.d') 2>&1 | grep -v "ALLOW_MEMORY_GROWTH" || true
 emcc -O2 -c -I"$vendor/accesskit/include" -I"$mayfair/bindings" "$here/stubs.c" -o "$objects/stubs.o"
