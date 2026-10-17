@@ -7,4 +7,4 @@ set -e
 cd "$(dirname "$0")"
 source ~/dlang/ldc-1.43.0/activate
 source ~/emsdk/emsdk_env.sh > /dev/null 2>&1
-../mayfair/web/build.sh -o out source/app.d
+../mayfair/web/build.sh -o out -J views source/app.d
