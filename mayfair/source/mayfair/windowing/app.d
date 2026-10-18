@@ -889,7 +889,7 @@ public:
             auto props = SDL_GetWindowProperties(window);
             blur.open(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null),
                       SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null));
-            trace("blur  %s", blur.available ? "the compositor's, behind backdrop-blur".ptr : "none".ptr);
+            trace("blur  %s", blur.available ? blur.protocol() : "none".ptr);
         }
         _scene.nativeWindow = window;
         _scene.attach(renderer.canvas);
