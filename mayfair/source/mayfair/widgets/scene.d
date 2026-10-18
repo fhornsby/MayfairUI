@@ -119,12 +119,11 @@ enum ColourScheme { system, light, dark }
 class Scene
 {
 public:
-    /// The colour behind everything. JavaFX's Scene.fill. Translucent when the window opens, the
-    /// window is, for what's behind it to show through wherever the root's background is too.
+    /// The colour behind everything. JavaFX's Scene.fill.
     mixin(declareProperty!(Colour, "fill", "Theme.background_colour", q{
         if (background)
         {
-            tvg_shape_set_fill_color(background, _fill.tupleof);
+            tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, translucent ? 0 : _fill.a);
             paintRequested = true;
         }
     }));
@@ -151,6 +150,23 @@ public:
     /// Whether stylesheets' @media (prefers-colour-scheme) rules see it as light or dark: the
     /// desktop's choice, unless it's given one of its own.
     mixin(declareProperty!(ColourScheme, "colourScheme", "ColourScheme.system", q{ restyleAll(); }));
+
+    /*
+        Translucent, with what's behind the window showing through blurred, or not: the App's say,
+        where the compositor blurs (see App.setTranslucent). The fill's left out, and the root's in
+        :translucent for the theme to make its background translucent and blurred behind.
+    */
+    package(mayfair) void setTranslucent(bool on)
+    {
+        translucent = on;
+        if (background)
+        {
+            tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, on ? 0 : _fill.a);
+            paintRequested = true;
+        }
+        if (_root)
+            pseudoClassChanged(_root, pseudo!"translucent", on);
+    }
 
     /// Light or dark, as the scene is styled now.
     ColourScheme effectiveColourScheme() const nothrow @nogc
@@ -189,7 +205,7 @@ public:
         config = YGConfigNew();
 
         background = tvg_shape_new();
-        tvg_shape_set_fill_color(background, _fill.tupleof);
+        tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, translucent ? 0 : _fill.a);
         tvg_scene_add(paints, background); // added first, so it's drawn behind the tree
 
         _root.styleClass.add("root"); // what a theme's .root rule, and its variables, are for
@@ -811,6 +827,7 @@ package(mayfair):
     WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
     void* nativeWindow;            // the SDL_Window it's in, from the App, for what the desktop shows over it
     bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
+    bool translucent;              // the window is, so the fill's left out: see setTranslucent
 
     /// The window was maximised or restored, for the title bar's button to say which it does.
     void windowMaximised(bool on)

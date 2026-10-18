@@ -88,6 +88,8 @@ int textInputCursor;
 bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
 WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
 BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
+bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
+bool translucentNow;       // and is, as the scene was last told
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
 ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
@@ -115,6 +117,16 @@ void updateScale() nothrow @nogc {
     _scene.setScale(scale, renderer.renderScale());
     needsLayout = true;
     trace("scale %.2f device pixels per point", scale);
+}
+
+/// Makes the window translucent or opaque as the compositor's blur comes and goes, if it's to be.
+void applyTranslucency() {
+    const on = _translucent && blur.available;
+    if (on == translucentNow)
+        return;
+    translucentNow = on;
+    _scene.setTranslucent(on);
+    trace("translucent %s", on ? "yes".ptr : "no".ptr);
 }
 
 /// How often the window's display refreshes, which is how often a running animation gets a frame.
@@ -740,6 +752,20 @@ public:
     }
 
     /*
+        Whether the window's translucent, what's behind it showing through blurred. Only where the
+        compositor blurs (see mayfair.windowing.blur): elsewhere it's an ordinary opaque window,
+        as what's behind showing through unblurred makes the window's text hard to read. How
+        translucent is the theme's, in its .root:translucent rule. Set it before run().
+    */
+    void setTranslucent(bool translucent) {
+        _translucent = translucent;
+    }
+
+    bool translucent() const {
+        return _translucent;
+    }
+
+    /*
         Ends run(), as closing the window does, once what's being handled now is done: for a Quit
         menu item, say. Needs no App to hand, and is safe from any thread. Before run() it does
         nothing.
@@ -784,9 +810,9 @@ public:
         const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
-        // So is one whose scene's fill is translucent, for what's behind it to show through, with
-        // the desktop's frame or without
-        else if (_scene && _scene.fill.a < 255)
+        // One that's to be translucent needs its alpha from the start, though until the
+        // compositor's said it blurs it's drawn opaque. Only Wayland's compositors can.
+        else if (_translucent && wayland)
             flags |= SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
 
         // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
@@ -869,6 +895,7 @@ public:
         _scene.attach(renderer.canvas);
         scope(exit) _scene.detach();
         _scene.platformColourScheme = systemColourScheme();
+        applyTranslucency(); // before it's styled, as the theme styles :translucent
         applyCss(_scene); // styled before it's first laid out
         updateScale(); // needs both the window and the scene, so it goes after the two of them
         updateRefreshRate();
@@ -960,6 +987,7 @@ public:
         // redrawing the title bar during a resize, as well as time spent idle
         mover.dispatch();
         blur.dispatch();
+        applyTranslucency(); // the compositor can stop blurring, or start
         trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
               traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
 
