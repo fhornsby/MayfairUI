@@ -784,6 +784,10 @@ public:
         const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
+        // So is one whose scene's fill is translucent, for what's behind it to show through, with
+        // the desktop's frame or without
+        else if (_scene && _scene.fill.a < 255)
+            flags |= SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
 
         // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
         scope(exit) if (window) SDL_DestroyWindow(window);

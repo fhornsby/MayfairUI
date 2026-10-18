@@ -49,5 +49,6 @@ void main()
 {
     auto app = new App("Hello world");
     app.scene = new Scene(View.load(new HelloWorld));
+    app.scene.setFill(Colour(0, 0, 0, 0)); // clear, so the window is translucent where its root is
     app.run();
 }

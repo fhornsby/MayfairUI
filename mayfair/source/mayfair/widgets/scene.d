@@ -119,7 +119,8 @@ enum ColourScheme { system, light, dark }
 class Scene
 {
 public:
-    /// The colour behind everything. JavaFX's Scene.fill.
+    /// The colour behind everything. JavaFX's Scene.fill. Translucent when the window opens, the
+    /// window is, for what's behind it to show through wherever the root's background is too.
     mixin(declareProperty!(Colour, "fill", "Theme.background_colour", q{
         if (background)
         {
