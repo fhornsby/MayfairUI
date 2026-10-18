@@ -89,6 +89,7 @@ bool repickPending;        // things moved, by layout or scrolling, so what's un
 WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
 BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
 bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
+bool _assumesBlur;         // taking it the compositor blurs, though it's not said: see setAssumesBlur()
 bool translucentNow;       // and is, as the scene was last told
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
@@ -121,7 +122,7 @@ void updateScale() nothrow @nogc {
 
 /// Makes the window translucent or opaque as the compositor's blur comes and goes, if it's to be.
 void applyTranslucency() {
-    const on = _translucent && blur.available;
+    const on = _translucent && (blur.available || _assumesBlur);
     if (on == translucentNow)
         return;
     translucentNow = on;
@@ -763,6 +764,19 @@ public:
 
     bool translucent() const {
         return _translucent;
+    }
+
+    /*
+        Whether to take it that the compositor blurs behind the window though it hasn't said so
+        over either protocol: one that blurs behind whatever's translucent, by a rule of its own.
+        Translucent then, the window is, wherever it's run. Set it before run().
+    */
+    void setAssumesBlur(bool assumesBlur) {
+        _assumesBlur = assumesBlur;
+    }
+
+    bool assumesBlur() const {
+        return _assumesBlur;
     }
 
     /*
