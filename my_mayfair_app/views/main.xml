@@ -5,16 +5,16 @@
 <!-- The window's content: a sidebar down the left, and in the middle a button with a label
      saying how its request went, and three widgets of the app's own: a Counter, made in code; a
      ProfileCard, with a view of its own in profilecard.xml; and a Rating, whose score the label
-     under it follows. Where the window's translucent, the sidebar is, as translucent.css says. -->
-<Dock stylesheets="translucent.css">
+     under it follows. -->
+<Dock>
     <left>
-        <NavigationList styleClass="sidebar">
+        <NavigationList style="background-colour: var(--field);">
             <NavigationItem text="Home" iconName="go-home-symbolic"/>
             <NavigationItem text="Settings" iconName="preferences-system-symbolic"/>
         </NavigationList>
     </left>
     <centre>
-        <Column styleClass="content" spacing="12" alignment="centre-left">
+        <Column spacing="12" alignment="centre-left">
             <Label id="label"/>
             <Button text="Say hello" onAction="sayHello"/>
             <Counter count="3"/>

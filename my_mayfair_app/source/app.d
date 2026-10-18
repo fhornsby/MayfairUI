@@ -49,7 +49,5 @@ void main()
 {
     auto app = new App("Hello world");
     app.scene = new Scene(View.load(new HelloWorld));
-    app.setTranslucent(true); // where the compositor blurs what's behind it
-    app.setAssumesBlur(true); // which ours does, by its own rule rather than over a protocol
     app.run();
 }

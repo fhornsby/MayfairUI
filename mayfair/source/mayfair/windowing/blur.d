@@ -5,8 +5,7 @@ import core.stdc.string : strcmp;
 /*
     Asks the compositor to blur what's behind parts of the window: those with backdrop-blur on (see
     Widget.backdropBlur). Over ext-background-effect-v1, a Wayland protocol GNOME has from Mutter 51
-    and KDE from Plasma 6.7, or failing that KDE's own org_kde_kwin_blur, which KWin has had for
-    years and other compositors copy; on one with neither, or X11, there's no blur and nothing's asked.
+    and KDE from Plasma 6.7; on another compositor, or X11, there's no blur and nothing's asked.
 
     The region is double-buffered, as Wayland's surface state is: set before a frame's presented,
     it's the region from that frame on. Like WindowMover, it works on SDL's connection through an
@@ -68,35 +67,15 @@ struct BackgroundBlur
             fn.proxy_add_listener(registry, &registryListener, &this);
             // One round trip to hear of the globals, one for the manager's capabilities
             fn.display_roundtrip_queue(display, queue);
-            if ((!manager && !kdeManager) || !compositor)
+            if (!manager || !compositor)
             {
                 close();
                 return false;
             }
-            if (manager)
-                fn.display_roundtrip_queue(display, queue);
-
-            // The standard one where it blurs, otherwise KDE's, which blurs wherever it's offered
-            enum destroy = 0, destructor = 1;
-            if (manager && (blurs || !kdeManager))
-            {
-                if (kdeManager)
-                    fn.proxy_destroy(kdeManager);
-                kdeManager = null;
-                enum getBackgroundEffect = 1;
-                effect = fn.proxy_marshal_flags(manager, getBackgroundEffect, &effectSurfaceInterface,
-                                                fn.proxy_get_version(manager), 0, null, surface);
-            }
-            else
-            {
-                if (manager)
-                    fn.proxy_marshal_flags(manager, destroy, null, fn.proxy_get_version(manager), destructor);
-                manager = null;
-                blurs = true;
-                enum create = 0;
-                effect = fn.proxy_marshal_flags(kdeManager, create, &kdeBlurInterface,
-                                                fn.proxy_get_version(kdeManager), 0, null, surface);
-            }
+            fn.display_roundtrip_queue(display, queue);
+            enum getBackgroundEffect = 1;
+            effect = fn.proxy_marshal_flags(manager, getBackgroundEffect, &effectSurfaceInterface,
+                                            fn.proxy_get_version(manager), 0, null, surface);
             if (!effect)
             {
                 close();
@@ -114,10 +93,8 @@ struct BackgroundBlur
         {
             import core.sys.posix.dlfcn : dlclose;
             enum destroy = 0, destructor = 1; // request 0 of both, which destroys the proxy too
-            enum release = 2; // KDE's blur's destructor
-            if (effect) fn.proxy_marshal_flags(effect, kdeManager ? release : destroy, null, fn.proxy_get_version(effect), destructor);
+            if (effect) fn.proxy_marshal_flags(effect, destroy, null, fn.proxy_get_version(effect), destructor);
             if (manager) fn.proxy_marshal_flags(manager, destroy, null, fn.proxy_get_version(manager), destructor);
-            if (kdeManager) fn.proxy_destroy(kdeManager); // it has no request to destroy it
             if (compositor) fn.proxy_destroy(compositor);
             if (registry) fn.proxy_destroy(registry);
             if (queue) fn.event_queue_destroy(queue);
@@ -128,12 +105,6 @@ struct BackgroundBlur
 
     /// Whether the compositor blurs: set up, and it says it can.
     bool available() const nothrow @nogc { return effect !is null && blurs; }
-
-    /// The protocol it's blurring over, for tracing; null if none.
-    const(char)* protocol() const nothrow @nogc
-    {
-        return !effect ? null : kdeManager ? kdeManagerInterface.name : managerInterface.name;
-    }
 
     /// Hears what's arrived on our queue: the capabilities, which can change.
     void dispatch() nothrow @nogc
@@ -158,10 +129,8 @@ struct BackgroundBlur
         lastCount = count;
         lastHash = hash;
 
-        // The same request in both, but where the standard one takes no region for no blur, KDE's
-        // takes it for blur everywhere: so to KDE's, no blur is a region with nothing in it
-        enum setBlurRegion = 1, commit = 0;
-        if (!count && !kdeManager)
+        enum setBlurRegion = 1;
+        if (!count)
         {
             fn.proxy_marshal_flags(effect, setBlurRegion, null, fn.proxy_get_version(effect), 0, null);
             fn.display_flush(display);
@@ -174,8 +143,6 @@ struct BackgroundBlur
         foreach (r; rects[0 .. count])
             fn.proxy_marshal_flags(region, add, null, fn.proxy_get_version(region), 0, r[0], r[1], r[2], r[3]);
         fn.proxy_marshal_flags(effect, setBlurRegion, null, fn.proxy_get_version(effect), 0, region);
-        if (kdeManager) // KDE's blur takes the region on its own commit, then the surface's
-            fn.proxy_marshal_flags(effect, commit, null, fn.proxy_get_version(effect), 0);
         // The effect copies the region, so it can go straight away
         fn.proxy_marshal_flags(region, destroy, null, fn.proxy_get_version(region), destructor);
         fn.display_flush(display);
@@ -203,7 +170,6 @@ private:
     void* lib;
     const(void)* registryInterface, compositorInterface, surfaceInterface, regionInterface;
     void* display, queue, registry, compositor, manager, effect;
-    void* kdeManager;        // KDE's, while it's the one blurring, or until it's known which is
     bool blurs;              // the compositor's said it can
     size_t lastCount;        // what was asked for last
     ulong lastHash;
@@ -231,9 +197,6 @@ private:
             if (self.manager)
                 self.fn.proxy_add_listener(self.manager, &managerListener, data);
         }
-        else if (!self.kdeManager && strcmp(iface, kdeManagerInterface.name) == 0)
-            self.kdeManager = self.fn.proxy_marshal_flags(registry, bind, &kdeManagerInterface, 1, 0, name,
-                                                          kdeManagerInterface.name, 1, null);
         else if (!self.compositor && strcmp(iface, "wl_compositor") == 0)
             self.compositor = self.fn.proxy_marshal_flags(registry, bind, self.compositorInterface, 1, 0, name,
                                                           "wl_compositor".ptr, 1, null);
@@ -247,8 +210,8 @@ private:
     }
 
     /*
-        The protocols' interfaces, as wayland-scanner would write them from
-        ext-background-effect-v1.xml and KDE's blur.xml: each request's and event's name, its arguments' types as
+        The protocol's two interfaces, as wayland-scanner would write them from
+        ext-background-effect-v1.xml: each request's and event's name, its arguments' types as
         letters ("n" a new object, "o" an object, "?" one that can be null, "u" a number), and the
         interface of each object argument. Those that point to libwayland-client's own are filled
         in once it's opened.
@@ -262,11 +225,6 @@ private:
     __gshared Message[2] managerRequests, effectRequests;
     __gshared Message[1] managerEvents;
     __gshared Interface managerInterface, effectSurfaceInterface;
-    __gshared const(void)*[2] kdeCreateTypes;          // the new blur, and the wl_surface
-    __gshared const(void)*[1] kdeUnsetTypes;           // the wl_surface
-    __gshared Message[2] kdeManagerRequests;
-    __gshared Message[3] kdeBlurRequests;
-    __gshared Interface kdeManagerInterface, kdeBlurInterface;
 
     void fillInterfaces() nothrow @nogc
     {
@@ -279,15 +237,5 @@ private:
                           Message("set_blur_region", "?o", setBlurRegionTypes.ptr)];
         managerInterface = Interface("ext_background_effect_manager_v1", 1, 2, managerRequests.ptr, 1, managerEvents.ptr);
         effectSurfaceInterface = Interface("ext_background_effect_surface_v1", 1, 2, effectRequests.ptr, 0, null);
-
-        kdeCreateTypes = [&kdeBlurInterface, surfaceInterface];
-        kdeUnsetTypes = [surfaceInterface];
-        kdeManagerRequests = [Message("create", "no", kdeCreateTypes.ptr),
-                              Message("unset", "o", kdeUnsetTypes.ptr)];
-        kdeBlurRequests = [Message("commit", "", noTypes.ptr),
-                           Message("set_region", "?o", setBlurRegionTypes.ptr),
-                           Message("release", "", noTypes.ptr)];
-        kdeManagerInterface = Interface("org_kde_kwin_blur_manager", 1, 2, kdeManagerRequests.ptr, 0, null);
-        kdeBlurInterface = Interface("org_kde_kwin_blur", 1, 3, kdeBlurRequests.ptr, 0, null);
     }
 }

@@ -133,15 +133,8 @@ void lookups()
 void theme()
 {
     Button plain, preferred, off;
-    // A root that can be put in :translucent, as the App does where the compositor blurs
-    static class Root : Column
-    {
-        void translucent(bool on) { pseudoClassStateChanged(pseudo!"translucent", on); }
-    }
-    Root root;
     run("styling: the built-in theme", {
-        root = new Root();
-        root.fillWidth(false).spacing(8).padding(10);
+        auto root = new Column().fillWidth(false).spacing(8).padding(10);
         plain = new Button("Plain");
         preferred = new Button("Default").defaultButton(true);
         off = new Button("Off").disable(true);
@@ -187,13 +180,6 @@ void theme()
         d.ui({
             d.expect(fill(plain), Colour(0x7f, 0x1d, 0x1d), "an app's .root recolours the kit");
             d.expect(fill(preferred), Colour(0x02, 0x84, 0xc7), "but not a default button's own palette");
-        });
-
-        d.ui({ root.translucent(true); });
-        d.settle();
-        d.ui({
-            d.expect(root.background.fills[0].fill, Colour(0x0f, 0x17, 0x2a, 0xbf), ":translucent lets what's behind through");
-            d.expect(root.backdropBlur, true, "blurred");
         });
     });
 }
