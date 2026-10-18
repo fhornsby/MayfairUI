@@ -5,16 +5,16 @@
 <!-- The window's content: a sidebar down the left, and in the middle a button with a label
      saying how its request went, and three widgets of the app's own: a Counter, made in code; a
      ProfileCard, with a view of its own in profilecard.xml; and a Rating, whose score the label
-     under it follows. -->
-<Dock>
+     under it follows. The sidebar's second page is a SettingsPage, put there by app.d. -->
+<Dock id="dock">
     <left>
-        <NavigationList style="background-colour: var(--field);">
+        <NavigationList id="nav" style="background-colour: var(--field);">
             <NavigationItem text="Home" iconName="go-home-symbolic"/>
             <NavigationItem text="Settings" iconName="preferences-system-symbolic"/>
         </NavigationList>
     </left>
     <centre>
-        <Column spacing="12" alignment="centre-left">
+        <Column id="home" spacing="12" alignment="centre">
             <Label id="label"/>
             <Button text="Say hello" onAction="sayHello"/>
             <Counter count="3"/>

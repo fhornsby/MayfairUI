@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A page of the whole window, sidebar and all. <root> is the page itself, a Column. -->
+<root spacing="12" alignment="centre" padding="12">
+    <Label text="Details" style="font-size: 20"/>
+    <Label text="The whole window is this page now."/>
+    <Button text="Back" onAction="back"/>
+</root>

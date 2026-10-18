@@ -26,6 +26,7 @@ void main(string[] args)
     tests.properties.layout();
     tests.properties.preferredSizes();
     tests.properties.rootAndAdd();
+    tests.properties.changingRoot();
     tests.properties.readOnly();
     tests.scrolling.wheel();
     tests.scrolling.keyboard();

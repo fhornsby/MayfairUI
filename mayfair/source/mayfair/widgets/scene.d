@@ -136,6 +136,43 @@ public:
     /// The widget at the top of the tree.
     inout(Widget) root() inout nothrow @nogc { return _root; }
 
+    /*
+        Shows `root` in the window in place of the tree there now: another page of the app, all of
+        it, rather than a part of one. JavaFX's Scene.setRoot. The old tree loses its shapes, and
+        any hover, press or focus in it, as a removed widget does, but keeps everything else, so it
+        can be shown again just as it was.
+    */
+    final Scene setRoot(Widget root)
+    {
+        if (root is _root)
+            return this;
+        if (root.parent)
+            throw new Exception("a scene's root can't be below another widget");
+        if (paints)
+        {
+            forget(_root);
+            _root.unmountTree();
+            releaseConfig(_root);
+            YGNodeStyleSetWidthAuto(_root.node);
+            YGNodeStyleSetHeightAuto(_root.node);
+            _root.styleClass.remove("root");
+        }
+        _root = root;
+        if (_titleBar)
+            _titleBar.styleOwner = _root;
+        if (paints)
+        {
+            _root.styleClass.add("root");
+            // Under the title bar and any popups, as the old one was
+            _root.mount(this, paints, _titleBar ? _titleBar.shape : popups.length ? popups[0]._layer : null);
+            YGNodeStyleSetWidthPercent(_root.node, 100);
+            YGNodeStyleSetHeightPercent(_root.node, 100);
+            popupsMoved = windowChildrenChanged = true; // laid out afresh, and a new child for assistive technology
+            paintRequested = accessibilityChanged = true;
+        }
+        return this;
+    }
+
     /// Stylesheets for everything in the scene, over the built-in theme. JavaFX's getStylesheets().
     final StylesheetList stylesheets()
     {

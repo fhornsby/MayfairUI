@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The sidebar's second page. <root> is the page itself, a Column. -->
+<root spacing="12" alignment="centre" padding="12">
+    <Label text="Settings" style="font-size: 20"/>
+    <Label text="The sidebar changes the page beside it. This goes further, to a page of the whole window."/>
+    <Button text="Open details" onAction="openDetails"/>
+</root>

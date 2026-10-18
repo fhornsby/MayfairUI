@@ -4,6 +4,7 @@ import core.time : seconds;
 import std.net.curl : get, HTTP;
 import std.format : format;
 import rating;
+import settings;
 
 /// What the window's content does: views/main.xml says what it is.
 @View("main.xml")
@@ -13,6 +14,10 @@ public:
     @xml Label label;
     @xml Rating stars;
     @xml Label ratingLabel;
+    @xml Dock dock;
+    @xml NavigationList nav;
+    @xml Column home;
+    SettingsPage settings;
 
     // Called once the view's built. The rating's score is observable, so the label can follow it:
     // bound, it changes whenever the score does, and Rating never needs to know it's there
@@ -20,6 +25,12 @@ public:
     {
         ratingLabel.textProperty.bind(stars.ratingProperty.map(
             (int n) => n ? format!"Rated %d out of %d"(n, stars.max) : "Not rated yet"));
+
+        // The sidebar's entries, Home and Settings, each show their page beside it
+        settings = new SettingsPage;
+        nav.selectedIndexProperty.addListener((int was, int now) {
+            dock.setCentre(now == 0 ? cast(Widget) home : settings);
+        });
     }
 
 private:
@@ -48,6 +59,7 @@ private:
 void main()
 {
     auto app = new App("Hello world");
-    app.scene = new Scene(View.load(new HelloWorld));
+    auto view = View.load(new HelloWorld);
+    app.scene = new Scene(view);
     app.run();
 }

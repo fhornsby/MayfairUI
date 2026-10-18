@@ -275,3 +275,48 @@ void rootAndAdd()
         });
     });
 }
+
+/// A new root for the scene, from a button in the old one, and back again, the old one as it was.
+void changingRoot()
+{
+    Column first, second;
+    Button go, back;
+    CheckBox kept;
+    int backs;
+    run("properties: a scene's root changed, and changed back", {
+        first = new Column().spacing(8).padding(10);
+        kept = new CheckBox("Kept");
+        go = new Button("Go");
+        first.add(kept).add(go);
+        second = new Column().padding(10);
+        back = new Button("Back").onAction({ backs++; second.scene.setRoot(first); });
+        second.add(back);
+        go.setOnAction({ go.scene.setRoot(second); });
+        return cast(Widget) first;
+    }, (Driver d) {
+        float w;
+        d.ui({ w = first.boundsInScene.width; });
+        d.click(kept);
+        d.click(go);
+        d.ui({
+            d.check(second.scene !is null && second.scene.root is second, "the button's handler made the other its root");
+            d.check(first.scene is null, "and the old one's out of the window");
+            d.check(!go.pressed && !go.hover, "not pressed or hovered any more");
+            d.expect(second.boundsInScene.width, w, "the new one fills the window");
+            d.check(second.styleClass.contains("root") && !first.styleClass.contains("root"), "and is .root now");
+        });
+        d.click(back);
+        d.ui({
+            d.expect(backs, 1, "its button works");
+            d.check(first.scene !is null && first.scene.root is first, "and puts the first back");
+            d.check(kept.selected, "as it was left");
+            d.expect(first.boundsInScene.width, w, "filling the window again");
+        });
+        d.click(go);
+        d.ui({ d.check(second.scene !is null, "and it goes there again"); });
+        d.ui({
+            import std.exception : collectException;
+            d.check(collectException(second.scene.setRoot(kept)) !is null, "a widget below another can't be a root");
+        });
+    });
+}
