@@ -17,9 +17,17 @@ import mayfair.widgets;
     nothing, and AccessKit then takes the next update as the whole tree, which is built on the UI
     thread after the frame that asked for it.
 
-    Linux only for now, like the rest of the kit: the other platforms' adapters need the native
-    window handle, and have the same shape once there's a renderer for them to go with.
+    Linux and the BSDs only for now: they share AccessKit's unix adapter, which speaks AT-SPI over
+    D-Bus. The other platforms' adapters need the native window handle, and have the same shape
+    once there's a renderer for them to go with.
 */
+// The platforms accesskit.h declares the unix adapter for
+version (linux) version = AccessKitUnix;
+else version (FreeBSD) version = AccessKitUnix;
+else version (DragonFlyBSD) version = AccessKitUnix;
+else version (NetBSD) version = AccessKitUnix;
+else version (OpenBSD) version = AccessKitUnix;
+
 struct AccessibilityAdapter
 {
     /// What the events this posts carry in their `code`.
@@ -30,13 +38,13 @@ struct AccessibilityAdapter
     {
         this.window = window;
         poster = Poster(eventType, SDL_GetWindowID(window));
-        version (linux)
+        version (AccessKitUnix)
             adapter = accesskit_unix_adapter_new(&activate, &poster, &act, &poster, &deactivate, null);
     }
 
     void close() nothrow @nogc
     {
-        version (linux)
+        version (AccessKitUnix)
             if (adapter)
                 accesskit_unix_adapter_free(adapter);
         adapter = null;
@@ -58,7 +66,7 @@ struct AccessibilityAdapter
         auto context = UpdateContext(scene, title, pointsToWindow, fullTreeRequested);
         // The binding calls every C callback @nogc, but this one is called straight back, on this
         // thread, before update_if_active returns: widgets describing themselves are free to allocate.
-        version (linux)
+        version (AccessKitUnix)
             accesskit_unix_adapter_update_if_active(adapter, cast(accesskit_tree_update_factory) &buildUpdate, &context);
         if (context.built && context.full)
             fullTreeRequested = false;
@@ -67,7 +75,7 @@ struct AccessibilityAdapter
     /// The window gained or lost keyboard focus.
     void windowFocus(bool focused) nothrow @nogc
     {
-        version (linux)
+        version (AccessKitUnix)
             if (adapter)
                 accesskit_unix_adapter_update_window_focus_state(adapter, focused);
     }
@@ -104,7 +112,7 @@ struct AccessibilityAdapter
     /// from the app, and this does no harm there.
     void windowBoundsChanged() nothrow @nogc
     {
-        version (linux)
+        version (AccessKitUnix)
         {
             if (!adapter)
                 return;
@@ -139,7 +147,7 @@ private:
     SDL_Window* window;
     Poster poster;
     bool fullTreeRequested;
-    version (linux) accesskit_unix_adapter* adapter;
+    version (AccessKitUnix) accesskit_unix_adapter* adapter;
     else void* adapter;
 }
 

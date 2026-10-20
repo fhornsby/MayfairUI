@@ -48,10 +48,22 @@
 		"$PACKAGE_DIR/vendor/build/litehtml/src/gumbo/libgumbo.a"
 	],
 	"libs": [
-		"stdc++",
 		"m",
-		"dl",
 		"pthread"
+	],
+	"libs-linux": [
+		"stdc++",
+		"dl"
+	],
+	"libs-freebsd": [
+		"c++",
+		"execinfo",
+		"kvm",
+		"memstat",
+		"procstat",
+		"devstat",
+		"util",
+		"rt"
 	],
 	"toolchainRequirements": {
 		"dmd": "no",

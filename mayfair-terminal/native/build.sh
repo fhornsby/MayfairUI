@@ -10,14 +10,15 @@
 #   native/target/         cargo's output (git-ignored)
 #   native/build/          The library as linked, with its runtime reconciled (git-ignored)
 #
-# Unlike Mayfair itself, which downloads its Rust libraries ready built, this needs a Rust
-# toolchain (cargo, 1.85 or later): alacritty_terminal has no C API of its own to download, so
+# Unlike Mayfair itself, which on Linux x86_64 downloads its Rust libraries ready built, this
+# always needs a Rust toolchain (cargo, 1.85 or later): alacritty_terminal has no C API of its own to download, so
 # this is it. The first build downloads the crates.
 #
 # Takes Mayfair's package directory, which dub passes in, for the Rust libraries it links.
 set -eu
 cd "$(dirname "$0")"
 MAYFAIR="${1:?usage: build.sh <mayfair package directory>}"
+. "$MAYFAIR/vendor/tools.sh"
 
 if ! command -v cargo >/dev/null 2>&1; then
     echo "mayfair-terminal needs Rust's cargo to build its native half: see https://rustup.rs" >&2
@@ -40,15 +41,15 @@ fi
 
 LIB=target/release/libmayfair_terminal.a
 # By size and time rather than contents: wgpu's library is tens of megabytes to read every build
-STAMP="$(stat -c '%s %Y' "$LIB" "$WGPU" "$ACCESSKIT")"
+STAMP="$(filestamp "$LIB" "$WGPU" "$ACCESSKIT")"
 if [ "$(cat build/stamp 2>/dev/null)" != "$STAMP" ]; then
     echo "Reconciling the terminal's Rust runtime with wgpu-native's"
+    OBJCOPY=$(objcopy_tool)
     rm -rf build
     mkdir -p build
-    strong() { nm -g --defined-only "$1" 2>/dev/null | awk 'NF == 3 && $2 ~ /^[TDBR]$/ { print $3 }' | LC_ALL=C sort -u; }
-    strong "$LIB" > build/terminal.syms
-    { strong "$WGPU"; strong "$ACCESSKIT"; } | LC_ALL=C sort -u > build/others.syms
+    strong_symbols "$LIB" > build/terminal.syms
+    { strong_symbols "$WGPU"; strong_symbols "$ACCESSKIT"; } | LC_ALL=C sort -u > build/others.syms
     LC_ALL=C comm -12 build/terminal.syms build/others.syms > build/shared.syms
-    objcopy --weaken-symbols=build/shared.syms "$LIB" build/libmayfair_terminal.a
+    "$OBJCOPY" --weaken-symbols=build/shared.syms "$LIB" build/libmayfair_terminal.a
     echo "$STAMP" > build/stamp
 fi
