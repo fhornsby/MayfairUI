@@ -2,6 +2,8 @@ module mayfair.xml.view;
 
 import std.meta : AliasSeq;
 import std.traits;
+import mayfair.autowire : autowire;
+version (unittest) import mayfair.autowire : autowired;
 import mayfair.css.parser : CssException, parseDeclarations, Declaration;
 import mayfair.css.value : Value;
 import mayfair.images.image : Image;
@@ -69,6 +71,25 @@ import mayfair.xml.parser;
       `<Label Grid.column="1" Grid.row="2"/>` in a Grid is grid.add(label, column: 1, row: 2).
     - What to show of an item is the name of what to read from it, as PropertyValueFactory's is:
       `<TableColumn of="Person" title="Name" text="name"/>` shows each person's name.
+
+    A field marked @autowired is filled with what the app provided for its type, as Spring's
+    @Autowired is, so a view needs no constructor to be handed what it shares with others:
+
+        void main()
+        {
+            provide(new Library("books.db"));
+            ...
+        }
+
+        @View("main.xml")
+        class Main
+        {
+            @xml Label status;
+            @autowired Library library;     // there for initialise() and every handler
+        }
+
+    The controller's are filled before its view's built, and an app's own widget's as a view
+    makes it. See mayfair.autowire.
 
     A widget can have a view of its own, laying out what's in it, as FXML's fx:root does. The
     widget is its view's controller, and its root element is <root>, standing for the widget:
@@ -139,6 +160,8 @@ auto buildText(string text, string file, C)(C controller)
 
 private enum building = q{
     static assert(parsed.error is null, parsed.error);
+    static if (is(C == class))
+        .autowire(controller); // before the tree, so its fields are there for whatever the tree calls
     enum Document doc = parsed.doc;
     static if (!is(C == NoController))
         mixin("import " ~ moduleName!C ~ ";");
@@ -311,6 +334,7 @@ T create(T, Attribute[] attributes, string loc, C)(C controller)
         auto object = new T;
     }
 
+    .autowire(object); // an app's own widget can ask for services, as a controller can
     .configure!(attributes, loc, used)(object, controller);
     return object;
 }
@@ -879,6 +903,38 @@ version (unittest)
         void follow() { title.setText("Following " ~ title.text); }
     }
 
+    // @autowired: a service the app provides, asked for by a controller and by an app's own widget
+    class TestLibrary
+    {
+        string title = "Books";
+    }
+
+    @View("library.xml")
+    class TestLibraryView
+    {
+        @xml Label status;
+        @autowired TestLibrary library;
+        string seenInInitialise;
+
+        void initialise() { seenInInitialise = library.title; }
+        void rename() { status.setText(library.title); }
+    }
+
+    class TestShelf : Column
+    {
+        @autowired TestLibrary library;
+    }
+
+    @View("shelfcard.xml")
+    class TestShelfCard : Column
+    {
+        @xml Label title;
+        @autowired TestLibrary library;
+        string seenBuilding;
+        this() { buildText!(`<root><Label id="title"/></root>`, "shelfcard.xml", TestShelfCard)(this); }
+        void initialise() { seenBuilding = library.title; }
+    }
+
     // Grid's add() by its parameters' names, a property element, default properties, and text
     enum layoutView = `<?xml version="1.0"?>
 <Dock>
@@ -953,6 +1009,36 @@ unittest
     auto combo = View.parse!(`<ComboBox items="Leeds 'New York' &quot;St Ives&quot;"/>`)();
     assert(combo.items == ["Leeds", "New York", "St Ives"]);
     static assert(!__traits(compiles, View.parse!(`<ComboBox items="'Leeds"/>`)()));
+
+    // @autowired fields: the controller's before its tree is built, and an app's own widgets' as they're made
+    {
+        import mayfair.autowire : AutowireException, provide, unprovide;
+
+        auto shelves = new TestLibrary;
+        provide(shelves);
+        auto lv = new TestLibraryView;
+        auto lroot = buildText!(`<Column>
+            <Label id="status"/>
+            <TestShelf/>
+            <Button text="Rename" onAction="rename"/>
+        </Column>`, "library.xml", TestLibraryView)(lv);
+        assert(lv.library is shelves && lv.seenInInitialise == "Books");
+        assert((cast(TestShelf) lroot.children[1]).library is shelves);
+        (cast(Button) lroot.children[2]).fire();
+        assert(lv.status.text == "Books");
+        auto card2 = new TestShelfCard;   // a widget with a view of its own
+        assert(card2.library is shelves && card2.seenBuilding == "Books");
+
+        unprovide!TestLibrary();
+        try
+        {
+            buildText!(`<Column><Label id="status"/></Column>`, "library.xml", TestLibraryView)(new TestLibraryView);
+            assert(false);
+        }
+        catch (AutowireException e)
+            assert(e.msg == "TestLibraryView.library is @autowired, but nothing provides mayfair.xml.view.TestLibrary; "
+                            ~ "call provide() with one before it's loaded", e.msg);
+    }
 
     // Mistakes are compile errors
     static assert(!__traits(compiles, View.parse!(`<Column spcing="8"/>`)()));             // no such property

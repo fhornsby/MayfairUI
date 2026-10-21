@@ -1,0 +1,21 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A to-do list kept in Appwrite: Mayfair draws it, AppwriteD stores it, and @autowired joins the two.",
+	"license": "MIT",
+	"name": "appwrite_example",
+	"dependencies": {
+		"mayfair": {
+			"path": "../mayfair"
+		},
+		"appwrited": {
+			"repository": "git+https://github.com/fhornsby/AppWriteD.git",
+			"version": "25121ca7910bcddb9232aa893689ec7a5635ff0a"
+		}
+	},
+	"stringImportPaths": [
+		"views"
+	]
+}

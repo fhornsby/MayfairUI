@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A to-do list kept in Appwrite. Enter or Add adds one, a double click ticks it off (or back
+     on), and Delete removes the one selected. -->
+<Column spacing="8" padding="16">
+    <Label id="status"/>
+    <Row spacing="8">
+        <TextField id="newTodo" promptText="Something to do" grow="1" onAction="add"/>
+        <Button text="Add" onAction="add"/>
+    </Row>
+    <ListView id="todos" of="string" grow="1" placeholder="Nothing to do" onActivate="toggle"/>
+    <Button text="Delete" onAction="remove"/>
+</Column>
