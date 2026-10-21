@@ -10,6 +10,7 @@ import core.stdc.string : strcmp, strlen;
 import std.string;
 import core.time : Duration, MonoTime;
 import mayfair.animation;
+import mayfair.autowire : currentServices, newServices, Services;
 import mayfair.renderers;
 import mayfair.widgets;
 import mayfair.widgets.styling : applyCss;
@@ -72,6 +73,8 @@ float scale = 1.0f;        // device pixels per point, set by updateScale()
 bool scaleApplied;         // whether updateScale() has told the scene anything yet
 ulong framePeriod;         // nanoseconds between display refreshes, set by updateRefreshRate()
 ulong lastUpdate;          // when update() last ran, on traceNow()'s clock
+//What views' @autowired fields are filled with (see mayfair.autowire)
+Services services;
 //Input waiting for update() to hand to the scene
 struct QueuedInput {
     SDL_Event event;
@@ -722,6 +725,46 @@ public:
         this.title = title;
         this.width = 800;
         this.height = 500;
+        services = newServices();
+        // The App made last is the one views find their services in: one runs at a time
+        currentApp = this;
+        currentServices = services;
+    }
+
+    /*
+        Services: what the app's views share -- a database, a web API's client, the user's
+        settings -- by type, for their @autowired fields (see mayfair.autowire). Register them
+        before loading the views that ask for them:
+
+            app.registerService(new Library("books.db"))
+               .registerService!Storage(new DiskStorage);   // for fields that are a Storage
+
+        Each replaces anything registered as the same type before. Safe from any thread.
+    */
+    App registerService(T)(T service) if (is(T == class) || is(T == interface)) {
+        services.add!T(service);
+        return this;
+    }
+
+    /// The service registered as T. Throws an AutowireException if there isn't one.
+    T service(T)() if (is(T == class) || is(T == interface)) {
+        return services.get!T();
+    }
+
+    /// Whether a service is registered as T.
+    bool hasService(T)() if (is(T == class) || is(T == interface)) {
+        return services.has!T();
+    }
+
+    /// Takes away the service registered as T, if there is one.
+    void unregisterService(T)() if (is(T == class) || is(T == interface)) {
+        services.remove!T();
+    }
+
+    /// The App made last, the one running if one is: how code with no App to hand reaches its
+    /// services, App.current.service!Library(). The same on every thread; null before one's made.
+    static App current() nothrow @nogc {
+        return currentApp;
     }
 
     void setSize(int width, int height){
@@ -1052,6 +1095,9 @@ private SDL_SystemCursor systemCursor(Cursor c) nothrow @nogc
     }
 }
 
+/// The App made last, for App.current.
+private __gshared App currentApp;
+
 /// The SDL event type Platform.runLater() wakes the loop with. One App runs at a time, so one will do.
 private __gshared uint laterEventType;
 
@@ -1159,4 +1205,41 @@ private void quietStderr(bool quiet) nothrow @nogc
         close(saved);
         saved = -1;
     }
+}
+
+unittest
+{
+    import mayfair.autowire : AutowireException;
+
+    static class Library
+    {
+    }
+
+    static interface Storage
+    {
+    }
+
+    static class Disk : Storage
+    {
+    }
+
+    auto app = new App("Services");
+    assert(App.current is app);
+    auto library = new Library;
+    app.registerService(library).registerService!Storage(new Disk);
+    assert(app.service!Library() is library && app.hasService!Storage && !app.hasService!Disk);
+    app.unregisterService!Library();
+    assert(!app.hasService!Library);
+    try
+    {
+        app.service!Library();
+        assert(false);
+    }
+    catch (AutowireException e)
+    {
+    }
+
+    // A new App starts with no services, and is the current one
+    auto next = new App("Next");
+    assert(App.current is next && !next.hasService!Storage && app.hasService!Storage);
 }

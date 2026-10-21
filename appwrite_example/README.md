@@ -6,8 +6,8 @@ client SDK for D, stores the data. The two libraries don't depend on each other,
 lines in `source/app.d` join them:
 
 ```d
-setDefaultDispatcher(new RunLater);       // AppwriteD's callbacks run on Mayfair's UI thread
-provide(new Backend(endpoint, project));  // what views ask for with @autowired
+setDefaultDispatcher(new RunLater);                   // AppwriteD's callbacks run on Mayfair's UI thread
+app.registerService(new Backend(endpoint, project));  // what views ask for with @autowired
 ```
 
 and the view asks for the backend with Mayfair's `@autowired`, rather than a constructor:

@@ -72,14 +72,11 @@ import mayfair.xml.parser;
     - What to show of an item is the name of what to read from it, as PropertyValueFactory's is:
       `<TableColumn of="Person" title="Name" text="name"/>` shows each person's name.
 
-    A field marked @autowired is filled with what the app provided for its type, as Spring's
+    A field marked @autowired is filled with the service the App has for its type, as Spring's
     @Autowired is, so a view needs no constructor to be handed what it shares with others:
 
-        void main()
-        {
-            provide(new Library("books.db"));
-            ...
-        }
+        auto app = new App("Books");
+        app.registerService(new Library("books.db"));
 
         @View("main.xml")
         class Main
@@ -903,7 +900,7 @@ version (unittest)
         void follow() { title.setText("Following " ~ title.text); }
     }
 
-    // @autowired: a service the app provides, asked for by a controller and by an app's own widget
+    // @autowired: a service registered with the App, asked for by a controller and by an app's own widget
     class TestLibrary
     {
         string title = "Books";
@@ -1012,10 +1009,12 @@ unittest
 
     // @autowired fields: the controller's before its tree is built, and an app's own widgets' as they're made
     {
-        import mayfair.autowire : AutowireException, provide, unprovide;
+        import mayfair.autowire : AutowireException;
+        import mayfair.windowing.app : App;
 
+        auto app = new App("Library");
         auto shelves = new TestLibrary;
-        provide(shelves);
+        app.registerService(shelves);
         auto lv = new TestLibraryView;
         auto lroot = buildText!(`<Column>
             <Label id="status"/>
@@ -1029,15 +1028,16 @@ unittest
         auto card2 = new TestShelfCard;   // a widget with a view of its own
         assert(card2.library is shelves && card2.seenBuilding == "Books");
 
-        unprovide!TestLibrary();
+        app.unregisterService!TestLibrary();
         try
         {
             buildText!(`<Column><Label id="status"/></Column>`, "library.xml", TestLibraryView)(new TestLibraryView);
             assert(false);
         }
         catch (AutowireException e)
-            assert(e.msg == "TestLibraryView.library is @autowired, but nothing provides mayfair.xml.view.TestLibrary; "
-                            ~ "call provide() with one before it's loaded", e.msg);
+            assert(e.msg == "TestLibraryView.library is @autowired, but nothing is registered as "
+                            ~ "mayfair.xml.view.TestLibrary; give the App one with registerService() before loading the view",
+                   e.msg);
     }
 
     // Mistakes are compile errors

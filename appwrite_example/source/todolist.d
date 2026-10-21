@@ -12,8 +12,8 @@ import backend;
 
     Every call to the server goes through async(), so the window keeps drawing while it waits, and
     the then() and onError() callbacks run on the UI thread (main() set that up), where they can
-    change widgets directly. A realtime subscription keeps the list in step with the server, so
-    after adding, ticking or deleting a to-do it's the event that comes back that redraws it.
+    change widgets directly. The list's fetched again once each change is made, and a realtime
+    subscription keeps it in step with changes made anywhere else: another window, another device.
 */
 @View("todolist.xml")
 class TodoList
@@ -47,13 +47,14 @@ private:
         if (!title.length || !userId.length)
             return;
         newTodo.setText("");
-        async(() => backend.add(title, userId)).onError(&failed);
+        async(() => backend.add(title, userId)).then((models.Row row) { refresh(); }).onError(&failed);
     }
 
     void toggle(int index)
     {
         auto row = rows[index];
-        async(() => backend.setDone(row.id, !row["done"].boolean)).onError(&failed);
+        async(() => backend.setDone(row.id, !row["done"].boolean)).then((models.Row updated) { refresh(); })
+            .onError(&failed);
     }
 
     void remove()
@@ -61,7 +62,7 @@ private:
         if (todos.selectedIndex < 0)
             return;
         auto id = rows[todos.selectedIndex].id;
-        async(() => backend.remove(id)).onError(&failed);
+        async(() => backend.remove(id)).then({ refresh(); }).onError(&failed);
     }
 
     void refresh()
