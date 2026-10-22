@@ -11,7 +11,7 @@
 			"path": "../mayfair"
 		},
 		"appwrited": {
-			"repository": "git+https://github.com/fhornsby/AppWriteD.git",
+			"repository": "git+ssh://git@github.com/fhornsby/AppWriteD.git",
 			"version": "0127bc6a9664fc885184fd4fced7be894c6c0e4b"
 		}
 	},
