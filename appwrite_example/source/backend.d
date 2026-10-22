@@ -1,7 +1,20 @@
 module backend;
 
 import appwrite;
+import mayfair.windowing.app : App;
 import mayfair.windowing.platform : Platform;
+
+/*
+    Sets an App up to use Appwrite: AppwriteD's callbacks run on its UI thread, and its views can
+    ask for the Backend with @autowired. A free function, called as if it were one of App's,
+    app.useAppwrite(...), as D lets any function whose first parameter is an App be: neither
+    library knows about the other, so what joins them lives here, in the app.
+*/
+App useAppwrite(App app, string endpoint, string project)
+{
+    setDefaultDispatcher(new RunLater);
+    return app.registerService(new Backend(endpoint, project));
+}
 
 /*
     The app's connection to Appwrite: one client, shared by every view that asks for it with

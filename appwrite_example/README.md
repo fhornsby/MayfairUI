@@ -2,12 +2,23 @@
 
 A to-do list kept in [Appwrite](https://appwrite.io), as a Flutter app keeps one in Firebase.
 Mayfair draws the window; [AppwriteD](https://github.com/fhornsby/AppWriteD), the Appwrite
-client SDK for D, stores the data. The two libraries don't depend on each other, and only two
-lines in `source/app.d` join them:
+client SDK for D, stores the data. The two libraries don't depend on each other; one call in
+`source/app.d` joins them:
 
 ```d
-setDefaultDispatcher(new RunLater);                   // AppwriteD's callbacks run on Mayfair's UI thread
-app.registerService(new Backend(endpoint, project));  // what views ask for with @autowired
+auto app = new App("To do");
+app.useAppwrite(endpoint, project);
+```
+
+`useAppwrite` isn't one of `App`'s methods but the app's own function, in `source/backend.d`,
+which D lets you call as if it were (any function whose first parameter is an `App` can be):
+
+```d
+App useAppwrite(App app, string endpoint, string project)
+{
+    setDefaultDispatcher(new RunLater);                         // AppwriteD's callbacks run on Mayfair's UI thread
+    return app.registerService(new Backend(endpoint, project)); // what views ask for with @autowired
+}
 ```
 
 and the view asks for the backend with Mayfair's `@autowired`, rather than a constructor:
