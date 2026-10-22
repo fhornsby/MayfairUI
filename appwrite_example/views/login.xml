@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The first page: sign in, or make an account. <root> is the page itself, a Column. Enter in
+     either field signs in. -->
+<root spacing="12" padding="24" alignment="centre">
+    <Label text="To do" style="font-size: 20"/>
+    <Column id="form" spacing="8" alignment="centre" fillWidth="false">
+        <TextField id="email" promptText="Email address"/>
+        <PasswordField id="password" promptText="Password, 8 characters or more"/>
+        <Row spacing="8">
+            <Button text="Sign in" defaultButton="true" onAction="signIn"/>
+            <Button text="Create account" onAction="signUp"/>
+        </Row>
+    </Column>
+    <Label id="status"/>
+</root>

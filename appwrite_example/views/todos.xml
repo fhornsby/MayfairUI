@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import backend?>
+<!-- The list, once signed in. <root> is the page itself, a Column. Enter or Add adds a to-do, the
+     box beside one ticks it off (or back on), and Delete removes the one selected. -->
+<root spacing="8" padding="16">
+    <Row spacing="8" alignment="centreLeft">
+        <Column grow="1" alignment="centreLeft">
+            <Label id="status"/>
+        </Column>
+        <Button text="Sign out" onAction="signOut"/>
+    </Row>
+    <Row spacing="8">
+        <TextField id="newTodo" promptText="Something to do" grow="1" onAction="addTodo"/>
+        <Button text="Add" onAction="addTodo"/>
+    </Row>
+    <ListView id="todos" of="Todo" grow="1" placeholder="Nothing to do"/>
+    <Button text="Delete" onAction="remove"/>
+</root>
