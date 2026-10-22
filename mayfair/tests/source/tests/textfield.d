@@ -146,3 +146,33 @@ void rightToLeft()
         d.key(SDL_Keycode.SDLK_RIGHT);          expect("abc שלום|12 12 []", "and back to the end");
     });
 }
+
+/// A password field: typed into as any field is, but showing dots, and keeping its text off the clipboard.
+void password()
+{
+    PasswordField field;
+    run("text field: password", {
+        auto root = new Column().fillWidth(false);
+        field = new PasswordField();
+        root.add(field);
+        return cast(Widget) root;
+    }, (Driver d) {
+        void expect(string wanted, string step, string file = __FILE__, size_t line = __LINE__)
+        {
+            d.ui({ d.expect(state(field), wanted, step, file, line); });
+        }
+        d.preserveClipboard();
+        d.ui({ Clipboard.text = "on the clipboard"; });
+
+        d.key(SDL_Keycode.SDLK_TAB);
+        d.type("hunter 2é");                    expect("hunter 2é|10 10 []", "typed as into any field");
+        d.key(SDL_Keycode.SDLK_LEFT, ctrl);     expect("hunter 2é|0 0 []", "no words in dots: Ctrl+Left goes to the start");
+        d.key(SDL_Keycode.SDLK_RIGHT, ctrl);    expect("hunter 2é|10 10 []", "and Ctrl+Right to the end");
+        d.key(SDL_Keycode.SDLK_LEFT, shift);    expect("hunter 2é|8 10 [é]", "é is still one character");
+        d.key(SDL_Keycode.SDLK_A, ctrl);
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.key(SDL_Keycode.SDLK_X, ctrl);        expect("hunter 2é|10 0 [hunter 2é]", "cut does nothing");
+        d.ui({ d.expect(Clipboard.text, "on the clipboard", "nor does copy"); });
+        d.key(SDL_Keycode.SDLK_V, ctrl);        expect("on the clipboard|16 16 []", "but pasting works");
+    });
+}

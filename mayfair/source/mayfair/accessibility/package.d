@@ -32,6 +32,7 @@ enum AccessibleRole
     radioButton,
     label,             /// Text that doesn't change by itself: its text goes in AccessibleNode.value
     textField,
+    passwordField,     /// A text field whose text is a secret: its value is the dots it shows
     textArea,
     image,
     list,
@@ -323,6 +324,7 @@ package(mayfair) accesskit_role toAccessKit(AccessibleRole role) nothrow @nogc
         case AccessibleRole.radioButton:       return ACCESSKIT_ROLE_RADIO_BUTTON;
         case AccessibleRole.label:             return ACCESSKIT_ROLE_LABEL;
         case AccessibleRole.textField:         return ACCESSKIT_ROLE_TEXT_INPUT;
+        case AccessibleRole.passwordField:     return ACCESSKIT_ROLE_PASSWORD_INPUT;
         case AccessibleRole.textArea:          return ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT;
         case AccessibleRole.image:             return ACCESSKIT_ROLE_IMAGE;
         case AccessibleRole.list:              return ACCESSKIT_ROLE_LIST;

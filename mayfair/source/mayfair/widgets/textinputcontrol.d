@@ -140,15 +140,16 @@ public:
         change(selectionStart, selectionEnd, text, EditKind.other);
     }
 
+    /// Copies the selection to the clipboard: not from a field that conceals its text.
     void copy()
     {
-        if (_anchor != _caretPosition)
+        if (_anchor != _caretPosition && !concealsText)
             Clipboard.text = selectedText;
     }
 
     void cut()
     {
-        if (!canEdit() || _anchor == _caretPosition)
+        if (!canEdit() || _anchor == _caretPosition || concealsText)
             return;
         copy();
         replaceSelection("");
@@ -217,6 +218,13 @@ protected:
 
     /// The font changed, before the text's laid out again in it.
     void fontChanged() {}
+
+    /*
+        Whether the text is a secret, shown as dots: a PasswordField's. Then it can't be copied or
+        cut, isn't made the primary selection, and a screen reader is given the dots, not the text.
+        The subclass lays out the dots itself.
+    */
+    bool concealsText() const nothrow @nogc { return false; }
 
     /// The caret moved, or the text changed: a subclass that scrolls might bring it into view.
     void caretMoved() {}
@@ -383,7 +391,7 @@ protected:
                     dragTo(hitTest(x, y));
                 break;
             case MouseEventType.released:
-                if (_selecting && _anchor != _caretPosition)
+                if (_selecting && _anchor != _caretPosition && !concealsText)
                     Clipboard.primary = selectedText;
                 _selecting = false;
                 break;
@@ -518,7 +526,6 @@ protected:
 
     override void describeAccessible(ref AccessibleNode node)
     {
-        node.value(_text);
         if (_promptText.length)
             node.placeholder(_promptText);
         if (canEdit())
@@ -532,6 +539,15 @@ protected:
 
         // The text as it stands, without anything an input method hasn't committed yet
         auto model = _composed.length ? layoutLines(_text) : _lines;
+        if (concealsText)
+        {
+            size_t characters;
+            foreach (ref l; model)
+                characters += l.line.length;
+            node.value(concealed(characters));
+        }
+        else
+            node.value(_text);
         float ox, oy;
         textOriginInScene(ox, oy);
         _runs = null;
@@ -577,14 +593,14 @@ protected:
                 float[] positions, widths;
                 foreach (i; first .. last)
                 {
-                    const bytes = line.stops[i + 1] - line.stops[i];
+                    const bytes = concealsText ? concealer.length : line.stops[i + 1] - line.stops[i];
                     lengths ~= cast(ubyte)(bytes < 255 ? bytes : 255);
                     positions ~= rtl ? x1 - line.right[i] : line.left[i] - x0;
                     widths ~= line.right[i] - line.left[i];
                     if (line.wordStart[i])
                         wordStarts ~= cast(ubyte)(i - first);
                 }
-                string value = line.text[line.stops[first] .. line.stops[last]];
+                string value = concealsText ? concealed(last - first) : line.text[line.stops[first] .. line.stops[last]];
                 if (withBreak)
                 {
                     value ~= "\n";
@@ -804,7 +820,7 @@ private:
         place(anchor, caret);
         _lastEdit = EditKind.none; // moving the caret ends a run of typing, for undo
         // Selected text is the primary selection on Linux; a drag's waits for the button to come up
-        if (!_selecting && anchor != caret)
+        if (!_selecting && anchor != caret && !concealsText)
             Clipboard.primary = selectedText;
         restartBlink();
         invalidateText();
@@ -1056,6 +1072,17 @@ private:
         }
         return _caretPosition; // not one of ours: leave the caret where it is
     }
+}
+
+/// What a field that conceals its text shows for each character.
+package enum concealer = "•";
+
+/// `characters` of them.
+package string concealed(size_t characters)
+{
+    import std.array : replicate;
+
+    return concealer.replicate(characters);
 }
 
 /// How many bytes the UTF-8 sequence at `at` takes.

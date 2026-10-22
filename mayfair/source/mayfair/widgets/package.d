@@ -11,6 +11,7 @@ public import mayfair.widgets.toggle;
 public import mayfair.widgets.checkbox;
 public import mayfair.widgets.textinputcontrol;
 public import mayfair.widgets.textfield;
+public import mayfair.widgets.passwordfield;
 public import mayfair.widgets.textarea;
 public import mayfair.widgets.slider;
 public import mayfair.widgets.progressbar;

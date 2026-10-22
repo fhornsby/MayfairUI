@@ -21,6 +21,7 @@ void main(string[] args)
     tests.textfield.undoRedo();
     tests.textfield.mouse();
     tests.textfield.rightToLeft();
+    tests.textfield.password();
     tests.properties.bindings();
     tests.properties.textFieldText();
     tests.properties.layout();
