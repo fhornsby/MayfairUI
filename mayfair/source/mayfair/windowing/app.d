@@ -830,7 +830,7 @@ public:
         // it will -- and where it won't, as on GNOME, a plain one of Mayfair's. Decided before SDL
         // starts, as SDL would otherwise have libdecor draw it, with GTK.
         const appBar = _scene && _scene.titleBarChosen;
-        const wayland = onWayland();
+        auto wayland = onWayland();
         drawsDecorations = appBar || (wayland && !compositorDecorates());
         if (drawsDecorations && wayland)
         {
@@ -846,6 +846,9 @@ public:
         scope(exit) SDL_Quit();
         traceOpen();
         scope(exit) traceClose();
+        // Which SDL chose, now it has: the window's blur and moving go by that, not the guess
+        const driver = SDL_GetCurrentVideoDriver();
+        wayland = driver && strcmp(driver, "wayland") == 0;
 
         // Without HIGH_PIXEL_DENSITY the drawable stays at 1x and the compositor upscales it
         auto flags = SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY;

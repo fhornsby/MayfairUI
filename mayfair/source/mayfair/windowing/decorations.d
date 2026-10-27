@@ -15,12 +15,26 @@ import core.stdc.string : strcmp;
     do; then Mayfair draws the bar whatever the desktop would have done.
 */
 
-/// Whether SDL is going to use Wayland: it's there, and nothing's asked for another driver.
+/*
+    Whether SDL is going to use Wayland: it's there, and nothing's asked for another driver first.
+    SDL_VIDEO_DRIVER (or SDL2's SDL_VIDEODRIVER) is a list SDL tries in order, "wayland,x11" say,
+    as Oriel's session sets it, so the first in it is the one to go by. A guess, for what has to be
+    decided before SDL starts: once it has, SDL_GetCurrentVideoDriver says.
+*/
 bool onWayland() nothrow @nogc
 {
-    const driver = getenv("SDL_VIDEODRIVER");
-    if (driver && *driver && strcmp(driver, "wayland") != 0)
-        return false;
+    import core.sys.posix.strings : strncasecmp;
+    auto driver = getenv("SDL_VIDEO_DRIVER");
+    if (!driver || !*driver)
+        driver = getenv("SDL_VIDEODRIVER");
+    if (driver && *driver)
+    {
+        size_t first;
+        while (driver[first] && driver[first] != ',')
+            first++;
+        if (first != "wayland".length || strncasecmp(driver, "wayland", first) != 0)
+            return false;
+    }
     const display = getenv("WAYLAND_DISPLAY");
     return display && *display;
 }
