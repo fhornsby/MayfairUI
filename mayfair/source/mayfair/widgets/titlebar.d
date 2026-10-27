@@ -38,7 +38,7 @@ import mayfair.widgets.widget;
 
     Its style class is "title-bar", with :backdrop while the window doesn't have focus, as GNOME
     fades its title bars. Its parts are `.start`, `.end` and `.title`, and the window buttons are
-    `.window-button`s.
+    `.window-button`s, each `.minimise`, `.maximise` or `.close` too.
 */
 class TitleBar : CustomLayout
 {
@@ -289,6 +289,8 @@ public:
         _kind = kind;
         styleClass.remove("button");
         styleClass.add("window-button");
+        static immutable kinds = ["minimise", "maximise", "close"];
+        styleClass.add(kinds[kind]); // for a theme to tell them apart: macOS's traffic lights, say
         setFocusTraversable(false);
         static immutable icons = ["window-minimize-symbolic", "window-maximize-symbolic", "window-close-symbolic"];
         static immutable names = ["Minimise", "Maximise", "Close"];

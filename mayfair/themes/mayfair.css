@@ -96,6 +96,18 @@
     }
 }
 
+/* A translucent window, with what's behind it showing through blurred: see App.setTranslucent. */
+.root:translucent {
+    --background: #f8fafcbf;
+    backdrop-blur: true;
+}
+
+@media (prefers-colour-scheme: dark) {
+    .root:translucent {
+        --background: #0f172abf;
+    }
+}
+
 .label {
     colour: var(--text);
 }

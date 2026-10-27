@@ -123,7 +123,7 @@ public:
     mixin(declareProperty!(Colour, "fill", "Theme.background_colour", q{
         if (background)
         {
-            tvg_shape_set_fill_color(background, _fill.tupleof);
+            tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, _translucent ? 0 : _fill.a);
             paintRequested = true;
         }
     }));
@@ -157,6 +157,11 @@ public:
             YGNodeStyleSetHeightAuto(_root.node);
             _root.styleClass.remove("root");
         }
+        if (_translucent)
+        {
+            pseudoClassChanged(_root, pseudo!"translucent", false);
+            pseudoClassChanged(root, pseudo!"translucent", true);
+        }
         _root = root;
         if (_titleBar)
             _titleBar.styleOwner = _root;
@@ -187,6 +192,24 @@ public:
     /// Whether stylesheets' @media (prefers-colour-scheme) rules see it as light or dark: the
     /// desktop's choice, unless it's given one of its own.
     mixin(declareProperty!(ColourScheme, "colourScheme", "ColourScheme.system", q{ restyleAll(); }));
+
+    /*
+        Whether the window's translucent now, with what's behind it showing through blurred: as the
+        App asked (see App.setTranslucent), while the compositor blurs, which can start or stop as
+        it runs. The fill's left out, and the root's in :translucent for the theme to make its
+        background translucent and blurred behind. Watch it for what CSS can't follow:
+
+            scene.translucentProperty.addListener((bool was, bool now) { ... });
+    */
+    mixin(declareReadOnlyProperty!(bool, "translucent", "false", q{
+        if (background)
+        {
+            tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, _translucent ? 0 : _fill.a);
+            paintRequested = true;
+        }
+        if (_root)
+            pseudoClassChanged(_root, pseudo!"translucent", _translucent);
+    }, "package(mayfair)"));
 
     /// Light or dark, as the scene is styled now.
     ColourScheme effectiveColourScheme() const nothrow @nogc
@@ -225,7 +248,7 @@ public:
         config = YGConfigNew();
 
         background = tvg_shape_new();
-        tvg_shape_set_fill_color(background, _fill.tupleof);
+        tvg_shape_set_fill_color(background, _fill.r, _fill.g, _fill.b, _translucent ? 0 : _fill.a);
         tvg_scene_add(paints, background); // added first, so it's drawn behind the tree
 
         _root.styleClass.add("root"); // what a theme's .root rule, and its variables, are for
