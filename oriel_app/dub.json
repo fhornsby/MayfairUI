@@ -1,0 +1,17 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A hello world for the Oriel desktop in Mayfair: the look of the Oriel apps, frosted glass where Oriel blurs behind the window.",
+	"license": "MIT",
+	"name": "oriel_app",
+	"dependencies": {
+		"mayfair": {
+			"path": "../mayfair"
+		}
+	},
+	"stringImportPaths": [
+		"views"
+	]
+}

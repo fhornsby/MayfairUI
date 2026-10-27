@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The sidebar's second page. <root> is the page itself, a Column. -->
+<root styleClass="page" spacing="8" padding="24">
+    <Label text="Appearance" styleClass="heading"/>
+    <Label id="status" wrapText="true"/>
+    <Label styleClass="secondary" wrapText="true"
+           text="Turn Translucency off in Oriel Settings and the window turns opaque straight away, and frosted again when it's back on. On other desktops it's frosted where the compositor blurs behind windows over ext-background-effect-v1, and opaque elsewhere."/>
+</root>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The window, below its title bar (app.d gives it one): a sidebar down the left, frosted where
+     Oriel blurs behind the window, and beside it the page it's on. The first page is a button
+     that says hello; the second, an AppearancePage, is put there by app.d. -->
+<Dock id="dock">
+    <left>
+        <NavigationList id="nav" styleClass="sidebar">
+            <NavigationItem text="Welcome" iconName="go-home-symbolic"/>
+            <NavigationItem text="Appearance" iconName="preferences-desktop-appearance-symbolic"/>
+        </NavigationList>
+    </left>
+    <centre>
+        <Column id="welcome" styleClass="page" spacing="16" alignment="centre">
+            <Button text="Say Hello" defaultButton="true" onAction="sayHello"/>
+            <Label id="greeting" text="Hello, World!" styleClass="greeting" visible="false"/>
+        </Column>
+    </centre>
+</Dock>

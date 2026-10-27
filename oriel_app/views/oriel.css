@@ -1,0 +1,186 @@
+/*
+    The Oriel look, as Oriel Files, Oriel Settings and the Oriel app template have it: Apple's
+    greys and blue, light and dark following the desktop, the traffic lights in the title bar --
+    and frosted glass where Oriel blurs what's behind the window, which the App puts the root in
+    :translucent for (see App.setTranslucent).
+
+    The palette's the template's (OrielApp/Theme/Colors.axaml), so the apps sit together.
+*/
+.root {
+    --background: #f5f5f7;
+    --text: #1d1d1f;
+    --secondary-text: #86868b;
+    --accent: #007aff;
+
+    --base: #ffffff;
+    --hover-base: #fafafc;
+    --pressed-base: #f0f0f2;
+    --default-base: #007aff;
+    --default-hover-base: #1a88ff;
+    --default-pressed-base: #0062cc;
+    --default-text: #ffffff;
+
+    --field: #ffffff;
+    --field-border: #00000033;
+    --selection: #007aff4d;
+
+    --row-hover: #0000000f;
+    --row-selected: #0000001a;
+    --divider: #dcdcdf;
+    --popup: #f5f5f7;
+
+    /* Oriel's own: the sidebar, the page beside it, and the title bar over both */
+    --sidebar: #ededf0;
+    --page: #f5f5f7;
+    --title-bar: #f5f5f7;
+    --traffic-idle: #d4d4d6;
+}
+
+@media (prefers-colour-scheme: dark) {
+    .root {
+        --background: #1e1e20;
+        --text: #f5f5f7;
+        --secondary-text: #98989d;
+        --accent: #0a84ff;
+
+        --base: #5c5c5f;
+        --hover-base: #69696c;
+        --pressed-base: #78787b;
+        --default-base: #0a84ff;
+        --default-hover-base: #2b95ff;
+        --default-pressed-base: #3d9bff;
+        --default-text: #ffffff;
+
+        --field: #ffffff0d;
+        --field-border: #ffffff26;
+        --selection: #0a84ff5a;
+
+        --row-hover: #ffffff14;
+        --row-selected: #ffffff24;
+        --divider: #3a3a3d;
+        --popup: #2c2c2f;
+
+        --sidebar: #2a2a2d;
+        --page: #1e1e20;
+        --title-bar: #1e1e20;
+        --traffic-idle: #4a4a4d;
+    }
+}
+
+/*
+    Frosted glass. The root's left clear, rather than translucent as the built-in theme has it, so
+    the sidebar and the page can each be their own shade of glass without one showing through the
+    other; the title bar takes its colour from the root's variables, so it goes see-through too.
+*/
+.root:translucent {
+    background-colour: transparent;
+    backdrop-blur: false;
+    --sidebar: #ececefb8;
+    --page: #f5f5f7c8;
+    --title-bar: #f5f5f7c8;
+}
+
+@media (prefers-colour-scheme: dark) {
+    .root:translucent {
+        --sidebar: #28282cb8;
+        --page: #1e1e20c8;
+        --title-bar: #1e1e20c8;
+    }
+}
+
+.sidebar {
+    min-width: 200;
+    padding: 0 10 10 10;
+    background-colour: var(--sidebar);
+    backdrop-blur: true;
+}
+
+.sidebar .navigation-item {
+    padding: 6 8;
+}
+
+.page {
+    background-colour: var(--page);
+    backdrop-blur: true;
+}
+
+.greeting {
+    font-size: 20;
+    font-weight: 600;
+}
+
+.heading {
+    font-size: 20;
+    font-weight: bold;
+}
+
+.secondary {
+    colour: var(--secondary-text);
+}
+
+.button {
+    background-radius: 8, 6;
+    padding: 5 14;
+}
+
+/*
+    The title bar: in the page's colour with no line under it, as the Oriel apps' toolbars are.
+    Blurred behind wherever it is, as only a translucent window's is see-through.
+*/
+.title-bar {
+    min-height: 52;
+    padding: 0 18 0 10;
+    background-colour: var(--title-bar);
+    background-insets: 0;
+    backdrop-blur: true;
+}
+
+.title-bar:backdrop .end {
+    opacity: 1;
+}
+
+/*
+    The traffic lights: minimise, maximise and close, at the right in the Linux order. Grey while
+    the window's in the background, coloured again under the pointer, which shows their glyphs.
+*/
+.title-bar .end {
+    gap: 8;
+}
+
+.window-button {
+    width: 12;
+    height: 12;
+    padding: 2;
+    background-radius: 6;
+    --face: var(--traffic-idle);
+}
+
+.window-button.minimise, .title-bar .end:hover .window-button.minimise {
+    --face: #febc2e;
+}
+
+.window-button.maximise, .title-bar .end:hover .window-button.maximise {
+    --face: #28c840;
+}
+
+.window-button.close, .title-bar .end:hover .window-button.close {
+    --face: #ff5f57;
+}
+
+.title-bar:backdrop .window-button {
+    --face: var(--traffic-idle);
+}
+
+.window-button:armed {
+    opacity: 0.75;
+}
+
+.window-button .icon {
+    icon-size: 8;
+    icon-colour: #0000008c;
+    opacity: 0;
+}
+
+.title-bar .end:hover .window-button .icon {
+    opacity: 1;
+}
