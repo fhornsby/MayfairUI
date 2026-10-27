@@ -1,8 +1,8 @@
 /*
     A hello world for the Oriel desktop, the Mayfair twin of the Oriel app template
     (OrielAvaloniaTemplate): the look of Oriel Files and Oriel Settings, with the traffic lights at
-    the top right and light and dark following the desktop, and frosted glass where Oriel blurs
-    what's behind the window. Where nothing blurs -- Translucency off in Oriel Settings, or a
+    the top right and light and dark following the desktop, and a sidebar of frosted glass where
+    Oriel blurs what's behind the window, running up behind the title bar as macOS's do. Where nothing blurs -- Translucency off in Oriel Settings, or a
     desktop that doesn't offer blur over ext-background-effect-v1 -- it's an ordinary opaque
     window, and it goes from one to the other as it runs.
 
@@ -46,7 +46,7 @@ void main()
     app.setSize(640, 400);
     auto window = new MainWindow;
     auto scene = new Scene(View.load(window));
-    // A title bar of its own, as the Oriel apps have: the traffic lights, and frosted with the rest
+    // A title bar of its own, as the Oriel apps have: the traffic lights, and the sidebar's glass at its start
     scene.titleBar(new TitleBar);
     // On the scene rather than the root, so the title bar's styled by it too
     scene.stylesheets.add(stylesheet!(import("oriel.css")));

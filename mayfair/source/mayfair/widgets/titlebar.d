@@ -327,7 +327,8 @@ package:
 /*
     Which window buttons the desktop puts where: GNOME's org.gnome.desktop.wm.preferences
     button-layout, read once, as the icon theme is. Minimise, maximise and close at the end,
-    elsewhere or if it can't be read.
+    elsewhere or if it can't be read -- and on Oriel, whose own title bars and apps always have
+    them there, and which has no setting for it: GNOME's key there is just GNOME's default.
 */
 private string buttonLayout()
 {
@@ -335,6 +336,8 @@ private string buttonLayout()
     if (layout.length)
         return layout;
     layout = ":minimize,maximize,close";
+    if (onOriel())
+        return layout;
     version (Emscripten) {} else // a browser has no programs to run, and no desktop to ask
     try
     {
@@ -349,4 +352,14 @@ private string buttonLayout()
     }
     catch (Exception) {}
     return layout;
+}
+
+/// Whether this is the Oriel desktop: XDG_CURRENT_DESKTOP, a list separated by colons, names it.
+private bool onOriel()
+{
+    import std.process : environment;
+    foreach (name; environment.get("XDG_CURRENT_DESKTOP", "").splitter(':'))
+        if (name == "Oriel")
+            return true;
+    return false;
 }

@@ -29,10 +29,9 @@
     --divider: #dcdcdf;
     --popup: #f5f5f7;
 
-    /* Oriel's own: the sidebar, the page beside it, and the title bar over both */
+    /* Oriel's own: the sidebar, and the page beside it */
     --sidebar: #ededf0;
     --page: #f5f5f7;
-    --title-bar: #f5f5f7;
     --traffic-idle: #d4d4d6;
 }
 
@@ -62,34 +61,34 @@
 
         --sidebar: #2a2a2d;
         --page: #1e1e20;
-        --title-bar: #1e1e20;
         --traffic-idle: #4a4a4d;
     }
 }
 
 /*
-    Frosted glass. The root's left clear, rather than translucent as the built-in theme has it, so
-    the sidebar and the page can each be their own shade of glass without one showing through the
-    other; the title bar takes its colour from the root's variables, so it goes see-through too.
+    Frosted glass, as macOS has it: the sidebar is glass, all the way up behind the title bar, and
+    the page beside it stays opaque, as do the controls on it. The root's left clear, rather than
+    translucent as the built-in theme has it, so only the sidebar lets what's behind through. The
+    title bar takes its colours from the root's variables, so its part over the sidebar goes see-
+    through with it.
 */
 .root:translucent {
     background-colour: transparent;
     backdrop-blur: false;
-    --sidebar: #ececefb8;
-    --page: #f5f5f7c8;
-    --title-bar: #f5f5f7c8;
+    --sidebar: #f0f0f38c;
 }
 
 @media (prefers-colour-scheme: dark) {
     .root:translucent {
-        --sidebar: #28282cb8;
-        --page: #1e1e20c8;
-        --title-bar: #1e1e20c8;
+        --sidebar: #28282c99;
     }
 }
 
+/* Its width fixed, for the title bar's sidebar-coloured start to line up with it */
 .sidebar {
+    width: 200;
     min-width: 200;
+    max-width: 200;
     padding: 0 10 10 10;
     background-colour: var(--sidebar);
     backdrop-blur: true;
@@ -101,7 +100,6 @@
 
 .page {
     background-colour: var(--page);
-    backdrop-blur: true;
 }
 
 .greeting {
@@ -124,14 +122,15 @@
 }
 
 /*
-    The title bar: in the page's colour with no line under it, as the Oriel apps' toolbars are.
-    Blurred behind wherever it is, as only a translucent window's is see-through.
+    The title bar: the sidebar's colour, and its glass, over the sidebar, and the page's over the
+    page, so the sidebar runs up to the top of the window as a macOS one does. No line under it.
+    The first layer is the whole bar, blurred behind; the page's covers all but the sidebar's width.
 */
 .title-bar {
     min-height: 52;
     padding: 0 18 0 10;
-    background-colour: var(--title-bar);
-    background-insets: 0;
+    background-colour: var(--sidebar), var(--page);
+    background-insets: 0, 0 0 0 200;
     backdrop-blur: true;
 }
 
