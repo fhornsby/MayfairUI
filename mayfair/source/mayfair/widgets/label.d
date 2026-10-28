@@ -7,6 +7,7 @@ import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.theme;
 import mayfair.text;
+import mayfair.widgets.accessibletext;
 import mayfair.widgets.input;
 import mayfair.widgets.menu;
 import mayfair.widgets.popup : Popup;
@@ -225,9 +226,37 @@ protected:
         invalidate();
     }
 
+    /*
+        Its text, as its value. A selectable label's is laid out in text runs too, as a text field's
+        is, so a screen reader can read it by character, word or line, follow what's selected and
+        select in it itself.
+    */
     override void describeAccessible(ref AccessibleNode node)
     {
         node.value(_text);
+        if (!_selectable)
+            return;
+        layOutLines();
+        node.addAction(AccessibleAction.setTextSelection);
+        const b = boundsInScene;
+        _accessibleText.describe(node, _lines, b.minX + YGNodeLayoutGetPadding(this.node, YGEdgeLeft),
+                                 b.minY + YGNodeLayoutGetPadding(this.node, YGEdgeTop), _paragraph.lineHeight,
+                                 false, _anchor, _caret);
+    }
+
+    override bool ownsAccessibleNode(ulong id)
+    {
+        return _accessibleText.owns(id);
+    }
+
+    override bool executeAccessibleAction(AccessibleAction action, ref const AccessibleActionData data)
+    {
+        if (action != AccessibleAction.setTextSelection || !_selectable)
+            return super.executeAccessibleAction(action, data);
+        layOutLines();
+        select(_accessibleText.offsetOf(_lines, data.anchor, _text.length, _anchor),
+               _accessibleText.offsetOf(_lines, data.focus, _text.length, _caret));
+        return true;
     }
 
     override void paint(float x, float y, float w, float h) nothrow @nogc
@@ -307,8 +336,9 @@ private:
     static struct SelectLine
     {
         size_t start;      // where in the text it starts
-        float left = 0;    // where it starts across, after alignment, from the text's left
-        EditableLine line;
+        EditableLine line; // to the next line's start, spaces it wrapped at and all, but no line break
+        float x = 0, top = 0; // where it is from the text's top left, after alignment
+        bool breaks;       // whether a line break ends it, rather than wrapping
     }
 
     void layOutLines()
@@ -318,15 +348,29 @@ private:
         if (_lines && _linesWidth == w && _linesAlignment == _textAlignment)
             return;
         _lines = null;
-        foreach (ref l; _paragraph.lines(_wrapText ? w + 1 : float.infinity))
+        const laid = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
+        const pitch = _paragraph.lineHeight + _lineSpacing;
+        foreach (i, ref l; laid)
         {
             float left = 0;
             if (_textAlignment == TextAlignment.centre)
                 left = (w - l.width) / 2;
             else if (_textAlignment == TextAlignment.right)
                 left = w - l.width;
-            _lines ~= SelectLine(l.start, left, editableLine(_font, _text[l.start .. l.end]));
+            // The line takes in what's between it and the next -- the spaces it wrapped at -- so
+            // every character is in one, as a screen reader needs; all but a line break
+            auto end = i + 1 < laid.length ? laid[i + 1].start : _text.length;
+            bool breaks;
+            while (end > l.start && (_text[end - 1] == '\n' || _text[end - 1] == '\r'))
+            {
+                end--;
+                breaks = true;
+            }
+            if (end < l.end)
+                end = l.end;
+            _lines ~= SelectLine(l.start, editableLine(_font, _text[l.start .. end]), left, i * pitch, breaks);
         }
+        invalidateAccessible();
         _linesWidth = w;
         _linesAlignment = _textAlignment;
     }
@@ -339,7 +383,7 @@ private:
         const pitch = _paragraph.lineHeight + _lineSpacing;
         const row = y < 0 ? 0 : cast(size_t)(y / pitch);
         const l = &_lines[row < _lines.length ? row : $ - 1];
-        return l.start + l.line.nearest(x - l.left);
+        return l.start + l.line.nearest(x - l.x);
     }
 
     void select(size_t anchor, size_t caret)
@@ -350,6 +394,7 @@ private:
         if (!_selecting && anchor != caret)
             Clipboard.primary = _selectedText;
         invalidate();
+        invalidateAccessible(); // a screen reader follows the selection
     }
 
     void place(size_t anchor, size_t caret)
@@ -427,15 +472,14 @@ private:
         }
         tvg_shape_set_fill_color(_selectionPaint, _highlightFill.tupleof);
         const from = selectionStart, to = selectionEnd;
-        const pitch = _paragraph.lineHeight + _lineSpacing;
-        foreach (row, ref l; _lines)
+        foreach (ref l; _lines)
         {
             const end = l.start + l.line.text.length;
             if (end < from || l.start > to)
                 continue;
             const first = l.line.indexOf(from > l.start ? from - l.start : 0);
             const last = l.line.indexOf(to < end ? to - l.start : l.line.text.length);
-            const top = oy + row * pitch;
+            const top = oy + l.top;
             // One box for each stretch of characters side by side: more than one where the
             // direction changes partway
             float x0 = 0, x1 = 0;
@@ -450,14 +494,14 @@ private:
                 else
                 {
                     if (open)
-                        tvg_shape_append_rect(_selectionPaint, ox + l.left + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
+                        tvg_shape_append_rect(_selectionPaint, ox + l.x + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
                     x0 = left;
                     x1 = right;
                     open = true;
                 }
             }
             if (open)
-                tvg_shape_append_rect(_selectionPaint, ox + l.left + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
+                tvg_shape_append_rect(_selectionPaint, ox + l.x + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
         }
     }
 
@@ -472,6 +516,7 @@ private:
     int _dragUnit;                  // what the press selected, to drag by: 0 characters, 1 words, 2 lines
     size_t _dragStart, _dragEnd;    // and what it selected, which a drag keeps
     ContextMenu _menu;              // its own context menu, as last shown
+    AccessibleText _accessibleText; // its text as a screen reader was last given it, if it's selectable
 
 package:
     // Whether it has a menu of its own only while something's selected, leaving what it's in to

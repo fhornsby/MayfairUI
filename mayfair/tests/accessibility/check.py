@@ -146,5 +146,17 @@ check(home and role_name(home) == "list item" and home["state"] >> SELECTED & 1,
 check(away and not away["state"] >> SELECTED & 1, "the other, not")
 check(any(role_name(n) == "list box" for n in nodes), "the entries in a list box")
 
+# A selectable label: its text, read as text, line by line, and selected in by a screen reader
+words = next((n for n in nodes if n["role"] == LABEL and text_of(n) == "Selectable words\nand a second line"), None)
+check(words is not None, "a selectable label's text, as text")
+if words:
+    line = A("call", *words["at"], TEXT, "GetStringAtOffset", "iu", "20", str(LINE))
+    check(line[0].rstrip("\n") == "and a second line", f"read a line at a time: {line}")
+    check(A("call", *words["at"], TEXT, "SetSelection", "iii", "0", "11", "16")[0], "selecting in it through AT-SPI")
+    time.sleep(0.4)
+    check(A("call", *words["at"], TEXT, "GetSelection", "i", "0") == [11, 16], "the selection is the word")
+    nodes.clear(); walk(*app)
+    check(find(LABEL, "Selected: words") is not None, "and the label has it selected")
+
 print(f"{len(failures)} failed")
 sys.exit(1 if failures else 0)

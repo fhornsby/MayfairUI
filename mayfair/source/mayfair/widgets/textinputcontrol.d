@@ -9,6 +9,7 @@ import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.text;
 import mayfair.theme;
+import mayfair.widgets.accessibletext;
 import mayfair.widgets.input;
 import mayfair.widgets.menu;
 import mayfair.widgets.popup : Popup;
@@ -595,83 +596,12 @@ protected:
             node.value(_text);
         float ox, oy;
         textOriginInScene(ox, oy);
-        _runs = null;
-        foreach (li, ref l; model)
-        {
-            auto line = &l.line;
-            // Runs on this line: a new one wherever the direction changes, or at 255 characters,
-            // as AccessKit counts a run's characters in bytes
-            size_t[] firsts = [0];
-            foreach (i; 1 .. line.length)
-                if (line.rightToLeft[i] != line.rightToLeft[i - 1] || i - firsts[$ - 1] >= charactersPerRun)
-                    firsts ~= i;
-            firsts ~= line.length;
-            foreach (r; 0 .. firsts.length - 1)
-            {
-                _runs ~= Run(nextRunId(), l.start, firsts[r], firsts[r + 1], cast(uint) li);
-            }
-        }
-        foreach (k, ref run; _runs)
-        {
-            const l = &model[run.lineIndex];
-            const line = &l.line;
-            const lastOfLine = k + 1 == _runs.length || _runs[k + 1].lineIndex != run.lineIndex;
-            // A line that a line break ends has it at the end of its last run, with no width
-            const withBreak = lastOfLine && l.breaks && run.lineIndex + 1 < model.length;
-            const first = run.first, last = run.last;
-            const rtl = line.length && line.rightToLeft[first < line.length ? first : $ - 1];
-            const prevId = k > 0 && _runs[k - 1].lineIndex == run.lineIndex ? _runs[k - 1].id : 0;
-            const nextId = !lastOfLine ? _runs[k + 1].id : 0;
-            node.addChild(run.id, AccessibleRole.textRun, (ref AccessibleNode r) {
-                // The run's extent, which its characters are measured from: from its right edge,
-                // if it reads right to left
-                float x0 = float.infinity, x1 = -float.infinity;
-                foreach (i; first .. last)
-                {
-                    if (line.left[i] < x0) x0 = line.left[i];
-                    if (line.right[i] > x1) x1 = line.right[i];
-                }
-                if (first == last)
-                    x0 = x1 = line.xAt(line.stops[first]);
-
-                ubyte[] lengths, wordStarts;
-                float[] positions, widths;
-                foreach (i; first .. last)
-                {
-                    const bytes = concealsText ? concealer.length : line.stops[i + 1] - line.stops[i];
-                    lengths ~= cast(ubyte)(bytes < 255 ? bytes : 255);
-                    positions ~= rtl ? x1 - line.right[i] : line.left[i] - x0;
-                    widths ~= line.right[i] - line.left[i];
-                    if (line.wordStart[i])
-                        wordStarts ~= cast(ubyte)(i - first);
-                }
-                string value = concealsText ? concealed(last - first) : line.text[line.stops[first] .. line.stops[last]];
-                if (withBreak)
-                {
-                    value ~= "\n";
-                    lengths ~= 1;
-                    positions ~= rtl ? 0 : x1 - x0;
-                    widths ~= 0;
-                }
-                r.value(value);
-                r.textDirection(rtl);
-                r.characters(lengths, positions, widths, wordStarts);
-                r.boundsInScene(ox + l.x + x0, oy + l.top, x1 - x0, lineHeight);
-                if (prevId)
-                    r.previousOnLine(prevId);
-                if (nextId)
-                    r.nextOnLine(nextId);
-            });
-        }
-        node.textSelection(accessiblePosition(model, _anchor), accessiblePosition(model, _caretPosition));
+        _accessibleText.describe(node, model, ox, oy, lineHeight, concealsText, _anchor, _caretPosition);
     }
 
     override bool ownsAccessibleNode(ulong id)
     {
-        foreach (ref run; _runs)
-            if (run.id == id)
-                return true;
-        return false;
+        return _accessibleText.owns(id);
     }
 
     override bool executeAccessibleAction(AccessibleAction action, ref const AccessibleActionData data)
@@ -689,7 +619,8 @@ protected:
                 replaceSelection(data.value);
                 return true;
             case AccessibleAction.setTextSelection:
-                select(offsetOf(data.anchor), offsetOf(data.focus));
+                select(_accessibleText.offsetOf(_lines, data.anchor, _text.length, _caretPosition),
+                       _accessibleText.offsetOf(_lines, data.focus, _text.length, _caretPosition));
                 return true;
             default:
                 return super.executeAccessibleAction(action, data);
@@ -746,16 +677,6 @@ private:
         size_t caret, anchor;
     }
 
-    struct Run
-    {
-        ulong id;
-        size_t lineStart;
-        size_t first, last; // characters of its line
-        uint lineIndex;
-    }
-
-    enum charactersPerRun = 255;
-
     VisualLine[] _lines; // what's shown: the text, with anything being composed in place of the selection
     GlyphRun _promptRun;
     bool _editing;      // it's changing its own text, as opposed to being told to
@@ -765,9 +686,7 @@ private:
     bool _ownedFocus;   // was the focus owner at the last focus change
     string _composed;   // what an input method has so far, not yet text
     int _composedCaret = -1;
-    Run[] _runs;        // the accessibility runs, as last described
-    ulong[] _runIds;    // ids handed out for them, reused in order so a screen reader keeps its place
-    size_t _nextRun;
+    AccessibleText _accessibleText; // its text as a screen reader was last given it
 
     Snapshot[] _undo, _redo;
     EditKind _lastEdit;
@@ -784,15 +703,6 @@ private:
             if (cast(Popup) w)
                 return true;
         return false;
-    }
-
-    ulong nextRunId()
-    {
-        if (!_runs.length)
-            _nextRun = 0;
-        if (_nextRun == _runIds.length)
-            _runIds ~= newAccessibleId();
-        return _runIds[_nextRun++];
     }
 
     /*
@@ -1094,38 +1004,6 @@ private:
             at += strideAt(_composed, at);
         }
         return selectionStart + at;
-    }
-
-    /// A text offset as AccessKit gives places in text: a run, and a character in it. A place
-    /// between two runs is at the start of the second, except at the very end.
-    AccessibleTextPosition accessiblePosition(const(VisualLine)[] model, size_t offset) nothrow @nogc
-    {
-        foreach_reverse (ref run; _runs)
-        {
-            const l = &model[run.lineIndex];
-            if (offset < l.start)
-                continue;
-            const character = l.line.indexOf(offset - l.start);
-            if (character >= run.first)
-                return AccessibleTextPosition(run.id, character - run.first);
-        }
-        return AccessibleTextPosition(_runs.length ? _runs[0].id : 0, 0);
-    }
-
-    /// The other way: AccessKit's place in a run back to an offset in the text.
-    size_t offsetOf(AccessibleTextPosition p) nothrow @nogc
-    {
-        foreach (ref run; _runs)
-        {
-            if (run.id != p.node)
-                continue;
-            const character = run.first + p.character;
-            const l = &_lines[run.lineIndex < _lines.length ? run.lineIndex : $ - 1];
-            if (character >= l.line.stops.length)
-                return l.end < _text.length ? l.end + (l.breaks ? 1 : 0) : _text.length;
-            return l.start + l.line.stops[character];
-        }
-        return _caretPosition; // not one of ours: leave the caret where it is
     }
 }
 

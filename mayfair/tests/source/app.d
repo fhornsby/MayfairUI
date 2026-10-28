@@ -102,6 +102,11 @@ void accessibilityApp()
         .add(new TextArea("one\ntwo\nthree").prefRowCount(3)).add(new Slider(0, 100, 30)).add(new ProgressBar(0.5))
         .add(new TabPane().add(new Tab("Alpha", new Label("Alpha's page"))).add(new Tab("Beta", new Label("Beta's page"))))
         .add(new NavigationList().add("Home").add("Away"));
+    // A selectable label, which a screen reader reads as text and selects in, and what it says is selected
+    auto selectable = new Label("Selectable words\nand a second line").selectable(true);
+    auto selected = new Label("Selected: none");
+    selectable.selectedTextProperty.addListener((string was, string now) { selected.setText("Selected: " ~ now); });
+    root.add(selectable).add(selected);
     auto app = new App("accessibility check");
     app.scene = new Scene(root);
     app.run();
