@@ -178,17 +178,22 @@ Widget textPage(Report report)
 
     return page("Text", "Labels shape their text with HarfBuzz, so ligatures, kerning, right-to-left and "
                 ~ "characters from fallback fonts all just work. Text fields and areas edit it, with "
-                ~ "undo, selection, the clipboard and input methods.")
+                ~ "undo, selection, the clipboard and input methods, and a right click for Cut, Copy and Paste.")
         .add(section("Labels", new Column().spacing(8)
             .add(new Label("The default font, at the theme's text size"))
             .add(new Label("A serif, by family name: Affinity fjord VAV").font(serif))
-            .add(new Label("Ligatures: fi fl ffi · Fallback: 漢字 ∑ ➜ · Mixed: שלום world"))
+            .add(new Label("Ligatures: fi fl ffi · Fallback: 漢字 ∑ ➜ · Mixed: שלום world"))))
+        .add(section("Selectable labels", new Column().spacing(8)
+            .add(new Label("These can be selected and copied: drag across them, double click a word, triple "
+                ~ "click a line, then Ctrl+C or a right click. Selecting also sets the primary selection, so a "
+                ~ "middle click pastes it elsewhere.").wrapText(true).selectable(true))
+            .add(new Label("Mixed text selects as it reads: hello שלום עולם world").selectable(true))
             .add(new Label("Labels wrap when they're told to, breaking where the text allows: after spaces, "
                 ~ "around CJK like 漢字漢字漢字, at hyphens. Mixed text wraps in its own order too, so שלום עולם, "
                 ~ "זהו טקסט in the middle of a sentence stays where it belongs. Narrow the window to see it.")
-                .wrapText(true))
+                .wrapText(true).selectable(true))
             .add(new Label("Centred, and wrapped: a line of text laid out in the middle of the width it's given.")
-                .wrapText(true).textAlignment(TextAlignment.centre).maxWidth(float.infinity))))
+                .wrapText(true).textAlignment(TextAlignment.centre).maxWidth(float.infinity).selectable(true))))
         .add(section("Text field", new Column().spacing(8)
             .add(row(new Label("Name"), name, greet))
             .add(greeting)))
@@ -689,10 +694,11 @@ Widget listsPage(Report report)
                          format!"%s.%s%d@example.com"(first, last, i), 18 + (i * 37) % 70);
     }
     auto table = new TableView!Person(people).prefSize(560, 300);
-    table.add(new TableColumn!Person("Name", (Person p) => p.name))
+    // Names and emails are the text worth copying a piece of, so those can be selected in
+    table.add(new TableColumn!Person("Name", (Person p) => p.name).selectable(true))
          .add(new TableColumn!Person("Age", (Person p) => format!"%d"(p.age)).alignment(Alignment.end))
          .add(new TableColumn!Person("City", (Person p) => p.city))
-         .add(new TableColumn!Person("Email", (Person p) => p.email));
+         .add(new TableColumn!Person("Email", (Person p) => p.email).selectable(true));
     table.selectedIndexProperty.addListener((int was, int now) {
         if (now >= 0)
             report(format!"%s, %d, of %s"(table.selectedItem.name, table.selectedItem.age, table.selectedItem.city));
@@ -721,7 +727,9 @@ Widget listsPage(Report report)
     return page("Lists & tables", "A list or a table makes only the rows in view, however many items it has, "
                 ~ "and gives rows that scroll out of view to those scrolling in. Click a table's header to sort "
                 ~ "by it, click again for the other way, and drag its right edge to size the column. In the list, "
-                ~ "Ctrl+click and Shift+click select more than one, as do Shift and Ctrl with the arrows, and Ctrl+A.")
+                ~ "Ctrl+click and Shift+click select more than one, as do Shift and Ctrl with the arrows, and Ctrl+A. "
+                ~ "Ctrl+C, or Copy on a right click, copies the selected rows; a table's come out tab-separated, "
+                ~ "ready for a spreadsheet. Drag across a name or an email to select and copy just that.")
         .add(section("A list of ten thousand, with a cell of its own, selecting any number", list))
         .add(section("A table of five thousand people", table))
         .add(section("A tree, each folder made the first time it's opened", tree));
