@@ -1,11 +1,15 @@
 module mayfair.widgets.label;
 
 import mayfair.accessibility;
+import mayfair.clipboard;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.renderers.thorvg;
 import mayfair.theme;
 import mayfair.text;
+import mayfair.widgets.input;
+import mayfair.widgets.menu;
+import mayfair.widgets.popup : Popup;
 import mayfair.widgets.widget;
 
 /*
@@ -35,6 +39,8 @@ import mayfair.widgets.widget;
     whatever it's bound to:
 
         status.textProperty.bind(count.map((int n) => format!"Clicked %d times"(n)));
+
+    Made selectable, its text can be selected with the mouse and copied: see selectable.
 */
 @DefaultProperty("text")
 class Label : Widget
@@ -73,6 +79,41 @@ public:
     /// Extra room between lines, in points. JavaFX's lineSpacing.
     mixin(declareStyleableProperty!(float, "lineSpacing", "line-spacing", "0", q{ remeasure(); }));
 
+    /*
+        Whether its text can be selected and copied, as GTK's selectable labels can: dragged
+        across, a word at a time from a double click, all of a line from a triple, and Shift and a
+        click to extend. Ctrl+C copies what's selected, Ctrl+A selects everything, and a right click
+        shows Copy and Select All. Selecting puts it in the primary selection too, as text fields
+        do. A click gives it focus, so the keys reach it, but Tab passes it by, as it's not a
+        control. The press still goes on to what it's in, so a selectable label in a list's row
+        still selects the row.
+
+        Its style class is "selectable" too while it is, which the theme gives a selection-colour.
+    */
+    mixin(declareProperty!(bool, "selectable", "false", q{ selectableChanged(); }));
+
+    /// The colour behind selected text. JavaFX's selection-colour, as a text field's.
+    mixin(declareStyleableProperty!(Colour, "highlightFill", "selection-colour", "Colour(0, 0, 0, 0)", q{ invalidate(); }));
+
+    /// What's selected, or nothing. Only a selectable label has a selection.
+    mixin(declareReadOnlyProperty!(string, "selectedText", "null"));
+
+    /// Selects from `anchor` to `caret`, byte offsets into the text, either way round.
+    final void selectRange(size_t anchor, size_t caret)
+    {
+        select(snap(anchor), snap(caret));
+    }
+
+    final void selectAll() { select(0, _text.length); }
+    final void deselect() { select(_caret, _caret); }
+
+    /// Copies what's selected to the clipboard, if anything is.
+    final void copy()
+    {
+        if (_anchor != _caret)
+            Clipboard.text = _selectedText;
+    }
+
 protected:
     override bool takesChildren() const nothrow @nogc { return false; } // Yoga measures it, as a leaf
 
@@ -82,6 +123,7 @@ protected:
 
     override void mounted() nothrow
     {
+        _selectionPaint = addPaint(); // under the text
         _image.create();
         addPaint(_image.paint);
     }
@@ -89,6 +131,94 @@ protected:
     override void unmounted()
     {
         _image.release(); // its paint went with the widget's
+        _selectionPaint = null;
+        _selecting = false;
+    }
+
+    override void handleMouse(ref MouseEvent event)
+    {
+        if (!_selectable)
+            return;
+        const x = event.x - YGNodeLayoutGetPadding(node, YGEdgeLeft);
+        const y = event.y - YGNodeLayoutGetPadding(node, YGEdgeTop);
+        // Not consumed: what it's in hears the press too, as a row that selects
+        switch (event.type)
+        {
+            case MouseEventType.pressed:
+                if (event.button == MouseButton.secondary)
+                    requestFocus(); // for the context menu, which works on what's selected
+                if (event.button != MouseButton.primary)
+                    break;
+                requestFocus();
+                layOutLines();
+                const at = hitTest(x, y);
+                _selecting = true; // the primary selection waits for the release
+                _dragUnit = event.clickCount >= 3 ? 2 : event.clickCount == 2 ? 1 : 0;
+                if (_dragUnit == 2)
+                    lineAround(at, _dragStart, _dragEnd);
+                else if (_dragUnit == 1)
+                    wordAround(at, _dragStart, _dragEnd);
+                else if (event.shift)
+                {
+                    _dragStart = _dragEnd = _anchor; // extending what's there, from where it started
+                    select(_anchor, at);
+                    break;
+                }
+                else
+                    _dragStart = _dragEnd = at;
+                select(_dragStart, _dragEnd);
+                break;
+            case MouseEventType.dragged:
+                if (_selecting)
+                    dragTo(hitTest(x, y));
+                break;
+            case MouseEventType.released:
+                if (_selecting && _anchor != _caret)
+                    Clipboard.primary = _selectedText;
+                _selecting = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    override void handleKey(ref KeyEvent event)
+    {
+        if (!_selectable || event.type != KeyEventType.pressed || !event.control)
+            return;
+        if (event.code == KeyCode.c)
+            copy();
+        else if (event.code == KeyCode.a)
+            selectAll();
+        else
+            return;
+        event.consume();
+    }
+
+    override Popup defaultContextMenu()
+    {
+        if (!_selectable)
+            return null;
+        _menu = new ContextMenu()
+            .add(new MenuItem("Copy", { copy(); }).accelerator("Ctrl+C").disable(_anchor == _caret))
+            .add(new MenuSeparator())
+            .add(new MenuItem("Select All", { selectAll(); }).accelerator("Ctrl+A")
+                 .disable(!_text.length || (selectionStart == 0 && selectionEnd == _text.length)));
+        return _menu;
+    }
+
+    override void focusChanged()
+    {
+        if (!focused)
+            _selecting = false;
+        invalidate(); // the selection shows only while it has focus
+    }
+
+    // The lines to select in weren't laid out at the width painted: paint() asked for them
+    override void update()
+    {
+        layOutLines();
+        invalidate();
     }
 
     override void describeAccessible(ref AccessibleNode node)
@@ -107,6 +237,8 @@ protected:
         // The width the layout settled on was measured from these lines, but rounded to the pixel
         // grid since, so a line that fitted it before rounding still does
         const lines = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
+        _paintedWidth = w;
+        paintSelection(x, y, w);
         _image.begin(scene ? scene.pixelScale : 1.0f, behind);
         float top = y;
         foreach (ref line; lines)
@@ -130,6 +262,8 @@ private:
         if (!_font)
             _font = defaultFont(Theme.text_size); // none given, or a stylesheet's taken back
         _paragraph = Paragraph(_font, _text);
+        if (_anchor || _caret)
+            place(0, 0); // what was selected is gone
         remeasure();
         invalidateAccessible();
     }
@@ -137,6 +271,7 @@ private:
     void remeasure() nothrow @nogc
     {
         YGNodeMarkDirty(node); // the measured size changed, so the layout above it has to be redone
+        _lines = null;         // and the lines to select in, if they're needed
         invalidate();
     }
 
@@ -145,8 +280,194 @@ private:
         invalidate(); // the colour's in the picture, which is made again
     }
 
+    void selectableChanged()
+    {
+        setCursor(_selectable ? Cursor.text : Cursor.inherit);
+        if (_selectable)
+            styleClass.add("selectable");
+        else
+        {
+            styleClass.remove("selectable");
+            deselect();
+            _selecting = false;
+            _lines = null;
+        }
+    }
+
+    /*
+        Selecting. The text's laid out again for it, a line at a time, as text fields lay out
+        theirs (see EditableLine), which says where each character is, where words are, and which
+        way the text reads. That shapes, which paint() can't, so it's done when there's a click to
+        work out, or, if the width's changed since, in the update paint() asks for.
+    */
+    static struct SelectLine
+    {
+        size_t start;      // where in the text it starts
+        float left = 0;    // where it starts across, after alignment, from the text's left
+        EditableLine line;
+    }
+
+    void layOutLines()
+    {
+        const w = _paintedWidth == _paintedWidth ? _paintedWidth
+            : YGNodeLayoutGetWidth(node) - YGNodeLayoutGetPadding(node, YGEdgeLeft) - YGNodeLayoutGetPadding(node, YGEdgeRight);
+        if (_lines && _linesWidth == w && _linesAlignment == _textAlignment)
+            return;
+        _lines = null;
+        foreach (ref l; _paragraph.lines(_wrapText ? w + 1 : float.infinity))
+        {
+            float left = 0;
+            if (_textAlignment == TextAlignment.centre)
+                left = (w - l.width) / 2;
+            else if (_textAlignment == TextAlignment.right)
+                left = w - l.width;
+            _lines ~= SelectLine(l.start, left, editableLine(_font, _text[l.start .. l.end]));
+        }
+        _linesWidth = w;
+        _linesAlignment = _textAlignment;
+    }
+
+    /// The offset at `x`, `y` from the text's top left.
+    size_t hitTest(float x, float y) nothrow @nogc
+    {
+        if (!_lines.length)
+            return 0;
+        const pitch = _paragraph.lineHeight + _lineSpacing;
+        const row = y < 0 ? 0 : cast(size_t)(y / pitch);
+        const l = &_lines[row < _lines.length ? row : $ - 1];
+        return l.start + l.line.nearest(x - l.left);
+    }
+
+    void select(size_t anchor, size_t caret)
+    {
+        if (anchor == _anchor && caret == _caret)
+            return;
+        place(anchor, caret);
+        if (!_selecting && anchor != caret)
+            Clipboard.primary = _selectedText;
+        invalidate();
+    }
+
+    void place(size_t anchor, size_t caret)
+    {
+        _anchor = anchor;
+        _caret = caret;
+        _setSelectedText(_text[selectionStart .. selectionEnd]);
+    }
+
+    size_t selectionStart() const nothrow @nogc { return _anchor < _caret ? _anchor : _caret; }
+    size_t selectionEnd() const nothrow @nogc { return _anchor < _caret ? _caret : _anchor; }
+
+    /// Extends a drag to `at`, by the unit its click selected, keeping what that selected.
+    void dragTo(size_t at)
+    {
+        size_t start = at, end = at;
+        if (_dragUnit == 1)
+            wordAround(at, start, end);
+        else if (_dragUnit == 2)
+            lineAround(at, start, end);
+        if (start < _dragStart)
+            select(_dragEnd, start);
+        else
+            select(_dragStart, end > _dragEnd ? end : _dragEnd);
+    }
+
+    void wordAround(size_t at, out size_t start, out size_t end) nothrow @nogc
+    {
+        foreach_reverse (ref l; _lines)
+        {
+            if (at < l.start)
+                continue;
+            l.line.wordAround(at - l.start, start, end);
+            start += l.start;
+            end += l.start;
+            return;
+        }
+    }
+
+    /// The line `at` is in, between the text's own line breaks: wrapping doesn't end one.
+    void lineAround(size_t at, out size_t start, out size_t end) nothrow @nogc
+    {
+        start = at;
+        while (start > 0 && _text[start - 1] != '\n')
+            start--;
+        end = at;
+        while (end < _text.length && _text[end] != '\n')
+            end++;
+    }
+
+    /// `offset`, at most the text's end, and moved back to the start of the character it's in.
+    size_t snap(size_t offset) nothrow @nogc
+    {
+        if (offset >= _text.length)
+            return _text.length;
+        while (offset > 0 && (_text[offset] & 0xC0) == 0x80)
+            offset--;
+        return offset;
+    }
+
+    /// Boxes behind the selected characters, with the text's top left at `ox`, `oy`, `w` wide.
+    void paintSelection(float ox, float oy, float w) nothrow @nogc
+    {
+        if (!_selectionPaint)
+            return;
+        tvg_shape_reset(_selectionPaint);
+        const shown = focused || (_menu && _menu.showing); // and while its context menu's about it
+        if (!_selectable || _anchor == _caret || !shown)
+            return;
+        if (!_lines || _linesWidth != w || _linesAlignment != _textAlignment)
+        {
+            _lines = null;
+            requestUpdate(); // which lays them out, and paints again
+            return;
+        }
+        tvg_shape_set_fill_color(_selectionPaint, _highlightFill.tupleof);
+        const from = selectionStart, to = selectionEnd;
+        const pitch = _paragraph.lineHeight + _lineSpacing;
+        foreach (row, ref l; _lines)
+        {
+            const end = l.start + l.line.text.length;
+            if (end < from || l.start > to)
+                continue;
+            const first = l.line.indexOf(from > l.start ? from - l.start : 0);
+            const last = l.line.indexOf(to < end ? to - l.start : l.line.text.length);
+            const top = oy + row * pitch;
+            // One box for each stretch of characters side by side: more than one where the
+            // direction changes partway
+            float x0 = 0, x1 = 0;
+            bool open;
+            foreach (i; first .. last)
+            {
+                const left = l.line.left[i], right = l.line.right[i];
+                if (open && left - x1 < 0.01f && left - x1 > -0.01f)
+                    x1 = right;
+                else if (open && x0 - right < 0.01f && x0 - right > -0.01f)
+                    x0 = left;
+                else
+                {
+                    if (open)
+                        tvg_shape_append_rect(_selectionPaint, ox + l.left + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
+                    x0 = left;
+                    x1 = right;
+                    open = true;
+                }
+            }
+            if (open)
+                tvg_shape_append_rect(_selectionPaint, ox + l.left + x0, top, x1 - x0, _paragraph.lineHeight, 0, 0, true);
+        }
+    }
+
     Paragraph _paragraph;
     TextImage _image; // the text, drawn by FreeType (see mayfair.text.raster)
+    Tvg_Paint _selectionPaint;
+    SelectLine[] _lines;            // laid out to select in, at _linesWidth; null till needed
+    float _linesWidth = float.nan, _paintedWidth = float.nan;
+    TextAlignment _linesAlignment;
+    size_t _anchor, _caret;         // the selection's ends: where it started, and where it's got to
+    bool _selecting;                // a press here is being dragged
+    int _dragUnit;                  // what the press selected, to drag by: 0 characters, 1 words, 2 lines
+    size_t _dragStart, _dragEnd;    // and what it selected, which a drag keeps
+    ContextMenu _menu;              // its own context menu, as last shown
 }
 
 /// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.

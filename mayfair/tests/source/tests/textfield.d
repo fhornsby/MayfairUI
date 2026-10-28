@@ -276,3 +276,80 @@ void contextMenu()
         d.key(SDL_Keycode.SDLK_ESCAPE);
     });
 }
+
+/// A selectable label: selected by dragging, by words and lines, copied by the keys and its menu,
+/// and only while it's selectable.
+void selectableLabel()
+{
+    Label label;
+    Button other;
+    run("label: selectable", {
+        label = new Label("one two three\nfour five").selectable(true);
+        other = new Button("Other");
+        return cast(Widget) new Column().fillWidth(false).padding(20).spacing(10).add(other).add(label);
+    }, (Driver d) {
+        void expect(string wanted, string step, string file = __FILE__, size_t line = __LINE__)
+        {
+            d.ui({ d.expect(label.selectedText, wanted, step, file, line); });
+        }
+        ContextMenu menu() { auto p = label.scene.showingPopups; return p.length ? cast(ContextMenu) p[$ - 1] : null; }
+        d.preserveClipboard();
+        Bounds b;
+        float one, two, three, lineHeight;
+        d.ui({
+            b = label.boundsInScene;
+            auto line = editableLine(label.font, "one two three");
+            one = b.minX + line.xAt(0) + 1;
+            two = b.minX + line.xAt(5);
+            three = b.minX + line.xAt(11);
+            lineHeight = label.font.lineHeight;
+        });
+        const y = b.minY + lineHeight / 2, y2 = y + lineHeight;
+
+        d.press(one, y);
+        d.move(two, y);
+        d.release(two, y);
+        expect("one t", "dragging selects");
+        d.ui({ d.check(label.focused, "and the click gave it focus"); });
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.ui({ d.expect(Clipboard.text, "one t", "Ctrl+C copies it"); });
+
+        d.click(two, y, 1);
+        d.move(two, y);
+        d.press(two, y, 2);
+        d.move(three, y);
+        d.release(three, y, 2);
+        expect("two three", "a double click selects a word, and dragging on whole words");
+        d.click(two, y2, 1, 1);
+        d.press(two, y2, 2);
+        d.press(two, y2, 3);
+        d.release(two, y2, 3);
+        expect("four five", "a triple click selects the line");
+        d.click(one, y, 1);
+        d.press(three, y, 1);
+        d.release(three, y, 1);
+        d.ui({ d.check(!label.selectedText.length, "a click selects nothing"); });
+
+        d.key(SDL_Keycode.SDLK_A, ctrl);
+        expect("one two three\nfour five", "Ctrl+A selects everything");
+        d.click(two, y, 1, 3);
+        d.ui({
+            d.check(menu !is null, "a right click shows a menu");
+            d.expect(label.selectedText, "one two three\nfour five", "leaving the selection alone");
+        });
+        Widget copyItem;
+        d.ui({ copyItem = menu.items[0]; Clipboard.text = ""; });
+        d.click(copyItem);
+        d.ui({ d.expect(Clipboard.text, "one two three\nfour five", "its Copy copies"); });
+
+        d.ui({ label.setText("new"); });
+        expect("", "new text, nothing selected");
+        d.ui({ label.setSelectable(false); });
+        d.press(one, y);
+        d.move(three, y);
+        d.release(three, y);
+        expect("", "not selectable: a drag selects nothing");
+        d.click(one, y, 1, 3);
+        d.ui({ d.check(menu is null, "nor is there a menu"); });
+    });
+}

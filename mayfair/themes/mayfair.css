@@ -116,6 +116,11 @@
     opacity: 0.4;
 }
 
+/* Text that can be selected and copied: a selectable Label, a table's cells */
+.selectable {
+    selection-colour: var(--selection);
+}
+
 /*
     A button is two layers: a ring, clear until focus reaches it by keyboard, and the button
     itself, in --face -- which its states point at a different one of the palette. A default

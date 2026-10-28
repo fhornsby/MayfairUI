@@ -23,6 +23,7 @@ void main(string[] args)
     tests.textfield.rightToLeft();
     tests.textfield.password();
     tests.textfield.contextMenu();
+    tests.textfield.selectableLabel();
     tests.properties.bindings();
     tests.properties.textFieldText();
     tests.properties.layout();
