@@ -22,6 +22,7 @@ void main(string[] args)
     tests.textfield.mouse();
     tests.textfield.rightToLeft();
     tests.textfield.password();
+    tests.textfield.contextMenu();
     tests.properties.bindings();
     tests.properties.textFieldText();
     tests.properties.layout();

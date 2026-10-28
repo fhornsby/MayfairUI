@@ -505,6 +505,7 @@ public:
 
     /// A menu for it: shown where it's pressed with the secondary button, or below it by the Menu
     /// key or Shift+F10 while it has focus. What's inside it without a menu of its own has its.
+    /// Set on a widget with one of its own -- a text field's -- it takes that one's place.
     mixin(declareProperty!(Popup, "contextMenu", "null"));
 
     /*
@@ -912,6 +913,14 @@ protected:
     /// Called when focused() or focusVisible() changes.
     void focusChanged() {}
 
+    /*
+        The menu it shows on a right click when the app hasn't given it one with contextMenu: a
+        text field's Cut, Copy and Paste, say. Asked each time, so it can be made to suit the
+        moment, with what can't be done disabled. Null, as most widgets have, for none -- then a
+        right click shows the menu of whatever it's inside.
+    */
+    Popup defaultContextMenu() { return null; }
+
     /// Called when disabled() changes, whether it was this widget or an ancestor that was switched.
     void disabledChanged() {}
 
@@ -967,6 +976,8 @@ package:
     bool cssDirty = true, cssBelow, cssChildDirty; // to restyle: it, what's below it, something below it
     bool updateRequested;                          // see requestUpdate()
     final void runUpdate() { update(); }
+    /// The menu a right click on it shows: the app's, or its own.
+    final Popup menuForContext() { return _contextMenu ? _contextMenu : defaultContextMenu(); }
     Widget styleOwner;                 // for a popup: what it's shown for, whose variables it takes
     YGNodeRef cellNode;                // the cell it's in, if its parent places its children
     float cellX = 0, cellY = 0;        // where in its parent that cell is

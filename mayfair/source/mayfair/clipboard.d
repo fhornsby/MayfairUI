@@ -24,6 +24,12 @@ struct Clipboard
         return c ? fromStringz(c).idup : null;
     }
 
+    /// Whether there's text on it, without fetching it: for whether Paste can do anything.
+    static bool hasText() nothrow @nogc
+    {
+        return SDL_HasClipboardText();
+    }
+
     /// Puts `value` on the clipboard, in place of whatever was there.
     static void text(string value)
     {

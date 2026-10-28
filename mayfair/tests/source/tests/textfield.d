@@ -176,3 +176,103 @@ void password()
         d.key(SDL_Keycode.SDLK_V, ctrl);        expect("on the clipboard|16 16 []", "but pasting works");
     });
 }
+
+/// The context menu a field has of its own: for the selection when the right click's on it, and
+/// for the place clicked otherwise; what can't be done disabled; and the app's in its place.
+void contextMenu()
+{
+    TextField field;
+    run("text field: context menu", {
+        auto root = new Column().fillWidth(false);
+        field = new TextField("one two three");
+        root.add(field);
+        return cast(Widget) root;
+    }, (Driver d) {
+        void expect(string wanted, string step, string file = __FILE__, size_t line = __LINE__)
+        {
+            d.ui({ d.expect(state(field), wanted, step, file, line); });
+        }
+        ContextMenu menu() { auto p = field.scene.showingPopups; return p.length ? cast(ContextMenu) p[$ - 1] : null; }
+        MenuItem item(string text)
+        {
+            foreach (w; menu.items)
+                if (auto m = cast(MenuItem) w)
+                    if (m.text == text)
+                        return m;
+            assert(false, text);
+        }
+        string enabled()
+        {
+            string s;
+            foreach (w; menu.items)
+                if (auto m = cast(MenuItem) w)
+                    if (!m.disabled)
+                        s ~= (s.length ? " " : "") ~ m.text;
+            return s;
+        }
+        d.preserveClipboard();
+        d.ui({ Clipboard.text = "pasted "; });
+        Bounds b;
+        float one, two;
+        d.ui({
+            b = field.boundsInScene;
+            const left = b.minX + field.padding.left;
+            auto line = editableLine(field.font, field.text);
+            one = left + line.xAt(0) + 1;
+            two = left + line.xAt(5);
+        });
+        const y = b.centreY;
+
+        // Tabbed in, so coming back from the menu mustn't be taken for tabbing in again
+        d.key(SDL_Keycode.SDLK_TAB);
+        d.key(SDL_Keycode.SDLK_END);
+        d.click(two, y, 1, 3);
+        d.ui({
+            d.check(menu !is null, "a right click shows the field's own menu");
+            d.expect(enabled, "Paste Select All", "nothing selected: no Cut, Copy or Delete");
+        });
+        expect("one two three|5 5 []", "the caret goes where it was clicked");
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({ d.check(menu is null && field.focused, "Escape puts it away, focus back on the field"); });
+        expect("one two three|5 5 []", "without selecting everything, as tabbing in would");
+
+        d.click(two, y, 1);
+        d.move(two, y);
+        d.press(two, y, 2);
+        d.release(two, y, 2);
+        d.click(two + 2, y, 1, 3);
+        expect("one two three|7 4 [two]", "a right click on the selection keeps it");
+        d.ui({ d.expect(enabled, "Cut Copy Paste Delete Select All"); });
+        d.click(item("Copy"));
+        d.ui({
+            d.expect(Clipboard.text, "two", "Copy copies it");
+            d.check(menu is null, "and the menu goes");
+        });
+
+        d.click(one, y, 1, 3);
+        d.click(item("Paste"));
+        expect("twoone two three|3 3 []", "Paste pastes where the right click was");
+        d.click(one, y, 1, 3);
+        d.click(item("Select All"));
+        expect("twoone two three|16 0 [twoone two three]", "Select All");
+        d.click(one + 4, y, 1, 3);
+        d.click(item("Delete"));
+        expect("|0 0 []", "Delete deletes the selection");
+
+        d.ui({ field.setText("read only"); field.setEditable(false); field.selectRange(0, 4); });
+        d.click(one + 4, y, 1, 3);
+        d.ui({ d.expect(enabled, "Copy Select All", "not editable: only copying and selecting"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+
+        string[] done;
+        auto own = new ContextMenu().add(new MenuItem("Mine", { done ~= "mine"; }));
+        d.ui({ field.setContextMenu(own); });
+        d.click(one, y, 1, 3);
+        d.ui({ d.check(menu is own, "the app's menu takes the field's place"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.ui({ field.setContextMenu(null); });
+        d.key(SDL_Keycode.SDLK_APPLICATION);
+        d.ui({ d.check(menu !is null && menu !is own, "the Menu key shows the field's own again"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+    });
+}

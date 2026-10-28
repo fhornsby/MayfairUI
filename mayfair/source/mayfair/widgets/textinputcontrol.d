@@ -10,6 +10,8 @@ import mayfair.renderers.thorvg;
 import mayfair.text;
 import mayfair.theme;
 import mayfair.widgets.input;
+import mayfair.widgets.menu;
+import mayfair.widgets.popup : Popup;
 import mayfair.widgets.widget;
 
 /*
@@ -28,6 +30,10 @@ import mayfair.widgets.widget;
     double click selects a word, and dragging on from it extends a word at a time; a triple click
     selects the line, or all of a field. Text can read right to left, or mix directions: see
     EditableLine for how the caret and a selection behave then.
+
+    A right click shows a menu of Cut, Copy, Paste, Delete and Select All, with what can't be done
+    disabled, as GTK's fields have; one set with contextMenu takes its place. The click moves the
+    caret there first, unless it's on the selection, which the menu is then for.
 
     Typed text arrives as typed key events rather than key presses, so dead keys, compose
     sequences and input methods all work: while an input method is composing, what it has so far
@@ -363,6 +369,15 @@ protected:
                     event.consume();
                     break;
                 }
+                if (event.button == MouseButton.secondary)
+                {
+                    // The context menu, which the scene shows next, is for the selection if the
+                    // click's on it, and otherwise for where the click is
+                    requestFocus();
+                    if (at < selectionStart || at > selectionEnd || selectionStart == selectionEnd)
+                        positionCaret(at);
+                    break;
+                }
                 if (event.button != MouseButton.primary)
                     break;
                 requestFocus();
@@ -416,9 +431,24 @@ protected:
             restartBlink();
         }
         // Still the focus owner with focused() false means the window was switched away from, and
-        // coming back to it shouldn't select everything again
-        _ownedFocus = isFocusOwner;
+        // coming back to it shouldn't select everything again. Nor should coming back from a popup
+        // shown over it, such as its context menu: focus goes back to it, but it wasn't tabbed into.
+        _ownedFocus = isFocusOwner || (!focused && focusInPopup());
         invalidateText();
+    }
+
+    override Popup defaultContextMenu()
+    {
+        const selected = _anchor != _caretPosition, edits = canEdit();
+        _menu = new ContextMenu()
+            .add(new MenuItem("Cut", { cut(); }).accelerator("Ctrl+X").disable(!edits || !selected || concealsText))
+            .add(new MenuItem("Copy", { copy(); }).accelerator("Ctrl+C").disable(!selected || concealsText))
+            .add(new MenuItem("Paste", { paste(); }).accelerator("Ctrl+V").disable(!edits || !Clipboard.hasText))
+            .add(new MenuItem("Delete", { replaceSelection(""); }).disable(!edits || !selected))
+            .add(new MenuSeparator())
+            .add(new MenuItem("Select All", { selectAll(); }).accelerator("Ctrl+A")
+                 .disable(!_text.length || (selectionStart == 0 && selectionEnd == _text.length)));
+        return _menu;
     }
 
     /// Whether Tab into it selects everything, as a field does and an area doesn't.
@@ -452,7 +482,8 @@ protected:
         tvg_shape_set_fill_color(caret, _textFill.tupleof);
         const lh = lineHeight;
 
-        const selecting = focused && _anchor != _caretPosition && !_composed.length;
+        // Kept while its context menu has focus, since that's what the menu's about
+        const selecting = (focused || (_menu && _menu.showing)) && _anchor != _caretPosition && !_composed.length;
         if (selecting)
             appendBoxes(selection, selectionStart, selectionEnd, ox, oy, lh);
 
@@ -744,6 +775,16 @@ private:
 
     Timeline _blink;
     bool _caretOn = true;
+    ContextMenu _menu;  // its own context menu, as last shown
+
+    /// Whether the focus owner is in a popup: where focus has gone, as this loses it.
+    bool focusInPopup() nothrow @nogc
+    {
+        for (auto w = scene ? scene.focusedWidget : null; w; w = w.parent)
+            if (cast(Popup) w)
+                return true;
+        return false;
+    }
 
     ulong nextRunId()
     {

@@ -1211,10 +1211,11 @@ private:
     /// Shows the context menu of `w`, or of the nearest widget round it with one, at `x`, `y`.
     void showContextMenu(Widget w, float x, float y)
     {
-        while (w && !w.contextMenu)
+        Popup menu;
+        while (w && (menu = w.menuForContext()) is null)
             w = w.parent;
         if (w && !w.disabled)
-            w.contextMenu.showAt(w, x, y);
+            menu.showAt(w, x, y);
     }
 
     /// Offers a key nothing took as a shortcut: to the popup with focus, or the tree and its title bar.
