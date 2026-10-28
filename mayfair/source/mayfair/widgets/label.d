@@ -187,7 +187,11 @@ protected:
         if (!_selectable || event.type != KeyEventType.pressed || !event.control)
             return;
         if (event.code == KeyCode.c)
+        {
+            if (_anchor == _caret)
+                return; // nothing to copy here: what it's in might have something, as a table its rows
             copy();
+        }
         else if (event.code == KeyCode.a)
             selectAll();
         else
@@ -197,7 +201,7 @@ protected:
 
     override Popup defaultContextMenu()
     {
-        if (!_selectable)
+        if (!_selectable || (menuOnlyForSelection && _anchor == _caret))
             return null;
         _menu = new ContextMenu()
             .add(new MenuItem("Copy", { copy(); }).accelerator("Ctrl+C").disable(_anchor == _caret))
@@ -468,6 +472,11 @@ private:
     int _dragUnit;                  // what the press selected, to drag by: 0 characters, 1 words, 2 lines
     size_t _dragStart, _dragEnd;    // and what it selected, which a drag keeps
     ContextMenu _menu;              // its own context menu, as last shown
+
+package:
+    // Whether it has a menu of its own only while something's selected, leaving what it's in to
+    // show its own otherwise: a table's cell does, so a right click on one copies the rows
+    bool menuOnlyForSelection;
 }
 
 /// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.

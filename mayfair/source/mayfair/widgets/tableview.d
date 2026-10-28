@@ -1,10 +1,12 @@
 module mayfair.widgets.tableview;
 
 import std.algorithm.mutation : SwapStrategy;
+import std.array : join;
 import std.algorithm.sorting : sort;
 import std.conv : to, ConvException;
 import std.uni : icmp;
 import mayfair.accessibility;
+import mayfair.clipboard;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.widgets.buttonbase;
@@ -12,6 +14,8 @@ import mayfair.widgets.icon;
 import mayfair.widgets.input;
 import mayfair.widgets.label;
 import mayfair.widgets.layouts;
+import mayfair.widgets.menu;
+import mayfair.widgets.popup : Popup;
 import mayfair.widgets.scrollpane;
 import mayfair.widgets.selection;
 import mayfair.widgets.styling;
@@ -36,6 +40,12 @@ import mayfair.widgets.widget;
     As with a ListView, only the rows in view are made, however many items there are. Selecting,
     the keys and activating are as a list's, and so is selecting any number of rows at once, when
     selectionMode says it can.
+
+    Ctrl+C copies the selected rows, as tab-separated text a spreadsheet takes, a line a row, and
+    so does Copy on a right click, which selects the row it's on first if it isn't already. With
+    selectableText -- or a column's selectable -- the cells' text can be selected as a
+    selectable Label's can: a drag across a cell selects in it, Ctrl+C and the right click then
+    copy that, and a click still selects the row.
 
     Its style class is "table-view". The header is a `.column-header-background` of
     `.column-header`s, :sorted for the one sorted by; each row is a `.table-row` -- :selected,
@@ -88,6 +98,9 @@ public:
         selectionUpdated();
         invalidateAccessible();
     }));
+
+    /// Whether every column's cells' text can be selected and copied. A column can be made so on its own.
+    mixin(declareProperty!(bool, "selectableText", "false", q{ applySelectable(); }));
 
     /// What it says when it has no items.
     mixin(declareProperty!(string, "placeholder", `"No items"`, q{ _empty.setText(_placeholder); }));
@@ -184,6 +197,21 @@ public:
             _flow.reveal(row);
     }
 
+    /// Copies the selected rows to the clipboard: each row's cells, tab-separated, a line a row.
+    final void copy()
+    {
+        string[] lines;
+        foreach (row; _selection.indices)
+        {
+            string[] cells;
+            foreach (c; _columns)
+                cells ~= c._text(_items[_order[row]]);
+            lines ~= cells.join("\t");
+        }
+        if (lines.length)
+            Clipboard.text = lines.join("\n");
+    }
+
     /// Shows every row in view again, for items whose insides changed.
     final void refresh()
     {
@@ -197,6 +225,12 @@ protected:
     {
         if (event.type != KeyEventType.pressed || !_order.length)
             return;
+        if (event.code == KeyCode.c && event.control)
+        {
+            copy();
+            event.consume();
+            return;
+        }
         if (event.code == KeyCode.enter || event.code == KeyCode.numpadEnter)
         {
             if (_selection.current >= 0 && _onActivate)
@@ -214,8 +248,15 @@ protected:
 
     override void handleMouse(ref MouseEvent event)
     {
-        if (event.type != MouseEventType.pressed || event.button != MouseButton.primary)
+        if (event.type != MouseEventType.pressed)
             return;
+        if (event.button != MouseButton.primary && event.button != MouseButton.secondary)
+            return;
+        // A selectable cell pressed took focus, to select in; otherwise the table has it
+        auto focus = scene ? scene.focusedWidget : null;
+        bool cellFocused;
+        for (Widget w = event.target; w && w !is this; w = w.parent)
+            cellFocused = cellFocused || (w is focus);
         for (Widget w = event.target; w && w !is this; w = w.parent)
         {
             if (auto row = cast(TableRow) w)
@@ -223,7 +264,18 @@ protected:
                 const i = _flow.indexOf(row);
                 if (i == size_t.max)
                     break;
-                requestFocus();
+                if (!cellFocused)
+                    requestFocus();
+                if (event.button == MouseButton.secondary)
+                {
+                    // The menu's for the selected rows: this one, unless it's one of them
+                    if (!_selection.isSelected(cast(int) i))
+                    {
+                        _selection.selectOnly(cast(int) i);
+                        selectionUpdated();
+                    }
+                    break;
+                }
                 _selection.press(cast(int) i, event.shift, event.control);
                 selectionUpdated();
                 if (event.clickCount == 2 && _onActivate)
@@ -232,6 +284,16 @@ protected:
                 break;
             }
         }
+    }
+
+    override Popup defaultContextMenu()
+    {
+        auto menu = new ContextMenu()
+            .add(new MenuItem("Copy", { copy(); }).accelerator("Ctrl+C").disable(_selection.count == 0));
+        if (_selectionMode == SelectionMode.multiple)
+            menu.add(new MenuItem("Select All", { selectAll(); }).accelerator("Ctrl+A")
+                     .disable(_selection.count == _order.length));
+        return menu;
     }
 
     override void describeAccessible(ref AccessibleNode node)
@@ -267,6 +329,8 @@ private:
             auto cell = new Label("").accessibleRole(AccessibleRole.cell);
             cell.styleClass.remove("label");
             cell.styleClass.add("table-cell");
+            cell.menuOnlyForSelection = true;
+            cell.setSelectable(_selectableText || c._selectable);
             if (c._alignment == Alignment.end)
                 cell.setTextAlignment(TextAlignment.right);
             else if (c._alignment == Alignment.centre)
@@ -285,6 +349,15 @@ private:
             if (c < _columns.length)
                 (cast(Label) cell).setText(_columns[c]._text(item));
         row.show(i, _selection.isSelected(cast(int) i), i == _selection.current);
+    }
+
+    /// Makes each cell in view selectable or not, as its column now is.
+    void applySelectable()
+    {
+        foreach (w; _flow.children)
+            foreach (c, cell; w.children)
+                if (c < _columns.length)
+                    (cast(Label) cell).setSelectable(_selectableText || _columns[c]._selectable);
     }
 
     /// Every column's width, as the header and each row lay them out: the last takes what's spare.
@@ -642,6 +715,15 @@ public:
     /// Where its cells' text sits: at the start, in the middle, or at the end, as numbers go.
     TableColumn alignment(Alignment a) { _alignment = a; return this; }
 
+    /// Whether its cells' text can be selected and copied, as a selectable Label's: see TableView.
+    TableColumn selectable(bool on)
+    {
+        _selectable = on;
+        if (_table)
+            _table.applySelectable();
+        return this;
+    }
+
     /// How two items compare, for sorting by it: less than 0 if the first goes first.
     TableColumn comparator(int delegate(S a, S b) compare) { _comparator = compare; return this; }
 
@@ -652,7 +734,7 @@ package:
     string delegate(S) _text;
     int delegate(S, S) _comparator;
     float _width = float.nan, _minWidth = 40, _shown = 0;
-    bool _resizable = true, _sortable = true;
+    bool _resizable = true, _sortable = true, _selectable;
     bool _autoWidth = true; // sized from its title and text, until it's given a width
     Alignment _alignment;
 

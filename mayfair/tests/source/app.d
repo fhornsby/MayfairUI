@@ -72,6 +72,7 @@ void main(string[] args)
     tests.files.fileChoosers();
     tests.lists.listViews();
     tests.lists.tableViews();
+    tests.lists.tableCopying();
     tests.lists.multipleSelection();
     tests.lists.treeViews();
     tests.titlebar.titleBars();

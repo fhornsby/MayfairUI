@@ -423,3 +423,94 @@ void treeViews()
         });
     });
 }
+
+/// Copying from a table: the selected rows by Ctrl+C and a right click's Copy, and with selectable
+/// text, a cell's text selected by a drag while a click still selects the row.
+void tableCopying()
+{
+    TableView!City table;
+    TableColumn!City name, people;
+    run("lists: copying from a table", {
+        auto cities = [City("Leeds", 812_000, "England"), City("Bath", 94_000, "England"),
+                       City("Perth", 47_000, "Scotland")];
+        name = new TableColumn!City("Name", (City c) => c.name);
+        people = new TableColumn!City("People", (City c) => c.people.to!string);
+        table = new TableView!City(cities).prefSize(360, 200);
+        table.add(name).add(people).add(new TableColumn!City("Country", (City c) => c.country));
+        table.setSelectionMode(SelectionMode.multiple);
+        return cast(Widget) new Column().padding(20).fillWidth(false).add(table);
+    }, (Driver d) {
+        enum ctrl = SDL_Keymod.KMOD_LCTRL, shift = SDL_Keymod.KMOD_LSHIFT;
+        // Each row's cells, top to bottom
+        Label[][] cells()
+        {
+            Label[][] found;
+            void walk(Widget w)
+            {
+                if (w.styleClass.contains("table-row"))
+                {
+                    Label[] row;
+                    foreach (c; w.children)
+                        row ~= cast(Label) c;
+                    found ~= row;
+                }
+                foreach (c; w.children)
+                    walk(cast() c);
+            }
+            walk(table);
+            return found;
+        }
+        ContextMenu menu() { auto p = table.scene.showingPopups; return p.length ? cast(ContextMenu) p[$ - 1] : null; }
+        d.preserveClipboard();
+
+        Bounds leeds, bath, perth;
+        d.ui({
+            auto c = cells;
+            leeds = c[0][0].boundsInScene;
+            bath = c[1][0].boundsInScene;
+            perth = c[2][0].boundsInScene;
+        });
+        d.click(leeds.minX + 5, leeds.centreY);
+        d.click(bath.minX + 5, bath.centreY, 1, 1);
+        d.key(SDL_Keycode.SDLK_DOWN, shift);
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.ui({ d.expect(Clipboard.text, "Bath\t94000\tEngland\nPerth\t47000\tScotland",
+                        "Ctrl+C copies the selected rows, tab-separated"); });
+
+        d.ui({ Clipboard.text = ""; });
+        d.click(leeds.minX + 5, leeds.centreY, 1, 3);
+        d.ui({
+            d.expect(table.selectedIndices, [0], "a right click off the selection selects its row");
+            d.check(menu !is null, "and shows the table's menu");
+        });
+        d.click(menu.items[0]);
+        d.ui({ d.expect(Clipboard.text, "Leeds\t812000\tEngland", "whose Copy copies it"); });
+
+        // Selectable text
+        d.ui({ name.selectable(true); Clipboard.text = ""; });
+        float lStart, lEnd;
+        d.ui({
+            auto c = cells[2][0];
+            auto line = editableLine(c.font, "Perth");
+            lStart = perth.minX + c.padding.left + 1;
+            lEnd = perth.minX + c.padding.left + line.xAt(3);
+        });
+        d.press(lStart, perth.centreY);
+        d.move(lEnd, perth.centreY);
+        d.release(lEnd, perth.centreY);
+        d.ui({
+            d.expect(cells[2][0].selectedText, "Per", "a drag in a selectable cell selects its text");
+            d.expect(table.selectedIndices, [2], "and the press still selected its row");
+            d.check(cells[2][0].focused, "the cell has focus, to copy from");
+        });
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.ui({ d.expect(Clipboard.text, "Per", "Ctrl+C copies the cell's selection"); });
+        d.click(lEnd, perth.centreY, 1, 3);
+        d.ui({ d.check(menu !is null && menu.items.length == 3, "a right click on it: the cell's menu"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+        d.key(SDL_Keycode.SDLK_UP);
+        d.ui({ d.expect(table.selectedIndices, [1], "the arrow keys still move the row"); });
+        d.ui({ d.check(!cells[0][1].selectable, "a column not made selectable isn't"); });
+        d.ui({ table.setSelectableText(true); d.check(cells[0][1].selectable, "selectableText makes all of them"); });
+    });
+}

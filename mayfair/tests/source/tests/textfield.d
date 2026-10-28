@@ -162,9 +162,9 @@ void password()
             d.ui({ d.expect(state(field), wanted, step, file, line); });
         }
         d.preserveClipboard();
-        d.ui({ Clipboard.text = "on the clipboard"; });
-
         d.key(SDL_Keycode.SDLK_TAB);
+        // After input, not before: on Wayland a window can only set the clipboard once it's had some
+        d.ui({ Clipboard.text = "on the clipboard"; });
         d.type("hunter 2é");                    expect("hunter 2é|10 10 []", "typed as into any field");
         d.key(SDL_Keycode.SDLK_LEFT, ctrl);     expect("hunter 2é|0 0 []", "no words in dots: Ctrl+Left goes to the start");
         d.key(SDL_Keycode.SDLK_RIGHT, ctrl);    expect("hunter 2é|10 10 []", "and Ctrl+Right to the end");
