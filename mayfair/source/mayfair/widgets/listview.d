@@ -1,12 +1,16 @@
 module mayfair.widgets.listview;
 
+import std.array : join;
 import std.conv : to;
 import mayfair.accessibility;
+import mayfair.clipboard;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.widgets.input;
 import mayfair.widgets.label;
 import mayfair.widgets.layouts;
+import mayfair.widgets.menu;
+import mayfair.widgets.popup : Popup;
 import mayfair.widgets.scrollpane;
 import mayfair.widgets.selection;
 import mayfair.widgets.styling;
@@ -40,6 +44,13 @@ import mayfair.widgets.widget;
 
         files.selectionMode(SelectionMode.multiple);
         files.onSelectionChanged({ show(files.selectedItems); });
+
+    Ctrl+C copies the selected items, a line each, and so does Copy on a right click, which
+    selects the row it's on first if it isn't already. An item's copied as it's written with
+    to!string, unless itemText says otherwise -- as it should for cells that show items their own
+    way:
+
+        contacts.itemText((Contact c) => c.name ~ " <" ~ c.email ~ ">");
 
     Its style class is "list-view", and each row is a `.list-cell`: :selected for those selected,
     :current for the one the keys are on, and :odd for every other, for striping. To a screen
@@ -136,6 +147,23 @@ public:
         return this;
     }
 
+    /// How an item's written when it's copied, in place of to!string.
+    final ListView itemText(string delegate(T) text) nothrow @nogc
+    {
+        _itemText = text;
+        return this;
+    }
+
+    /// Copies the selected items to the clipboard, a line each.
+    final void copy()
+    {
+        string[] lines;
+        foreach (i; _selection.indices)
+            lines ~= textOf(_items[i]);
+        if (lines.length)
+            Clipboard.text = lines.join("\n");
+    }
+
     /// What to do when a row's activated: double clicked, or Enter pressed on it.
     final ListView onActivate(void delegate(int index) handler) nothrow @nogc
     {
@@ -163,6 +191,12 @@ protected:
     {
         if (event.type != KeyEventType.pressed || !_items.length)
             return;
+        if (event.code == KeyCode.c && event.control)
+        {
+            copy();
+            event.consume();
+            return;
+        }
         if (event.code == KeyCode.enter || event.code == KeyCode.numpadEnter)
         {
             if (_selection.current >= 0 && _onActivate)
@@ -180,7 +214,9 @@ protected:
 
     override void handleMouse(ref MouseEvent event)
     {
-        if (event.type != MouseEventType.pressed || event.button != MouseButton.primary)
+        if (event.type != MouseEventType.pressed)
+            return;
+        if (event.button != MouseButton.primary && event.button != MouseButton.secondary)
             return;
         // The row it's in: the cell the press went to, or the one round what it went to
         for (Widget w = event.target; w && w !is this; w = w.parent)
@@ -191,6 +227,16 @@ protected:
                 if (i == size_t.max)
                     break;
                 requestFocus();
+                if (event.button == MouseButton.secondary)
+                {
+                    // The menu's for the selected rows: this one, unless it's one of them
+                    if (!_selection.isSelected(cast(int) i))
+                    {
+                        _selection.selectOnly(cast(int) i);
+                        selectionUpdated();
+                    }
+                    break;
+                }
                 _selection.press(cast(int) i, event.shift, event.control);
                 selectionUpdated();
                 if (event.clickCount == 2 && _onActivate)
@@ -199,6 +245,16 @@ protected:
                 break;
             }
         }
+    }
+
+    override Popup defaultContextMenu()
+    {
+        auto menu = new ContextMenu()
+            .add(new MenuItem("Copy", { copy(); }).accelerator("Ctrl+C").disable(_selection.count == 0));
+        if (_selectionMode == SelectionMode.multiple)
+            menu.add(new MenuItem("Select All", { selectAll(); }).accelerator("Ctrl+A")
+                     .disable(_selection.count == _items.length));
+        return menu;
     }
 
     override void describeAccessible(ref AccessibleNode node)
@@ -214,11 +270,22 @@ private:
     Stack _body;
     Label _empty;
     ListCell!T delegate() _factory;
+    string delegate(T) _itemText;
     void delegate(int) _onActivate;
     void delegate() _onSelectionChanged;
     Selection _selection;
     uint _shownChanges; // the selection's changes, as far as onSelectionChanged has heard
     bool _syncing;      // setting selectedIndex from the selection, not the other way
+
+    string textOf(T item)
+    {
+        if (_itemText)
+            return _itemText(item);
+        static if (is(T : string))
+            return item;
+        else
+            return item.to!string;
+    }
 
     Widget makeCell()
     {

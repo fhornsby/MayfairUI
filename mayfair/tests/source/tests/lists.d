@@ -514,3 +514,45 @@ void tableCopying()
         d.ui({ table.setSelectableText(true); d.check(cells[0][1].selectable, "selectableText makes all of them"); });
     });
 }
+
+/// Copying from a list: the selected items by Ctrl+C and a right click's Copy, written as itemText says.
+void listCopying()
+{
+    ListView!string list;
+    run("lists: copying from a list", {
+        list = new ListView!string(["Apple", "Banana", "Cherry"]).prefSize(200, 160);
+        list.setSelectionMode(SelectionMode.multiple);
+        return cast(Widget) new Column().padding(20).fillWidth(false).add(list);
+    }, (Driver d) {
+        enum ctrl = SDL_Keymod.KMOD_LCTRL, shift = SDL_Keymod.KMOD_LSHIFT;
+        ListCell!string row(size_t index)
+        {
+            foreach (w; rowsOf(list))
+                if (auto c = cast(ListCell!string) w)
+                    if (c.visible && c.index == index)
+                        return c;
+            return null;
+        }
+        ContextMenu menu() { auto p = list.scene.showingPopups; return p.length ? cast(ContextMenu) p[$ - 1] : null; }
+        d.preserveClipboard();
+
+        d.click(row(0));
+        d.key(SDL_Keycode.SDLK_DOWN, shift);
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.ui({ d.expect(Clipboard.text, "Apple\nBanana", "Ctrl+C copies the selected items, a line each"); });
+
+        Bounds cherry;
+        d.ui({ cherry = row(2).boundsInScene; Clipboard.text = ""; });
+        d.click(cherry.centreX, cherry.centreY, 1, 3);
+        d.ui({
+            d.expect(list.selectedIndices, [2], "a right click off the selection selects its row");
+            d.check(menu !is null && menu.items.length == 2, "and shows Copy and Select All");
+        });
+        d.click(menu.items[0]);
+        d.ui({ d.expect(Clipboard.text, "Cherry", "Copy copies it"); });
+
+        d.ui({ list.itemText((string s) => s ~ " pie"); });
+        d.key(SDL_Keycode.SDLK_C, ctrl);
+        d.ui({ d.expect(Clipboard.text, "Cherry pie", "written as itemText says"); });
+    });
+}
