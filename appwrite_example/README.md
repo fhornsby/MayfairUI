@@ -43,9 +43,9 @@ class LoginPage : Column
 
 ## The app
 
-It opens on a login page (`LoginPage`, `views/login.xml`): an email address and password to sign
+It opens on a login page (`LoginPage`, `resources/views/login.xml`): an email address and password to sign
 in with, or **Create account** to make one. Once signed in, the window shows the list
-(`TodoPage`, `views/todos.xml`) in its place with `scene.setRoot`. Each to-do has a box to tick it
+(`TodoPage`, `resources/views/todos.xml`) in its place with `scene.setRoot`. Each to-do has a box to tick it
 off, and **Sign out** goes back to the login page. Someone still signed in from the last run goes
 straight to their list: the session's kept in a file between runs.
 

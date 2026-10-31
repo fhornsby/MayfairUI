@@ -8,7 +8,7 @@ import backend;
 import todopage;
 
 /*
-    The first page, laid out in views/login.xml: an email address and password to sign in with, or
+    The first page, laid out in resources/views/login.xml: an email address and password to sign in with, or
     to make an account with. Once signed in, the window shows a TodoPage in its place, as
     my_mayfair_app's pages do, with scene.setRoot.
 

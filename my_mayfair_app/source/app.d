@@ -6,7 +6,7 @@ import std.format : format;
 import rating;
 import settings;
 
-/// What the window's content does: views/main.xml says what it is.
+/// What the window's content does: resources/views/main.xml says what it is.
 @View("main.xml")
 class HelloWorld
 {

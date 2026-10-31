@@ -8,6 +8,8 @@ import mayfair.css.parser : CssException, parseDeclarations, Declaration;
 import mayfair.css.value : Value;
 import mayfair.images.image : Image;
 import mayfair.properties.declare : DefaultProperty;
+import mayfair.resources : resource;
+import mayfair.strings : localise, resourceString;
 import mayfair.widgets.styling : StyleContext, convertStyle, kebab;
 import mayfair.xml.parser;
 
@@ -35,8 +37,9 @@ import mayfair.xml.parser;
         auto main = new Main;
         app.scene = new Scene(View.load(main));
 
-    with the folder main.xml is in among dub's stringImportPaths. load() returns the root, as its
-    own type. A view with no controller is View.load!"about.xml"().
+    with main.xml in resources/views, and resources among dub's stringImportPaths (see
+    mayfair.resources; a folder of views on its own among them works too). load() returns the
+    root, as its own type. A view with no controller is View.load!"about.xml"().
 
     Everything's worked out as it's compiled: a misspelt property, a value that isn't one, a
     handler the controller doesn't have, a field with no element to fill it -- each is a compile
@@ -71,6 +74,11 @@ import mayfair.xml.parser;
       `<Label Grid.column="1" Grid.row="2"/>` in a Grid is grid.add(label, column: 1, row: 2).
     - What to show of an item is the name of what to read from it, as PropertyValueFactory's is:
       `<TableColumn of="Person" title="Name" text="name"/>` shows each person's name.
+    - `%name` is the string called name in resources/values/strings.xml, in the language the app's
+      shown in, as FXML's `%key` is from its ResourceBundle: `<Label text="%hello"/>`,
+      `<Button>%save</Button>`, `items="%small %large"`. `\%` is text that starts with a %.
+      See mayfair.strings, which also has the controller's @localised fields, filled in with
+      their strings before the view's built.
 
     A field marked @autowired is filled with the service the App has for its type, as Spring's
     @Autowired is, so a view needs no constructor to be handed what it shares with others:
@@ -144,7 +152,7 @@ auto build(string file, C)(C controller)
 {
     // The file's read here, not passed in, so an error's list of what was being built shows its
     // name rather than all of it
-    enum parsed = read(import(file), file);
+    enum parsed = read(resource!file, file);
     mixin(building);
 }
 
@@ -158,7 +166,10 @@ auto buildText(string text, string file, C)(C controller)
 private enum building = q{
     static assert(parsed.error is null, parsed.error);
     static if (is(C == class))
+    {
         .autowire(controller); // before the tree, so its fields are there for whatever the tree calls
+        .localise(controller);
+    }
     enum Document doc = parsed.doc;
     static if (!is(C == NoController))
         mixin("import " ~ moduleName!C ~ ";");
@@ -332,6 +343,7 @@ T create(T, Attribute[] attributes, string loc, C)(C controller)
     }
 
     .autowire(object); // an app's own widget can ask for services, as a controller can
+    .localise(object);
     .configure!(attributes, loc, used)(object, controller);
     return object;
 }
@@ -358,7 +370,7 @@ void assign(string loc, string name, string text, T, C)(T object, C controller)
     {
         import mayfair.css.stylesheet : stylesheet;
         static foreach (f; words(text))
-            object.stylesheets.add(stylesheet!(import(f)));
+            object.stylesheets.add(stylesheet!(resource!f));
     }
     else
     {
@@ -498,19 +510,65 @@ H ignoring(H, F)(F f)
     }());
 }
 
-/// The text of an attribute as a P, worked out as it's compiled if it can be.
+/*
+    The text of an attribute as a P. `%name` is the string called name in values/strings.xml, in
+    the language being shown, as FXML's `%key` is from its ResourceBundle; `\%` is a % at the start.
+*/
 template value(P, string text, string loc)
+{
+    static if (isDynamicArray!P && !isSomeString!P && is(string : typeof(P.init[0])) && hasResourceItem(text))
+    {
+        // Items, some of them from strings.xml: items="%small %large"
+        P value()
+        {
+            P result;
+            static foreach (item; itemsOf(text))
+                result ~= .value!(typeof(P.init[0]), item, loc)();
+            return result;
+        }
+    }
+    else static if (text.length > 1 && text[0] == '%')
+    {
+        static assert(is(string : P), loc ~ ": " ~ text ~ " is text from strings.xml, and this takes a " ~ P.stringof
+                                      ~ "; \\" ~ text ~ " is text that starts with a %");
+        P value() { return .resourceString!(text[1 .. $], loc)(); }
+    }
+    else static if (text.length > 1 && text[0] == '\\' && text[1] == '%')
+        alias value = .literal!(P, text[1 .. $], loc);
+    else
+        alias value = .literal!(P, text, loc);
+}
+
+/// Whether any of an array's items is `%name`, or `\%` for one that starts with a %.
+bool hasResourceItem(string text) pure @safe
+{
+    string error;
+    foreach (item; items(text, error))
+        if (item.length > 1 && (item[0] == '%' || (item[0] == '\\' && item[1] == '%')))
+            return true;
+    return false;
+}
+
+/// An array's items, for one known to be written correctly.
+string[] itemsOf(string text) pure @safe
+{
+    string error;
+    return items(text, error);
+}
+
+/// The text of an attribute as a P, worked out as it's compiled if it can be.
+template literal(P, string text, string loc)
 {
     static if (is(P : Image))
     {
-        P value() { return Image.fromData(import(text), text); }
+        P literal() { return Image.fromData(resource!text, text); }
     }
     else static if (isCallable!P && Parameters!P.length == 1 && !is(ReturnType!P == void))
     {
         // What to show of an item, by the name of its field or property: JavaFX's PropertyValueFactory
         alias Item = Parameters!P[0];
         static assert(__traits(hasMember, Item, text), loc ~ ": " ~ Item.stringof ~ " has no " ~ text);
-        P value()
+        P literal()
         {
             import std.conv : to;
             return delegate(Item item) { return to!(ReturnType!P)(__traits(getMember, item, text)); };
@@ -520,11 +578,11 @@ template value(P, string text, string loc)
     {
         enum c = convert!P(text);
         static assert(c.error is null, loc ~ ": " ~ c.error);
-        P value() { return c.value; }
+        P literal() { return c.value; }
     }
     else // what only converts at run time: a font, which needs the fonts loaded to find
     {
-        P value()
+        P literal()
         {
             auto c = convert!P(text);
             if (c.error)

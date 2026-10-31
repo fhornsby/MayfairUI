@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<resources>
+    <string name="welcome">Bienvenue</string>
+    <string name="appearance">Apparence</string>
+    <string name="say_hello">Dire bonjour</string>
+    <string name="greeting">Bonjour, le monde !</string>
+    <string name="frosted_on">Le verre dépoli est activé : Oriel floute le bureau derrière cette fenêtre.</string>
+    <string name="frosted_off">Le verre dépoli est désactivé : la fenêtre est donc opaque.</string>
+    <string name="translucency_help">
+        Désactivez la transparence dans les Réglages d'Oriel et la fenêtre devient aussitôt opaque,
+        puis de nouveau dépolie quand vous la réactivez. Sur d'autres bureaux, elle est dépolie là
+        où le compositeur floute l'arrière-plan des fenêtres via ext-background-effect-v1, et opaque
+        ailleurs.
+    </string>
+</resources>

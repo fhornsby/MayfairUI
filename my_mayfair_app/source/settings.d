@@ -4,7 +4,7 @@ import mayfair;
 import details;
 
 /*
-    The sidebar's second page, laid out in views/settings.xml: a button that goes from the window's
+    The sidebar's second page, laid out in resources/views/settings.xml: a button that goes from the window's
     page, sidebar and all, to a page of its own, DetailsPage.
 */
 @View("settings.xml")

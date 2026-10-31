@@ -6,14 +6,17 @@
     desktop that doesn't offer blur over ext-background-effect-v1 -- it's an ordinary opaque
     window, and it goes from one to the other as it runs.
 
-    views/main.xml is the window below its title bar, and views/oriel.css its look.
+    resources/views/main.xml is the window below its title bar, and resources/views/oriel.css its
+    look. Its text is in resources/values/strings.xml, in UK English, and translated into French,
+    German and Chinese beside it: it's shown in the language the desktop's set to, or try one with
+    `LANGUAGE=fr dub run`, or build it in one alone with `dub build --d-version=MayfairLanguage_fr`.
 */
 module app;
 
 import mayfair;
 import appearance;
 
-/// What the window's content does: views/main.xml says what it is.
+/// What the window's content does: resources/views/main.xml says what it is.
 @View("main.xml")
 class MainWindow
 {
@@ -49,7 +52,7 @@ void main()
     // A title bar of its own, as the Oriel apps have: the traffic lights, and the sidebar's glass at its start
     scene.titleBar(new TitleBar);
     // On the scene rather than the root, so the title bar's styled by it too
-    scene.stylesheets.add(stylesheet!(import("oriel.css")));
+    scene.stylesheets.add(stylesheet!(resource!"oriel.css")); // resources/views/oriel.css
     window.appearance.follow(scene);
     app.setTranslucent(true); // where the compositor blurs what's behind it, which Oriel does
     app.scene = scene;

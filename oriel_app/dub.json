@@ -12,6 +12,6 @@
 		}
 	},
 	"stringImportPaths": [
-		"views"
+		"resources"
 	]
 }

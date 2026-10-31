@@ -1,7 +1,7 @@
 import mayfair;
 import std.conv : to;
 
-/// What the page does: views/main.xml says what it is.
+/// What the page does: resources/views/main.xml says what it is.
 @View("main.xml")
 class Main
 {

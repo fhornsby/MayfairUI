@@ -6,7 +6,7 @@ import backend;
 import loginpage;
 
 /*
-    The list, laid out in views/todos.xml, for the user signed in on the LoginPage. Sign out goes
+    The list, laid out in resources/views/todos.xml, for the user signed in on the LoginPage. Sign out goes
     back to a new one.
 
     Every call to the server goes through async(), so the window keeps drawing while it waits, and

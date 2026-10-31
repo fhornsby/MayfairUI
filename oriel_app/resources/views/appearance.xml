@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The sidebar's second page. <root> is the page itself, a Column. -->
+<root styleClass="page" spacing="8" padding="24">
+    <Label text="%appearance" styleClass="heading"/>
+    <Label id="status" wrapText="true"/>
+    <Label styleClass="secondary" wrapText="true"
+           text="%translucency_help"/>
+</root>

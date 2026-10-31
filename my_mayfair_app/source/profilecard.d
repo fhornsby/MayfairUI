@@ -4,7 +4,7 @@ import mayfair;
 
 /*
     Someone's name and what they do, with a button to follow them: a widget whose insides are
-    laid out in a view of its own, views/profilecard.xml. The card is that view's <root>, and its
+    laid out in a view of its own, resources/views/profilecard.xml. The card is that view's <root>, and its
     controller too, so the view's ids fill its fields and its buttons call its methods.
 
         <ProfileCard name="Ada Lovelace" role="Programmer"/>
