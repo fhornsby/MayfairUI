@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The window, below its title bar (app.d gives it one): a sidebar down the left, frosted where
      Oriel blurs behind the window, and beside it the page it's on. The first page is a button
-     that says hello; the second, an AppearancePage, is put there by app.d. Each %name is a string
-     from values/strings.xml, in the language the app's running in. -->
+     that says hello; the second, an AppearancePage, is put there by app.d. Each %id is a string
+     from strings.xml, in the language the app's running in. -->
 <Dock id="dock">
     <left>
         <NavigationList id="nav" styleClass="sidebar">

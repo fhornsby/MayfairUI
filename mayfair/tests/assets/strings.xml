@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- tests.strings's strings. farewell isn't in French, to be shown in English -->
+<strings languages="en-GB fr">
+    <string id="hello">
+        <en-GB>Hello</en-GB>
+        <fr>Bonjour</fr>
+    </string>
+    <string id="save">
+        <en-GB>Save</en-GB>
+        <fr>Enregistrer</fr>
+    </string>
+    <string id="farewell">
+        <en-GB>Goodbye</en-GB>
+    </string>
+    <string id="small">
+        <en-GB>Small</en-GB>
+        <fr>Petit</fr>
+    </string>
+    <string id="large">
+        <en-GB>Large</en-GB>
+        <fr>Grand</fr>
+    </string>
+    <string id="welcome">
+        <en-GB>Welcome back, {0}</en-GB>
+        <fr>Bon retour, {0}</fr>
+    </string>
+    <string id="moved">
+        <en-GB>Moved {1} files to {0}</en-GB>
+        <fr>{1} fichiers déplacés vers {0}</fr>
+    </string>
+</strings>

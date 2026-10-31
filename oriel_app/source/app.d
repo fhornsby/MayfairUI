@@ -7,8 +7,8 @@
     window, and it goes from one to the other as it runs.
 
     resources/views/main.xml is the window below its title bar, and resources/views/oriel.css its
-    look. Its text is in resources/values/strings.xml, in UK English, and translated into French,
-    German and Chinese beside it: it's shown in the language the desktop's set to, or try one with
+    look. Its text is in resources/strings.xml, each string in UK English and in French, German
+    and Chinese: it's shown in the language the desktop's set to, or try one with
     `LANGUAGE=fr dub run`, or build it in one alone with `dub build --d-version=MayfairLanguage_fr`.
 */
 module app;

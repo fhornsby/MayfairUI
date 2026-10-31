@@ -1,38 +1,41 @@
 module mayfair.strings;
 
+import core.atomic : atomicLoad, atomicOp, atomicStore, MemoryOrder;
 import std.meta : AliasSeq;
 import std.traits : BaseClassesTuple, getUDAs, hasUDA;
 import mayfair.xml.parser : Document, Element, XmlException, parseXml;
 
 /*
-    An app's text, in one language or many: Android's strings.xml, and what JavaFX's
-    ResourceBundle is to FXML's `%key`. Every string is read and checked as the program's
-    compiled; only which language to show is left for it to work out when it runs.
+    An app's text, in one language or many, in one file: what JavaFX's ResourceBundle is to
+    FXML's `%key`, and laid out as Apple's string catalogues are, each string with its
+    translations beside it. Every string is read and checked as the program's compiled.
 
         resources/
+            strings.xml
             views/main.xml
-            values/strings.xml          the strings, in UK English
-            values-fr/strings.xml       the same strings in French
-            values-de/strings.xml       ...and German
-            values-zh/strings.xml       ...and Chinese
 
-    with "resources" among dub's stringImportPaths. values/strings.xml has every string, and
-    names the translations there are:
+    with "resources" among dub's stringImportPaths. strings.xml names its languages, the first
+    the one every string has to be in, and has each string in as many of them as it's been
+    translated into:
 
-        <resources translations="fr de zh">
-            <string name="hello">Hello</string>
-            <string name="welcome">Welcome back, {0}</string>
-        </resources>
+        <strings languages="en-GB fr de zh">
+            <string id="hello">
+                <en-GB>Hello</en-GB>
+                <fr>Bonjour</fr>
+                <de>Hallo</de>
+                <zh>你好</zh>
+            </string>
+            <string id="welcome">
+                <en-GB>Welcome back, {0}</en-GB>
+                <fr>Bon retour, {0}</fr>
+            </string>
+            <string id="ok">OK</string>         <!-- the same in every language -->
+        </strings>
 
-    and each translation has whichever of them it's translated, by the same names:
+    A string's text on its own, with no languages in it, is the first language's. An app that
+    isn't translated yet needs no languages="..." at all: it's in UK English, en-GB.
 
-        <!-- values-fr/strings.xml -->
-        <resources>
-            <string name="hello">Bonjour</string>
-            <string name="welcome">Bon retour, {0}</string>
-        </resources>
-
-    A view puts one in with `%` and its name, as FXML does:
+    A view puts one in with `%` and its id, as FXML does:
 
         <Label text="%hello"/>
         <Button>%hello</Button>             <!-- \% for text that starts with a % -->
@@ -41,47 +44,48 @@ import mayfair.xml.parser : Document, Element, XmlException, parseXml;
 
         status.setText(tr!"welcome"(user.name));
 
-    and a field can be marked to be filled with one, by its own name or the one given:
+    and a field can be marked to be filled with one, by its own name or the id given:
 
         @View("main.xml")
         class Main
         {
-            @localised string hello;                    // the string called hello
-            @Localised("welcome") string greeting;      // the one called welcome
+            @localised string hello;                    // the string with id="hello"
+            @Localised("welcome") string greeting;      // the one with id="welcome"
         }
 
     View.load fills a controller's @localised fields before it builds the view, as it does
     @autowired ones, and those of the app's own widgets a view makes; anything else made with
     `new` is filled in by localise(), which returns it: `auto page = localise(new Page)`.
 
-    Each of these is a compile error, at the line it's on: a name that isn't in
-    values/strings.xml, a translation of a string that isn't there, a translation whose {0}s
-    aren't the ones the original has, a string with {0}s in a view, which has nothing to fill
-    them, or tr! given more or fewer than it has. A string a translation leaves out is shown as
-    values/strings.xml has it, as Android does.
+    Each of these is a compile error, at the line it's on: an id that isn't in strings.xml, a
+    language that isn't among its languages="...", a string missing from the first language, a
+    translation whose {0}s aren't the ones the first language's has, a string with {0}s in a
+    view, which has nothing to fill them, or tr! given more or fewer than it has. A string that
+    hasn't been translated into a language is shown in the first language, as Android does.
 
     Which language
     --------------
-    The one the person running the app has asked for, as gettext works it out: the languages in
-    $LANGUAGE (fr:de), then the one in $LC_ALL, $LC_MESSAGES or $LANG (fr_CA.UTF-8). In the
-    browser that's the browser's language, which Emscripten puts in $LANG. The first of these
-    the app has a translation for is the one shown -- fr-CA if it has that, else fr, else any
-    French -- and if it has none of them, values/strings.xml's. Try one with
-    `LANGUAGE=fr ./app`, or setLanguage("fr") before the views are loaded.
+    By default the program has every language in it, and shows the one the person running it
+    has asked for, as gettext works it out: the languages in $LANGUAGE (fr:de), then the one in
+    $LC_ALL, $LC_MESSAGES or $LANG (fr_CA.UTF-8). In the browser that's the browser's language,
+    which Emscripten puts in $LANG. The first of those strings.xml has is shown -- fr-CA if it
+    has that, else fr, else any French -- and if it has none of them, its first language. It's
+    worked out once, when the first string's asked for: after that, a string's an index into a
+    table, with nothing to lock or compare. Try one with `LANGUAGE=fr ./app`, or call
+    setLanguage("fr") before the views are loaded.
 
-    Or the language can be chosen as the program's compiled, so it has only that one in it and
-    every string's a constant -- a build for one market, say -- with a version naming it:
+    Or one language can be chosen as the program's compiled, so it's the only one in it and every
+    string is a constant, with a version naming it:
 
         dub build --d-version=MayfairLanguage_fr
         dub build --d-version=MayfairLanguage_zh_CN    (a - in its name is a _)
 
-    or `"versions": ["MayfairLanguage_fr"]` in a dub configuration of the app's own. One for a
-    language the app has no translation of is a compile error.
+    or `"versions": ["MayfairLanguage_fr"]` in a dub configuration of the app's own. A language
+    strings.xml doesn't have is a compile error. setLanguage does nothing in a program built for
+    one language.
 
-    Language names are BCP 47's, as in values-fr, values-pt-BR and values-zh-Hans: two letters
-    for the language (Chinese is zh, German de), then a region or script if it matters.
-    values/strings.xml is in UK English unless its <resources> says otherwise with
-    language="...".
+    Languages are named as BCP 47 names them, as in fr, pt-BR and zh-Hans: two letters for the
+    language (Chinese is zh, German de), then a region or script if it matters.
 
     What's in a string: its text, with the space at its ends trimmed and any run of spaces and
     line breaks inside it made one space, as Android does; \n for a line break, \t a tab, and
@@ -92,24 +96,24 @@ import mayfair.xml.parser : Document, Element, XmlException, parseXml;
     to show it in the new one, as JavaFX's FXMLLoader needs.
 */
 
-/// Marks a string field to fill with the string of the same name, from values/strings.xml.
+/// Marks a string field to fill with the string whose id is the field's name, from strings.xml.
 enum localised = Localised.init;
 
-/// ditto. `@Localised("welcome")` fills it with the string called welcome.
+/// ditto. `@Localised("welcome")` fills it with the string with id="welcome".
 struct Localised
 {
-    string name;
+    string id;
 }
 
-/// The string called `name`, in the language being shown, with its {0}, {1}... filled in from `args`.
-string tr(string name, Args...)(Args args)
+/// The string with id `id`, in the language being shown, with its {0}, {1}... filled in from `args`.
+string tr(string id, Args...)(Args args)
 {
     enum c = catalogue!();
-    enum k = c.indexOf(name);
+    enum k = c.indexOf(id);
     static if (k < 0)
-        static assert(false, missing(c, name));
+        static assert(false, missing(c, id));
     else static if (Args.length != c.arity[k])
-        static assert(false, stringsFile ~ "'s " ~ name ~ " has " ~ slots(c.arity[k]) ~ ", and tr!\"" ~ name ~ "\" was given "
+        static assert(false, stringsFile ~ "'s " ~ id ~ " has " ~ slots(c.arity[k]) ~ ", and tr!\"" ~ id ~ "\" was given "
                       ~ (Args.length == 1 ? "1 thing" : decimal(Args.length) ~ " things") ~ " to fill in");
     else static if (Args.length)
     {
@@ -123,7 +127,7 @@ string tr(string name, Args...)(Args args)
         return .text!k;
 }
 
-/// The language strings are being shown in: a BCP 47 tag, as in "fr" or "en-GB".
+/// The language strings are being shown in: a BCP 47 name, as in "fr" or "en-GB".
 string currentLanguage()()
 {
     enum c = catalogue!();
@@ -133,7 +137,7 @@ string currentLanguage()()
     {
         enum string[] all = c.languages;
         static immutable string[] languages = all;
-        return languages[languageFor(languages)];
+        return languages[languageIndex!()()];
     }
 }
 
@@ -149,16 +153,16 @@ T localise(T)(T target) if (is(T == class))
                 static if (hasUDA!(B.tupleof[i], Localised))
                 {
                     enum field = B.stringof ~ "." ~ __traits(identifier, B.tupleof[i]);
-                    enum name = nameOf!(__traits(identifier, B.tupleof[i]), getUDAs!(B.tupleof[i], Localised));
+                    enum id = idOf!(__traits(identifier, B.tupleof[i]), getUDAs!(B.tupleof[i], Localised));
                     static assert(is(typeof(B.tupleof[i]) : const(char)[]),
                                   field ~ " is @localised, so it has to be a string, not " ~ typeof(B.tupleof[i]).stringof);
                     enum c = catalogue!();
-                    enum k = c.indexOf(name);
+                    enum k = c.indexOf(id);
                     static if (k < 0)
-                        static assert(false, field ~ " is @localised, but " ~ missing(c, name));
+                        static assert(false, field ~ " is @localised, but " ~ missing(c, id));
                     else static if (c.arity[k])
-                        static assert(false, field ~ " is @localised, but " ~ stringsFile ~ "'s " ~ name
-                                      ~ " has {n} to fill in; set it with tr!\"" ~ name ~ "\"(...) instead");
+                        static assert(false, field ~ " is @localised, but " ~ stringsFile ~ "'s " ~ id
+                                      ~ " has {n} to fill in; set it with tr!\"" ~ id ~ "\"(...) instead");
                     else
                         (cast(B) target).tupleof[i] = .text!k;
                 }
@@ -168,7 +172,7 @@ T localise(T)(T target) if (is(T == class))
     return target;
 }
 
-/// Shows strings in `language`, or the first of `languages` there's a translation of, from now on.
+/// Shows strings in `language`, or the first of `languages` there's a translation into, from now on.
 void setLanguage(string language) @safe
 {
     setLanguages([language]);
@@ -181,72 +185,50 @@ void setLanguages(string[] languages) @trusted
     {
         chosen = languages.dup;
         overridden = languages !is null;
-        cachedFor = null;
     }
+    atomicOp!"+="(generation, 1); // so each table works out its language again
 }
 
-/// The languages the person running the app has asked for, most wanted first, as BCP 47 tags.
+/// The languages the person running the app has asked for, most wanted first, as BCP 47 names.
 string[] preferredLanguages() @trusted
 {
     synchronized
         return overridden ? chosen.dup : systemLanguages();
 }
 
-/// The string a view's `%name` stands for. Public for the code views generate to call.
-string resourceString(string name, string loc)()
+/// The string a view's `%id` stands for. Public for the code views generate to call.
+string resourceString(string id, string loc)()
 {
     enum c = catalogue!();
-    enum k = c.indexOf(name);
+    enum k = c.indexOf(id);
     static if (k < 0)
-        static assert(false, loc ~ ": " ~ missing(c, name));
+        static assert(false, loc ~ ": " ~ missing(c, id));
     else static if (c.arity[k])
-        static assert(false, loc ~ ": " ~ stringsFile ~ "'s " ~ name ~ " has {n} to fill in, and a view has nothing to "
-                      ~ "fill them with; set it from the controller with tr!\"" ~ name ~ "\"(...)");
+        static assert(false, loc ~ ": " ~ stringsFile ~ "'s " ~ id ~ " has {n} to fill in, and a view has nothing to "
+                      ~ "fill them with; set it from the controller with tr!\"" ~ id ~ "\"(...)");
     else
         return .text!k;
 }
 
 private:
 
-/// The language values/strings.xml is in unless it says otherwise.
+/// The language strings are in when strings.xml doesn't name its languages.
 enum defaultLanguage = "en-GB";
 
 /// Where the strings are, among the string imports.
-enum stringsFile = "values/strings.xml";
-
-/// Where a translation's strings are: values-fr/strings.xml for fr.
-string translationFile(string language) pure nothrow @safe
-{
-    return "values-" ~ language ~ "/strings.xml";
-}
+enum stringsFile = "strings.xml";
 
 /*
-    The strings, read as the program's compiled. A template, so the files are looked for with
-    the app's string imports, not Mayfair's, and only once something asks for a string.
+    The strings, read as the program's compiled. A template, so the file's looked for with the
+    app's string imports, not Mayfair's, and only once something asks for a string.
 */
 template catalogue()
 {
-    static assert(__traits(compiles, import(stringsFile)), "there's no " ~ stringsFile ~ " for the app's strings: make one "
-                  ~ "in resources/values, with resources among the stringImportPaths in dub.json");
-    enum Header header = readHeader(import(stringsFile), stringsFile);
-    static assert(header.error is null, header.error);
-    static foreach (t; header.translations)
-        static assert(__traits(compiles, import(translationFile(t))),
-                      stringsFile ~ " says there's a " ~ t ~ " translation, but there's no " ~ translationFile(t));
-    enum Catalogue read = compile(import(stringsFile), stringsFile, translationTexts!(header.translations));
+    static assert(__traits(compiles, import(stringsFile)), "there's no " ~ stringsFile ~ " for the app's strings: make "
+                  ~ "one in resources, with resources among the stringImportPaths in dub.json");
+    enum Catalogue read = compile(import(stringsFile), stringsFile);
     static assert(read.error is null, read.error);
     enum Catalogue catalogue = read;
-}
-
-/// The text of translation files, by their languages.
-template translationTexts(string[] languages)
-{
-    enum string[] translationTexts = () {
-        string[] r;
-        static foreach (l; languages)
-            r ~= import(translationFile(l));
-        return r;
-    }();
 }
 
 /// Which of the catalogue's languages was chosen as the program was compiled, or -1 for none.
@@ -270,8 +252,8 @@ template pinned()
                       ~ versionName(candidates[found[0]]) ~ " and MayfairLanguage_" ~ versionName(candidates[found[1]]));
         enum chosen = match(c.languages, [candidates[found[0]]]);
         static assert(chosen >= 0, "the program's being compiled for " ~ candidates[found[0]] ~ " (MayfairLanguage_"
-                      ~ versionName(candidates[found[0]]) ~ "), but there's no " ~ translationFile(candidates[found[0]])
-                      ~ " or translation like it; " ~ stringsFile ~ " has " ~ joined(c.languages));
+                      ~ versionName(candidates[found[0]]) ~ "), but " ~ stringsFile ~ " has no "
+                      ~ candidates[found[0]] ~ " or language like it: it has " ~ joined(c.languages));
         enum pinned = chosen;
     }
 }
@@ -286,122 +268,161 @@ template text(size_t k)
     {
         enum string[] row = c.texts[k * c.languages.length .. (k + 1) * c.languages.length];
         static immutable string[] texts = row;
-        enum string[] all = c.languages;
-        static immutable string[] languages = all;
-        @property string text() { return texts[languageFor(languages)]; }
+        @property string text() { return texts[languageIndex!()()]; }
     }
 }
 
-/// What values/strings.xml says before its strings: its language, and the translations there are.
-struct Header
+/*
+    Which of the catalogue's languages to show. Worked out the first time it's asked, and again
+    after setLanguage; otherwise it's what it was, with nothing locked. Two threads asking at once
+    the first time both work it out, the same.
+*/
+size_t languageIndex()() @trusted
 {
-    string language;
-    string[] translations;
-    string error;
+    enum string[] all = catalogue!().languages;
+    static immutable string[] languages = all;
+    __gshared size_t index;
+    static shared size_t workedOutFor; // the generation it was worked out for: 0 for none yet
+    const now = atomicLoad!(MemoryOrder.acq)(generation);
+    if (atomicLoad!(MemoryOrder.acq)(workedOutFor) != now)
+    {
+        const found = match(languages, preferredLanguages());
+        index = found < 0 ? 0 : found;
+        atomicStore!(MemoryOrder.rel)(workedOutFor, now);
+    }
+    return index;
 }
 
-/// Every string, in every language, in a table: `texts[k * languages.length + l]` is string k in language l.
+shared size_t generation = 1;   // one more each time setLanguage changes what's wanted
+__gshared string[] chosen;      // setLanguages'
+__gshared bool overridden;
+
+/// What strings.xml says: its languages, and every string in each of them.
 struct Catalogue
 {
-    string[] languages;     /// The default first, then the translations
-    string[] names;
-    string[] texts;
+    string[] languages;     /// The first, which every string's in, then the rest
+    string[] ids;
+    string[] texts;         /// String k in language l is texts[k * languages.length + l]
     size_t[] arity;         /// How many {n} each has to fill in
     string error;
 
-    ptrdiff_t indexOf(string name) const pure nothrow @safe @nogc
+    ptrdiff_t indexOf(string id) const pure nothrow @safe @nogc
     {
-        foreach (i, n; names)
-            if (n == name)
+        foreach (i, n; ids)
+            if (n == id)
                 return i;
         return -1;
     }
 }
 
-Header readHeader(string xml, string file) pure @safe
-{
-    Header h;
-    try
-    {
-        const doc = parseXml(xml, file);
-        checkRoot(doc, file, true);
-        h.language = defaultLanguage;
-        if (auto a = doc.root.attribute("language"))
-            h.language = checkedLanguage(a.value, file, doc.root.line);
-        if (auto a = doc.root.attribute("translations"))
-            foreach (t; words(a.value))
-            {
-                const l = checkedLanguage(t, file, doc.root.line);
-                if (l == h.language || isIn(l, h.translations))
-                    fail(file, doc.root.line, "translations=\"" ~ a.value ~ "\" has " ~ l ~ " twice, or as well as "
-                         ~ "language=\"" ~ h.language ~ "\"");
-                h.translations ~= l;
-            }
-    }
-    catch (XmlException e)
-        h.error = e.msg;
-    return h;
-}
-
-/// The catalogue from values/strings.xml's text and its translations', in the order its header names them.
-Catalogue compile(string xml, string file, string[] translations) pure @safe
+/// The catalogue in strings.xml's text, or why it can't be read.
+Catalogue compile(string xml, string file) pure @safe
 {
     Catalogue c;
     try
     {
-        auto header = readHeader(xml, file);
-        if (header.error)
-            throw new XmlException(header.error);
-        c.languages = header.language ~ header.translations;
-        const n = c.languages.length;
-        uint[][] uses; // the {n} each string has, as the default has them
-
         const doc = parseXml(xml, file);
-        foreach (e; doc.root.children)
+        const root = doc.root;
+        if (root.name != "strings")
+            fail(file, root.line, "the strings go in <strings>, not <" ~ root.name ~ ">");
+        if (root.text.length)
+            fail(file, root.line, "text in <strings> needs to be in a <string id=\"...\">");
+        foreach (a; root.attributes)
+            if (a.name != "languages")
+                fail(file, root.line, "<strings> has no " ~ a.name);
+        if (auto a = root.attribute("languages"))
         {
-            const name = checkedString(e, file);
-            if (c.indexOf(name) >= 0)
-                fail(file, e.line, "a second string called " ~ name);
-            const s = unescaped(e.text, file, e.line);
-            auto u = placeholders(s, file, e.line);
-            uint highest;
-            foreach (x; u)
-                highest = x > highest ? x : highest;
-            foreach (i; 0 .. u.length ? highest + 1 : 0)
-                if (!isIn(cast(uint) i, u))
-                    fail(file, e.line, name ~ " has {" ~ decimal(highest) ~ "} but no {" ~ decimal(i) ~ "}: they're "
-                         ~ "numbered from {0}, one for each thing tr! is given");
-            c.names ~= name;
-            c.arity ~= u.length;
-            uses ~= u;
-            foreach (l; 0 .. n)
-                c.texts ~= s; // until a translation has its own
-        }
-
-        foreach (t, tx; translations)
-        {
-            const tfile = translationFile(header.translations[t]);
-            const tdoc = parseXml(tx, tfile);
-            checkRoot(tdoc, tfile, false);
-            if (auto a = tdoc.root.attribute("language"))
-                if (a.value != header.translations[t])
-                    fail(tfile, tdoc.root.line, "language=\"" ~ a.value ~ "\" in a file for " ~ header.translations[t]);
-            string[] seen;
-            foreach (e; tdoc.root.children)
+            foreach (t; words(a.value))
             {
-                const name = checkedString(e, tfile);
-                const k = c.indexOf(name);
-                if (k < 0)
-                    fail(tfile, e.line, missing(c, name));
-                if (isIn(name, seen))
-                    fail(tfile, e.line, "a second string called " ~ name);
-                seen ~= name;
-                const s = unescaped(e.text, tfile, e.line);
-                const u = placeholders(s, tfile, e.line);
-                if (!sameSet(u, uses[k]))
-                    fail(tfile, e.line, name ~ " has " ~ listed(u) ~ ", and in " ~ file ~ " it has " ~ listed(uses[k]));
-                c.texts[k * n + 1 + t] = s;
+                const l = checkedLanguage(t, file, root.line);
+                foreach (seen; c.languages)
+                    if (sameTag(seen, l))
+                        fail(file, root.line, "languages=\"" ~ a.value ~ "\" has " ~ l ~ " twice");
+                c.languages ~= l;
             }
+            if (!c.languages.length)
+                fail(file, root.line, "languages=\"\" needs at least one language, the one every string's in");
+        }
+        else
+            c.languages = [defaultLanguage];
+        const n = c.languages.length;
+        const languageList = "<strings languages=\"" ~ joinedBy(c.languages, " ") ~ "\">";
+
+        foreach (e; root.children)
+        {
+            if (e.name != "string")
+                fail(file, e.line, "<" ~ e.name ~ "> can't go in <strings>: it holds <string id=\"...\">s");
+            const idAttribute = e.attribute("id");
+            if (!idAttribute)
+                fail(file, e.line, "<string> needs an id=\"...\"");
+            foreach (a; e.attributes)
+                if (a.name != "id")
+                    fail(file, e.line, "<string> has no " ~ a.name);
+            const id = idAttribute.value;
+            if (!isIdentifier(id))
+                fail(file, e.line, "id=\"" ~ id ~ "\" isn't a name: it's letters, digits and _, not starting with a digit, "
+                     ~ "as a D field's is");
+            if (c.indexOf(id) >= 0)
+                fail(file, e.line, "a second string with id=\"" ~ id ~ "\"");
+
+            // Its text in each language: the first's for those it hasn't been translated into
+            auto texts = new string[n];
+            auto lines = new uint[n];
+            if (e.children.length && e.text.length)
+                fail(file, e.line, "<string id=\"" ~ id ~ "\"> has text and languages both: put the text in <"
+                     ~ c.languages[0] ~ ">");
+            if (!e.children.length)
+            {
+                texts[0] = unescaped(e.text, file, e.line);
+                lines[0] = e.line;
+            }
+            foreach (t; e.children)
+            {
+                ptrdiff_t l = -1;
+                foreach (i, language; c.languages)
+                    if (sameTag(language, t.name))
+                        l = i;
+                if (l < 0)
+                    fail(file, t.line, "<" ~ t.name ~ "> isn't one of the languages in " ~ languageList
+                         ~ "; add it there to translate into it");
+                if (lines[l])
+                    fail(file, t.line, id ~ " is in " ~ c.languages[l] ~ " twice");
+                if (t.attributes.length)
+                    fail(file, t.line, "<" ~ t.name ~ "> holds a string's text, and has no " ~ t.attributes[0].name);
+                if (t.children.length)
+                    fail(file, t.line, "<" ~ t.name ~ "> holds text, not elements");
+                texts[l] = unescaped(t.text, file, t.line);
+                lines[l] = t.line;
+            }
+            if (!lines[0])
+                fail(file, e.line, id ~ " isn't in " ~ c.languages[0] ~ ", the first language, which every string has "
+                     ~ "to be in for those it isn't translated into");
+
+            // Its {n}s: numbered from {0}, and the same in every language
+            auto uses = placeholders(texts[0], file, lines[0]);
+            uint highest;
+            foreach (x; uses)
+                highest = x > highest ? x : highest;
+            foreach (i; 0 .. uses.length ? highest + 1 : 0)
+                if (!isIn(cast(uint) i, uses))
+                    fail(file, lines[0], id ~ " has {" ~ decimal(highest) ~ "} but no {" ~ decimal(i) ~ "}: they're "
+                         ~ "numbered from {0}, one for each thing tr! is given");
+            foreach (l; 1 .. n)
+            {
+                if (!lines[l])
+                {
+                    texts[l] = texts[0];
+                    continue;
+                }
+                const u = placeholders(texts[l], file, lines[l]);
+                if (!sameSet(u, uses))
+                    fail(file, lines[l], id ~ " has " ~ listed(u) ~ " in " ~ c.languages[l] ~ ", and " ~ listed(uses) ~ " in "
+                         ~ c.languages[0]);
+            }
+
+            c.ids ~= id;
+            c.arity ~= uses.length;
+            c.texts ~= texts;
         }
     }
     catch (XmlException e)
@@ -431,11 +452,11 @@ ptrdiff_t match(const string[] available, const string[] preferred) pure nothrow
     return -1;
 }
 
-/// The languages in a locale's environment variables, as gettext reads them, as BCP 47 tags.
+/// The languages in a locale's environment variables, as gettext reads them, as BCP 47 names.
 string[] languagesFrom(string language, string lcAll, string lcMessages, string lang) pure @safe
 {
     string[] result;
-    // $LANGUAGE is a list, but only means anything when there's a locale, as gettext has it
+    // $LANGUAGE is a list, but means nothing in the C locale, as gettext has it
     const locale = lcAll.length ? lcAll : lcMessages.length ? lcMessages : lang;
     if (tagOf(locale).length || locale == "")
         foreach (l; split(language, ':'))
@@ -446,7 +467,7 @@ string[] languagesFrom(string language, string lcAll, string lcMessages, string 
     return result;
 }
 
-/// `locale` -- fr_CA.UTF-8@euro -- as a BCP 47 tag, fr-CA; null for C, POSIX or nothing.
+/// `locale` -- fr_CA.UTF-8@euro -- as a BCP 47 name, fr-CA; null for C, POSIX or nothing.
 string tagOf(string locale) pure @safe
 {
     size_t end = locale.length;
@@ -485,26 +506,6 @@ string fill(string text, const string[] args) pure @safe
     return r;
 }
 
-__gshared string[] chosen;          // setLanguages'
-__gshared bool overridden;
-__gshared const(string)[] cachedFor; // the languages an app has, for which...
-__gshared size_t cachedIndex;        // ...this is the one to show
-
-/// Which of `available` to show, `available[0]` being the default. Worked out once, until setLanguage.
-size_t languageFor(const string[] available) @trusted
-{
-    synchronized
-    {
-        if (cachedFor !is null && cachedFor == available)
-            return cachedIndex;
-        const wanted = overridden ? chosen : systemLanguages();
-        const found = match(available, wanted);
-        cachedFor = available.dup;
-        cachedIndex = found < 0 ? 0 : found;
-        return cachedIndex;
-    }
-}
-
 string[] systemLanguages() @trusted
 {
     // C's getenv rather than std.process, which isn't there for the browser build
@@ -518,12 +519,12 @@ string[] systemLanguages() @trusted
     return languagesFrom(variable("LANGUAGE"), variable("LC_ALL"), variable("LC_MESSAGES"), variable("LANG"));
 }
 
-template nameOf(string field, udas...)
+template idOf(string field, udas...)
 {
-    static if (is(typeof(udas[0]) == Localised) && udas[0].name.length)
-        enum nameOf = udas[0].name;
+    static if (is(typeof(udas[0]) == Localised) && udas[0].id.length)
+        enum idOf = udas[0].id;
     else
-        enum nameOf = field; // @localised, or the type alone, @Localised
+        enum idOf = field; // @localised, or the type alone, @Localised
 }
 
 template isVersion(string identifier)
@@ -531,7 +532,7 @@ template isVersion(string identifier)
     mixin("version (" ~ identifier ~ ") enum isVersion = true; else enum isVersion = false;");
 }
 
-/// Whether candidates[i] matches one of `already`'s, so pinning fr isn't fr twice.
+/// Whether `tag` is one of `candidates` picked already, so pinning fr isn't fr twice.
 bool isIn(string tag, const int[] already, const string[] candidates) pure nothrow @safe
 {
     foreach (j; already)
@@ -540,22 +541,30 @@ bool isIn(string tag, const int[] already, const string[] candidates) pure nothr
     return false;
 }
 
+string joinedBy(const string[] list, string by) pure @safe
+{
+    string s;
+    foreach (i, x; list)
+        s ~= (i ? by : "") ~ x;
+    return s;
+}
+
 /// "Did you mean" for a name that isn't there.
-string missing(const Catalogue c, string name) pure @safe
+string missing(const Catalogue c, string id) pure @safe
 {
     string best;
     size_t bestDistance = size_t.max;
-    foreach (n; c.names)
+    foreach (n; c.ids)
     {
-        const d = distance(n, name);
+        const d = distance(n, id);
         if (d < bestDistance)
         {
             best = n;
             bestDistance = d;
         }
     }
-    return stringsFile ~ " has no string called " ~ name
-         ~ (best.length && bestDistance <= 1 + name.length / 3 ? "; did you mean " ~ best ~ "?" : "");
+    return stringsFile ~ " has no string with id=\"" ~ id ~ "\""
+         ~ (best.length && bestDistance <= 1 + id.length / 3 ? "; did you mean " ~ best ~ "?" : "");
 }
 
 /// How many letters to change, add or take away to make `a` into `b`.
@@ -583,37 +592,6 @@ size_t min3(size_t a, size_t b, size_t c) pure nothrow @safe @nogc
 {
     const ab = a < b ? a : b;
     return ab < c ? ab : c;
-}
-
-void checkRoot(const Document doc, string file, bool isDefault) pure @safe
-{
-    if (doc.root.name != "resources")
-        fail(file, doc.root.line, "the strings go in <resources>, not <" ~ doc.root.name ~ ">");
-    if (doc.root.text.length)
-        fail(file, doc.root.line, "text in <resources> needs to be in a <string name=\"...\">");
-    foreach (a; doc.root.attributes)
-        if (a.name != "language" && (a.name != "translations" || !isDefault))
-            fail(file, doc.root.line, "<resources> has no " ~ a.name ~ (a.name == "translations"
-                 ? "; the translations there are are named in " ~ stringsFile : ""));
-}
-
-/// The name of a <string> element, checked.
-string checkedString(const Element e, string file) pure @safe
-{
-    if (e.name != "string")
-        fail(file, e.line, "<" ~ e.name ~ "> can't go in <resources>: it holds <string name=\"...\">s");
-    const name = e.attribute("name");
-    if (!name)
-        fail(file, e.line, "<string> needs a name=\"...\"");
-    foreach (a; e.attributes)
-        if (a.name != "name")
-            fail(file, e.line, "<string> has no " ~ a.name);
-    if (e.children.length)
-        fail(file, e.line, "<string name=\"" ~ name.value ~ "\"> holds text, not elements");
-    if (!isIdentifier(name.value))
-        fail(file, e.line, "name=\"" ~ name.value ~ "\" isn't a name: it's letters, digits and _, not starting with a digit, "
-             ~ "as a D field's is");
-    return name.value;
 }
 
 string checkedLanguage(string tag, string file, uint line) pure @safe
@@ -851,57 +829,70 @@ enum string[] isoLanguages = [
 unittest
 {
     enum xml = `<?xml version="1.0"?>
-<resources translations="fr zh-Hans">
-    <string name="hello">Hello</string>
-    <string name="welcome">Welcome back,
-        {0}</string>
-    <string name="moved">{0} moved {1} files to {0}</string>
-    <string name="lines">One\nTwo \\ three</string>
-</resources>`;
-    enum fr = `<resources>
-    <string name="hello">Bonjour</string>
-    <string name="moved">{1} fichiers déplacés vers {0}</string>
-</resources>`;
-    enum zh = `<resources language="zh-Hans"><string name="hello">你好</string></resources>`;
+<strings languages="en-GB fr zh-Hans">
+    <string id="hello">
+        <en-GB>Hello</en-GB>
+        <fr>Bonjour</fr>
+        <zh-Hans>你好</zh-Hans>
+    </string>
+    <string id="welcome">
+        <en-GB>Welcome back,
+            {0}</en-GB>
+    </string>
+    <string id="moved">
+        <en-GB>{0} moved {1} files to {0}</en-GB>
+        <fr>{1} fichiers déplacés vers {0}</fr>
+    </string>
+    <string id="lines">One\nTwo \\ three</string>
+</strings>`;
 
-    enum c = compile(xml, "values/strings.xml", [fr, zh]);
+    enum c = compile(xml, "strings.xml");
     static assert(c.error is null, c.error);
     static assert(c.languages == ["en-GB", "fr", "zh-Hans"]);
-    static assert(c.names == ["hello", "welcome", "moved", "lines"]);
+    static assert(c.ids == ["hello", "welcome", "moved", "lines"]);
     static assert(c.arity == [0, 1, 2, 0]);
     static assert(c.texts[0 .. 3] == ["Hello", "Bonjour", "你好"]);
     static assert(c.texts[3 .. 6] == ["Welcome back, {0}", "Welcome back, {0}", "Welcome back, {0}"]); // not translated
     static assert(c.texts[7] == "{1} fichiers déplacés vers {0}");
-    static assert(c.texts[9] == "One\nTwo \\ three");
+    static assert(c.texts[9 .. 12] == ["One\nTwo \\ three", "One\nTwo \\ three", "One\nTwo \\ three"]);
     assert(fill(c.texts[7], ["Documents", "3"]) == "3 fichiers déplacés vers Documents");
     assert(fill("{0} and {1} and {2} and {x}", ["a", "b"]) == "a and b and {2} and {x}");
 
-    // Mistakes, at the file and line they're on
-    static string error(string xml, string[] translations...) { return compile(xml, "values/strings.xml", translations).error; }
-    enum two = `<resources translations="fr">
-    <string name="hello">Hello</string>
-    <string name="name">Name</string>
-</resources>`;
-    static assert(error(two, `<resources><string name="helo">Bonjour</string></resources>`)
-                  == "values-fr/strings.xml:1: values/strings.xml has no string called helo; did you mean hello?");
-    static assert(error(`<resources><string name="a">{0}</string><string name="a">x</string></resources>`)
-                  == "values/strings.xml:1: a second string called a");
-    static assert(error(`<resources><string name="a">{1}</string></resources>`)
-                  == "values/strings.xml:1: a has {1} but no {0}: they're numbered from {0}, one for each thing tr! is given");
-    static assert(error(`<resources translations="fr">
-<string name="a">{0} x</string></resources>`, `<resources><string name="a">x</string></resources>`)
-                  == "values-fr/strings.xml:1: a has nothing to fill in, and in values/strings.xml it has {0}");
-    static assert(error(`<strings/>`) == "values/strings.xml:1: the strings go in <resources>, not <strings>");
-    static assert(error(`<resources><string name="2a">x</string></resources>`).length);
-    static assert(error(`<resources><string>x</string></resources>`).length);
-    static assert(error(`<resources><string name="a">\q</string></resources>`).length);
-    static assert(error(`<resources translations="fr fr"/>`).length);
-    static assert(error(`<resources translations="en-GB"/>`).length);
-    static assert(error(`<resources translations="f_r"/>`).length);
-    static assert(error(`<resources translations="fr"/>`, `<resources translations="de"/>`).length);
-    static assert(error(`<resources translations="fr"/>`, `<resources language="de"/>`).length);
+    // An app that isn't translated: no languages, and each string's text on its own
+    enum plain = compile(`<strings><string id="hi">Hi</string></strings>`, "strings.xml");
+    static assert(plain.error is null && plain.languages == ["en-GB"] && plain.texts == ["Hi"]);
 
-    // Which language: exactly, then the language alone, then the language anywhere; then the default
+    // Mistakes, at the line they're on
+    static string error(string xml) { return compile(xml, "strings.xml").error; }
+    static assert(error(`<strings languages="en-GB fr">
+    <string id="hello"><en-GB>Hello</en-GB>
+        <fe>Bonjour</fe></string>
+</strings>`) == `strings.xml:3: <fe> isn't one of the languages in <strings languages="en-GB fr">; add it there to `
+                ~ `translate into it`);
+    static assert(error(`<strings languages="en-GB fr">
+    <string id="hello"><fr>Bonjour</fr></string>
+</strings>`) == "strings.xml:2: hello isn't in en-GB, the first language, which every string has to be in for those it "
+                ~ "isn't translated into");
+    static assert(error(`<strings><string id="a">x</string><string id="a">y</string></strings>`)
+                  == `strings.xml:1: a second string with id="a"`);
+    static assert(error(`<strings><string id="a">{1}</string></strings>`)
+                  == "strings.xml:1: a has {1} but no {0}: they're numbered from {0}, one for each thing tr! is given");
+    static assert(error(`<strings languages="en-GB fr">
+<string id="a">
+    <en-GB>{0} x</en-GB>
+    <fr>x</fr>
+</string></strings>`) == "strings.xml:4: a has nothing to fill in in fr, and {0} in en-GB");
+    static assert(error(`<resources/>`) == "strings.xml:1: the strings go in <strings>, not <resources>");
+    static assert(error(`<strings><string id="2a">x</string></strings>`).length);
+    static assert(error(`<strings><string>x</string></strings>`).length);
+    static assert(error(`<strings><string id="a">\q</string></strings>`).length);
+    static assert(error(`<strings languages="fr fr"/>`).length);
+    static assert(error(`<strings languages=""/>`).length);
+    static assert(error(`<strings languages="f_r"/>`).length);
+    static assert(error(`<strings><string id="a"><en-GB>x</en-GB><en-GB>y</en-GB></string></strings>`).length);
+    static assert(error(`<strings><string id="a">x<en-GB>y</en-GB></string></strings>`).length);
+
+    // Which language: exactly, then the language alone, then the language anywhere; then the first
     const available = ["en-GB", "fr", "pt-BR", "zh-Hans"];
     assert(match(available, ["fr-CA"]) == 1);
     assert(match(available, ["FR"]) == 1);

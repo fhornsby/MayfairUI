@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The app's text: each string in UK English, the first language, and in those it's been
+     translated into. A view puts one in with %id, and code with tr!"id". -->
+<strings languages="en-GB fr de zh">
+    <string id="welcome">
+        <en-GB>Welcome</en-GB>
+        <fr>Bienvenue</fr>
+        <de>Willkommen</de>
+        <zh>欢迎</zh>
+    </string>
+    <string id="appearance">
+        <en-GB>Appearance</en-GB>
+        <fr>Apparence</fr>
+        <de>Darstellung</de>
+        <zh>外观</zh>
+    </string>
+    <string id="say_hello">
+        <en-GB>Say Hello</en-GB>
+        <fr>Dire bonjour</fr>
+        <de>Hallo sagen</de>
+        <zh>打个招呼</zh>
+    </string>
+    <string id="greeting">
+        <en-GB>Hello, World!</en-GB>
+        <fr>Bonjour, le monde !</fr>
+        <de>Hallo, Welt!</de>
+        <zh>你好，世界！</zh>
+    </string>
+    <string id="frosted_on">
+        <en-GB>Frosted glass is on: Oriel blurs the desktop behind this window.</en-GB>
+        <fr>Le verre dépoli est activé : Oriel floute le bureau derrière cette fenêtre.</fr>
+        <de>Milchglas ist an: Oriel zeichnet den Desktop hinter diesem Fenster unscharf.</de>
+        <zh>毛玻璃效果已开启：Oriel 会模糊此窗口后面的桌面。</zh>
+    </string>
+    <string id="frosted_off">
+        <en-GB>Frosted glass is off, so the window is opaque.</en-GB>
+        <fr>Le verre dépoli est désactivé : la fenêtre est donc opaque.</fr>
+        <de>Milchglas ist aus, deshalb ist das Fenster undurchsichtig.</de>
+        <zh>毛玻璃效果已关闭，因此窗口不透明。</zh>
+    </string>
+    <string id="translucency_help">
+        <en-GB>Turn Translucency off in Oriel Settings and the window turns opaque straight away, and frosted again when it's back on. On other desktops it's frosted where the compositor blurs behind windows over ext-background-effect-v1, and opaque elsewhere.</en-GB>
+        <fr>Désactivez la transparence dans les Réglages d'Oriel et la fenêtre devient aussitôt opaque, puis de nouveau dépolie quand vous la réactivez. Sur d'autres bureaux, elle est dépolie là où le compositeur floute l'arrière-plan des fenêtres via ext-background-effect-v1, et opaque ailleurs.</fr>
+        <de>Schalte in den Oriel-Einstellungen die Transparenz aus, und das Fenster wird sofort undurchsichtig – und wieder milchig, sobald sie wieder an ist. Auf anderen Desktops ist es dort milchig, wo der Compositor den Hintergrund von Fenstern über ext-background-effect-v1 unscharf zeichnet, und sonst undurchsichtig.</de>
+        <zh>在 Oriel 设置中关闭透明效果，窗口会立即变为不透明；重新开启后又会恢复毛玻璃效果。在其他桌面上，如果合成器通过 ext-background-effect-v1 模糊窗口背后的内容，窗口就会呈现毛玻璃效果，否则保持不透明。</zh>
+    </string>
+</strings>

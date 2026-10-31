@@ -7,8 +7,7 @@ module mayfair.resources;
         resources/
             views/main.xml          the views, and their CSS
             views/main.css
-            values/strings.xml      the app's text, and its translations (see mayfair.strings)
-            values-fr/strings.xml
+            strings.xml             the app's text, in each language it's in (see mayfair.strings)
             images/logo.svg         anything else, wherever suits
 
     with it among dub's stringImportPaths:

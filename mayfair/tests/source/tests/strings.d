@@ -5,8 +5,8 @@ import mayfair;
 import mayfair.xml.view : buildText;
 
 /*
-    The app's strings, from assets/values/strings.xml and its French translation: in a view, in
-    code, and in @localised fields, in whichever language is chosen.
+    The app's strings, from assets/strings.xml, in English and French: in a view, in code, and in
+    @localised fields, in whichever language is chosen.
 */
 
 class Greeting
@@ -60,7 +60,7 @@ void translations()
             d.check(french.hello.boundsInScene.width > 0, "the French is laid out");
 
             setLanguage("de"); // no German: the default
-            d.expect(currentLanguage, "en-GB", "a language with no translation shows values/strings.xml's");
+            d.expect(currentLanguage, "en-GB", "a language strings.xml hasn't got shows its first");
             d.expect(tr!"moved"("Documents", 3), "Moved 3 files to Documents");
             setLanguages(null); // back to the environment's
         });

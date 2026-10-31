@@ -74,7 +74,7 @@ import mayfair.xml.parser;
       `<Label Grid.column="1" Grid.row="2"/>` in a Grid is grid.add(label, column: 1, row: 2).
     - What to show of an item is the name of what to read from it, as PropertyValueFactory's is:
       `<TableColumn of="Person" title="Name" text="name"/>` shows each person's name.
-    - `%name` is the string called name in resources/values/strings.xml, in the language the app's
+    - `%id` is the string with that id in resources/strings.xml, in the language the app's
       shown in, as FXML's `%key` is from its ResourceBundle: `<Label text="%hello"/>`,
       `<Button>%save</Button>`, `items="%small %large"`. `\%` is text that starts with a %.
       See mayfair.strings, which also has the controller's @localised fields, filled in with
@@ -511,8 +511,8 @@ H ignoring(H, F)(F f)
 }
 
 /*
-    The text of an attribute as a P. `%name` is the string called name in values/strings.xml, in
-    the language being shown, as FXML's `%key` is from its ResourceBundle; `\%` is a % at the start.
+    The text of an attribute as a P. `%id` is the string with that id in strings.xml, in the
+    language being shown, as FXML's `%key` is from its ResourceBundle; `\%` is a % at the start.
 */
 template value(P, string text, string loc)
 {
