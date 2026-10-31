@@ -33,7 +33,14 @@ import mayfair.xml.parser : Document, Element, XmlException, parseXml;
         </strings>
 
     A string's text on its own, with no languages in it, is the first language's. An app that
-    isn't translated yet needs no languages="..." at all: it's in UK English, en-GB.
+    isn't translated yet needs no languages="..." at all: it's in UK English, en-GB. One written
+    in another language says so, and needn't have English anywhere:
+
+        <strings languages="fr">                <!-- a French app: French first, and only -->
+            <string id="order">Commander</string>
+        </strings>
+
+    and translating it later is adding languages after fr, and their text beside the French.
 
     A view puts one in with `%` and its id, as FXML does:
 
@@ -861,6 +868,11 @@ unittest
     // An app that isn't translated: no languages, and each string's text on its own
     enum plain = compile(`<strings><string id="hi">Hi</string></strings>`, "strings.xml");
     static assert(plain.error is null && plain.languages == ["en-GB"] && plain.texts == ["Hi"]);
+
+    // Nor one in another language: French first, and no English anywhere, shown whatever's asked for
+    enum french = compile(`<strings languages="fr"><string id="order">Commander</string></strings>`, "strings.xml");
+    static assert(french.error is null && french.languages == ["fr"] && french.texts == ["Commander"]);
+    static assert(match(french.languages, ["en-GB"]) == -1); // so the first, French
 
     // Mistakes, at the line they're on
     static string error(string xml) { return compile(xml, "strings.xml").error; }
