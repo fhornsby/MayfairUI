@@ -34,7 +34,20 @@ public:
     }
 
     /// The scroll pane it's in, whose view says which rows are wanted. The owner sets it.
-    ScrollPane pane;
+    final ScrollPane pane() nothrow @nogc { return _pane; }
+
+    /// ditto
+    final void pane(ScrollPane pane) nothrow @nogc
+    {
+        _pane = pane;
+        /*
+            Its own size needn't change when the view's does -- it's as wide as its content,
+            however wide the window -- so arrange() alone would miss the window being resized,
+            and with it a table's columns filling it. The pane says when its view's size changes.
+        */
+        if (pane)
+            pane.onViewResized = &noticeViewport;
+    }
 
     /// Called in the update after the view changes size, before the rows are refreshed: for an
     /// owner whose rows depend on how wide it is, as a table's last column fills it.
@@ -209,12 +222,7 @@ protected:
 
     override void arrange(float width, float height) nothrow @nogc
     {
-        // The view's changed size: there may be more or fewer rows to show, next update
-        if (pane && (pane.viewportBounds.height != _viewHeight || pane.viewportBounds.width != _viewWidth))
-        {
-            _viewportMoved = true;
-            requestUpdate();
-        }
+        noticeViewport();
         const w = width > _contentWidth ? width : _contentWidth;
         foreach (i, row; _rows)
             if (_shows[i] != size_t.max)
@@ -239,6 +247,20 @@ protected:
     }
 
 private:
+    ScrollPane _pane;
+
+    // The view's changed size: there may be more or fewer rows to show, and a table's columns to
+    // size again, next update
+    void noticeViewport() nothrow @nogc
+    {
+        if (pane && (pane.viewportBounds.height != _viewHeight || pane.viewportBounds.width != _viewWidth))
+        {
+            _viewportMoved = true;
+            requestUpdate();
+            invalidate(); // another frame, for the update to run in: heard while painting, nothing else asks for one
+        }
+    }
+
     enum overscan = 2; // rows made beyond each end of the view, so a small scroll has them ready
     Widget delegate() _makeRow;
     void delegate(Widget, size_t) _bindRow;

@@ -78,6 +78,10 @@ public:
             setContent(content);
     }
 
+    /// Called when the view changes size, after layout and before what's in it is painted: for
+    /// content whose own size doesn't follow the view's, as a VirtualFlow's doesn't.
+    package(mayfair) void delegate() nothrow @nogc onViewResized;
+
     /// The part of the content in view: where it starts, from the content's top left, and how
     /// big the view is -- as of the last layout, and where it's scrolled to since. JavaFX's viewportBounds.
     final Bounds viewportBounds() nothrow @nogc
@@ -158,7 +162,10 @@ protected:
         {
             _max = [maxX, maxY];
             _offset = [offX, offY];
+            const resized = view.width != _view_[0] || view.height != _view_[1];
             _view_ = [view.width, view.height];
+            if (resized && onViewResized)
+                onViewResized();
             invalidate(); // the bars
             invalidateAccessible(); // how far it scrolls
         }
