@@ -473,6 +473,13 @@
     border-radius: 6;
 }
 
+.navigation-heading {
+    padding: 14 12 4 12;
+    font-size: 11;
+    font-weight: bold;
+    colour: var(--prompt-text);
+}
+
 /*
     Popups: menus, drop-down lists and dialogs, on a surface of their own over the window, with a
     thin edge -- the shadow round it is drawn for every popup, not styled.

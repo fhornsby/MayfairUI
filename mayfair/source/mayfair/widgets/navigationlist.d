@@ -4,6 +4,7 @@ import mayfair.accessibility;
 import mayfair.layout;
 import mayfair.properties;
 import mayfair.widgets.buttonbase;
+import mayfair.widgets.label;
 import mayfair.widgets.icon;
 import mayfair.widgets.input;
 import mayfair.widgets.layouts;
@@ -26,13 +27,23 @@ import mayfair.widgets.widget;
             <NavigationItem text="Wi-Fi" iconName="network-wireless-symbolic"/>
         </NavigationList>
 
+    A heading can go between them, to group what's after it -- a music player's playlists, say --
+    and entries can be taken out again, as a playlist that's deleted is:
+
+        sidebar.addHeading("Playlists").add("Road Trip", "view-list-symbolic");
+        sidebar.remove(roadTrip);
+
+    A heading isn't an entry: it can't be selected, the keys pass over it, and selectedIndex
+    counts only entries.
+
     One is always selected once there are any -- the first, to start with -- and clicking it again
     leaves it so, which is what makes it a place rather than a switch. From the keyboard it's one
     stop for Tab, at the selected entry, and Up and Down, Home and End move the selection, which
     follows at once, as GNOME's does.
 
     Its style class is "navigation-list", and each entry is a `.navigation-item`, :selected for
-    the one chosen. To a screen reader it's a list box and its entries options, one selected.
+    the one chosen, and a heading is a `.navigation-heading`. To a screen reader it's a list box
+    and its entries options, one selected.
 */
 class NavigationList : Widget
 {
@@ -65,7 +76,42 @@ public:
         return this;
     }
 
+    /// Adds a heading saying `text` after the entries so far, for those added after it.
+    final NavigationList addHeading(string text)
+    {
+        auto heading = new Label(text);
+        heading.styleClass.add("navigation-heading");
+        adopt(heading);
+        return this;
+    }
+
+    /*
+        Takes `item` out. If it was the one selected, the entry before it is selected instead --
+        or the first, if it was the first -- and selectedIndex's listeners hear of it even where
+        the number's the same, as it's another entry now.
+    */
+    final NavigationList remove(NavigationItem item)
+    {
+        const i = indexOf(item);
+        if (i < 0)
+            return this;
+        _items = _items[0 .. i] ~ _items[i + 1 .. $];
+        item.showSelected(false);
+        item._list = null;
+        Widget.remove(item);
+        if (_selectedIndex == i)
+        {
+            setSelectedIndex(-1); // which comes back to 0 if there are entries left
+            if (i > 0)
+                setSelectedIndex(i - 1);
+        }
+        else if (_selectedIndex > i)
+            setSelectedIndex(_selectedIndex - 1); // the same entry, which has moved up
+        return this;
+    }
+
     alias add = Widget.add; // refused, as for any control: entries go in with add(text, icon)
+    alias remove = Widget.remove; /// ditto
 
     /// How many entries there are.
     final size_t length() const nothrow @nogc { return _items.length; }
@@ -191,4 +237,19 @@ private:
         pseudoClassStateChanged(pseudo!"selected", on);
         invalidateAccessible();
     }
+}
+
+unittest
+{
+    auto list = new NavigationList();
+    auto a = new NavigationItem("A"), b = new NavigationItem("B"), c = new NavigationItem("C");
+    list.add(a).addHeading("Group").add(b).add(c);
+    assert(list.length == 3 && list.children.length == 4, "a heading isn't an entry");
+    list.setSelectedIndex(2);
+    list.remove(b);
+    assert(list.selectedIndex == 1 && c.isSelected, "the selected entry stays selected as it moves up");
+    list.remove(c);
+    assert(list.selectedIndex == 0 && a.isSelected, "the one before, once the selected one's gone");
+    list.remove(a);
+    assert(list.selectedIndex == -1 && list.length == 0);
 }
