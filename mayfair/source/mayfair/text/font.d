@@ -105,11 +105,11 @@ public:
         and it's here for a widget that puts its own pixels together, as a terminal's grid does.
         The glyph ids come from shaping: a PositionedGlyph's, with the font it's in.
     */
-    const(GlyphBitmap)* glyphBitmap(uint glyph, float scale, bool subpixel = false) nothrow @nogc
+    const(GlyphBitmap)* glyphBitmap(uint glyph, float scale, bool subpixel = false, ubyte phase = 0) nothrow @nogc
     {
-        if (auto b = _bitmaps.lookup(glyph, scale, subpixel))
+        if (auto b = _bitmaps.lookup(glyph, scale, subpixel, phase))
             return b;
-        return _bitmaps.add(outlineFace(scale), glyph, scale, subpixel);
+        return _bitmaps.add(outlineFace(scale), glyph, scale, subpixel, phase);
     }
 
 package:

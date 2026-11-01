@@ -1,6 +1,6 @@
 module mayfair.text.raster;
 
-import core.stdc.math : powf, roundf;
+import core.stdc.math : floorf, powf, roundf;
 import core.stdc.stdlib : free, malloc, realloc;
 import core.stdc.string : memcpy, memset;
 
@@ -25,6 +25,16 @@ import mayfair.theme : Colour, Theme;
     It's made at the scene's pixel scale -- the display's times any render scale -- and put on the
     pixel grid, so it's drawn one texel to a pixel, whatever the renderer does. A widget moved by
     a fraction of a pixel, or scaled by an animation, is resampled, a little soft while it lasts.
+
+    Inside it, each glyph goes where HarfBuzz put it to a third of a pixel across, rather than to
+    the nearest whole one: each glyph is rendered at up to three offsets, a third of a pixel apart,
+    and the nearest is used. Rounded to whole pixels, a gap that should be 1.4 pixels comes out as
+    1 in one place and 2 in the next, and a line's letters look unevenly spaced, as if a little
+    blurred, though each is sharp. A third is a subpixel light's width, so subpixel text's lights
+    line up with the display's. Up and down, the baseline stays on a whole pixel, which the
+    hinting has fitted the glyph to. All of it's in the scene's pixels, whatever the scale: at 1,
+    a third of a point; at 2, a sixth; at a fractional 1.25 or 1.5, a third of whatever a pixel
+    is there.
 
     Everything here is @nogc: text is laid out at the width layout gives it, so it's put together
     in paint(), which runs inside the frame. What it holds is malloc'd.
@@ -61,6 +71,9 @@ import mayfair.theme : Colour, Theme;
 
 /// The most a picture of text is, in pixels, across or down: within any GPU's texture limit.
 enum tileSize = 4096;
+
+/// How many places across a pixel a glyph can be drawn at: thirds of a pixel (see the top).
+enum phases = 3;
 
 /// What text is drawn over, as far as is known: a solid colour, or not known. For subpixel text.
 struct Behind
@@ -212,11 +225,13 @@ public:
             glyphs = grown;
             glyphCapacity = more;
         }
-        // Each origin on a whole pixel, so a letter comes out the same wherever it's repeated. In
+        // Each origin to a third of a pixel across, and on a whole one down (see the top). In
         // subpixel colours if what's behind it is known, as they're mixed with it
         const lcd = subpixel && behind.known;
-        glyphs[glyphCount++] = Placed(cast(void*) g.font, g.glyph, cast(int) roundf(x * scale),
-                                      cast(int) roundf(y * scale), colour, lcd, behind.colour);
+        const thirds = roundf(x * scale * phases);
+        const whole = floorf(thirds / phases);
+        glyphs[glyphCount++] = Placed(cast(void*) g.font, g.glyph, cast(int) whole, cast(int) roundf(y * scale), colour,
+                                      lcd, behind.colour, cast(ubyte)(thirds - whole * phases));
     }
 
     /// Puts it together and shows it. Nothing added shows nothing.
@@ -344,6 +359,7 @@ private:
         Colour colour;
         bool subpixel;       // drawn in subpixel colours, over `behind`
         Colour behind;
+        ubyte phase;         // how many thirds of a pixel right of x it is
     }
     Placed* glyphs;
     size_t glyphCount, glyphCapacity;
@@ -355,7 +371,7 @@ private:
 
     const(GlyphBitmap)* bitmapOf(ref const Placed p) nothrow @nogc
     {
-        return (cast(Font) p.font).glyphBitmap(p.glyph, scale, p.subpixel);
+        return (cast(Font) p.font).glyphBitmap(p.glyph, scale, p.subpixel, p.phase);
     }
 
     bool reserve(size_t count) nothrow @nogc
@@ -491,29 +507,31 @@ struct GlyphBitmap
 */
 package(mayfair) struct GlyphCache
 {
-    /// `glyph` at `scale` pixels to the point, in subpixel coverage or not, if it's been rendered.
-    const(GlyphBitmap)* lookup(uint glyph, float scale, bool subpixel = false) nothrow @nogc
+    /// `glyph` at `scale` pixels to the point, in subpixel coverage or not, `phase` thirds of a
+    /// pixel right of where it'd be, if it's been rendered.
+    const(GlyphBitmap)* lookup(uint glyph, float scale, bool subpixel = false, ubyte phase = 0) nothrow @nogc
     {
         if (!capacity)
             return null;
-        auto e = find(glyph, scale, subpixel);
+        auto e = find(glyph, scale, subpixel, phase);
         return e.used ? &e.bitmap : null;
     }
 
     /// Renders `glyph` of `face`, which is sized for `scale`, and keeps it. An empty bitmap if
     /// FreeType couldn't, kept too, so it isn't tried again.
-    const(GlyphBitmap)* add(FT_Face face, uint glyph, float scale, bool subpixel = false) nothrow @nogc
+    const(GlyphBitmap)* add(FT_Face face, uint glyph, float scale, bool subpixel = false, ubyte phase = 0) nothrow @nogc
     {
         if (count * 4 >= capacity * 3 && !grow())
             return null;
-        auto e = find(glyph, scale, subpixel);
+        auto e = find(glyph, scale, subpixel, phase);
         if (!e.used)
         {
             e.used = true;
             e.glyph = glyph;
             e.scale = scale;
             e.subpixel = subpixel;
-            e.bitmap = render(face, glyph, subpixel);
+            e.phase = phase;
+            e.bitmap = render(face, glyph, subpixel, phase);
             count++;
         }
         return &e.bitmap;
@@ -534,6 +552,7 @@ private:
     {
         bool used;
         bool subpixel;
+        ubyte phase;
         uint glyph;
         float scale;
         GlyphBitmap bitmap;
@@ -541,19 +560,19 @@ private:
     Entry* entries;
     size_t capacity, count;
 
-    Entry* find(uint glyph, float scale, bool subpixel) nothrow @nogc
+    Entry* find(uint glyph, float scale, bool subpixel, ubyte phase) nothrow @nogc
     {
-        auto at = hash(glyph, scale, subpixel) & (capacity - 1);
+        auto at = hash(glyph, scale, subpixel, phase) & (capacity - 1);
         while (entries[at].used && (entries[at].glyph != glyph || entries[at].scale != scale
-                                    || entries[at].subpixel != subpixel))
+                                    || entries[at].subpixel != subpixel || entries[at].phase != phase))
             at = (at + 1) & (capacity - 1);
         return &entries[at];
     }
 
-    static size_t hash(uint glyph, float scale, bool subpixel) nothrow @nogc
+    static size_t hash(uint glyph, float scale, bool subpixel, ubyte phase) nothrow @nogc
     {
         const s = *cast(const(uint)*) &scale;
-        return (glyph * 2654435761u) ^ (s * 40503u) ^ (subpixel ? 0x9E3779B9u : 0);
+        return (glyph * 2654435761u) ^ (s * 40503u) ^ (subpixel ? 0x9E3779B9u : 0) ^ (phase * 0x85EBCA6Bu);
     }
 
     bool grow() nothrow @nogc
@@ -569,7 +588,7 @@ private:
         capacity = more;
         foreach (ref e; old[0 .. oldCapacity])
             if (e.used)
-                *find(e.glyph, e.scale, e.subpixel) = e;
+                *find(e.glyph, e.scale, e.subpixel, e.phase) = e;
         free(old);
         return true;
     }
@@ -578,7 +597,7 @@ private:
     enum FT_LOAD_NO_BITMAP_ = 1 << 3;
     enum FT_LOAD_TARGET_LIGHT_ = 1 << 16; // grid-fitted up and down only: see mayfair.text.outline
 
-    static GlyphBitmap render(FT_Face face, uint glyph, bool subpixel) nothrow @nogc
+    static GlyphBitmap render(FT_Face face, uint glyph, bool subpixel, ubyte phase) nothrow @nogc
     {
         GlyphBitmap b;
         if (FT_Load_Glyph(face, glyph, FT_LOAD_TARGET_LIGHT_ | FT_LOAD_NO_BITMAP_) != 0)
@@ -586,6 +605,10 @@ private:
         auto slot = face.glyph;
         if (slot.format != FT_Glyph_Format.FT_GLYPH_FORMAT_OUTLINE)
             return b; // a colour or bitmap glyph
+        // Moved right by its phase, in 64ths of a pixel. Light hinting only fits a glyph up and
+        // down, so moving it across after doesn't undo any of it
+        if (phase)
+            FT_Outline_Translate(&slot.outline, (phase * 64 + phases / 2) / phases, 0);
         // In subpixel coverage, three bytes to a pixel, red's, green's and blue's: Harmony aligns
         // them, so they're a pixel's three lights whichever way the display has them
         const mode = subpixel ? FT_Render_Mode.FT_RENDER_MODE_LCD : FT_Render_Mode.FT_RENDER_MODE_LIGHT;
@@ -805,4 +828,54 @@ unittest
     // And left to Mayfair: subpixel at ordinary density, greyscale on a dense display
     antialiasing = TextAntialiasing.unset;
     assert(subpixelAt(1) && subpixelAt(1.5f) && !subpixelAt(2));
+}
+
+unittest
+{
+    import mayfair.text.fonts : defaultFont;
+
+    // A glyph goes where it's put to a third of a pixel: an "l" moved by thirds moves by thirds
+    tvg_engine_init(1);
+    scope (exit) tvg_engine_term();
+    enum w = 40, h = 30;
+    auto pixels = new uint[w * h];
+    auto canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
+    scope (exit) tvg_canvas_destroy(canvas);
+    tvg_swcanvas_set_target(canvas, pixels.ptr, w, w, h, TVG_COLORSPACE_ARGB8888);
+
+    TextImage text;
+    text.create();
+    tvg_canvas_add(canvas, text.paint);
+    scope (exit) text.release();
+    auto run = shapeText(defaultFont(14), "l");
+    const was = antialiasing;
+    scope (exit) antialiasing = was;
+    antialiasing = TextAntialiasing.greyscale;
+
+    // Where the ink's middle is, across, for the "l" drawn at `x` points
+    double middle(float x)
+    {
+        text.begin(1);
+        text.addRun(run, x, 20, Colour(0, 0, 0));
+        text.finish();
+        pixels[] = 0;
+        tvg_canvas_update(canvas);
+        tvg_canvas_draw(canvas, false);
+        tvg_canvas_sync(canvas);
+        double sum = 0, weight = 0;
+        foreach (i, p; pixels)
+        {
+            sum += (i % w) * (p >> 24);
+            weight += p >> 24;
+        }
+        return sum / weight;
+    }
+    const at = [middle(10), middle(10 + 1 / 3.0f), middle(10 + 2 / 3.0f), middle(11)];
+    foreach (k; 1 .. 4)
+    {
+        const step = at[k] - at[k - 1];
+        assert(step > 0.2 && step < 0.47, "a third of a pixel further each time");
+    }
+    assert(at[3] - at[0] > 0.9 && at[3] - at[0] < 1.1, "and a whole one after three");
+    assert(middle(10.1f) == at[0] && middle(10.4f) == at[1], "to the nearest third");
 }
