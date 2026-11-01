@@ -22,6 +22,10 @@ import mayfair.text.freetype;
     renders on a machine with no usable fonts at all. It's also the fallback of last resort for a
     missing glyph, and the reason font() and defaultFont() never fail.
 
+    IBM Plex Sans is compiled in too, in regular, italic, semibold and bold, and is the default
+    font everywhere for now: Zed's interface is in it, which makes the two easy to compare side by
+    side. Both are under licences that let them be (fonts/LICENSE-*.txt).
+
     Fonts are shared. Asking for the same face at the same size twice gets the same Font, so a
     hundred labels in one style open one file.
 */
@@ -36,14 +40,14 @@ Font font(string family, float size, FontWeight weight = FontWeight.regular, boo
     return defaultFont(size, weight, italic);
 }
 
-/// Whether `family` is installed, or is the bundled DejaVu Sans.
+/// Whether `family` is installed, or is one of the bundled ones.
 bool hasFamily(string family)
 {
     return (family.toLower in index.byFamily) !is null;
 }
 
-/// The font a widget uses when it isn't given one: the first of the platform's usual UI families
-/// that's installed, or the bundled DejaVu Sans if none are.
+/// The font a widget uses when it isn't given one: IBM Plex Sans, which is bundled, for now; the
+/// first of the platform's usual UI families that's installed, or DejaVu Sans, if it weren't.
 Font defaultFont(float size, FontWeight weight = FontWeight.regular, bool italic = false)
 {
     auto want = FaceStyle(weight, 5, italic);
@@ -108,12 +112,20 @@ private:
 enum bundledFamily = "DejaVu Sans";
 static immutable bundledData = cast(immutable(ubyte)[]) import("DejaVuSans.ttf");
 
+/// The default family's faces, compiled in: see the top of this module.
+static immutable plexData = [
+    cast(immutable(ubyte)[]) import("IBMPlexSans-Regular.ttf"),
+    cast(immutable(ubyte)[]) import("IBMPlexSans-Italic.ttf"),
+    cast(immutable(ubyte)[]) import("IBMPlexSans-SemiBold.ttf"),
+    cast(immutable(ubyte)[]) import("IBMPlexSans-Bold.ttf"),
+];
+
 version (Windows)
-    static immutable defaultFamilies = ["Segoe UI", "Tahoma", "Arial"];
+    static immutable defaultFamilies = ["IBM Plex Sans", "Segoe UI", "Tahoma", "Arial"];
 else version (OSX)
-    static immutable defaultFamilies = ["Helvetica Neue", "Helvetica", "Arial"];
+    static immutable defaultFamilies = ["IBM Plex Sans", "Helvetica Neue", "Helvetica", "Arial"];
 else
-    static immutable defaultFamilies = ["Noto Sans", "Cantarell", "Ubuntu", "Roboto",
+    static immutable defaultFamilies = ["IBM Plex Sans", "Noto Sans", "Cantarell", "Ubuntu", "Roboto",
                                         "Liberation Sans", "DejaVu Sans"];
 
 // Wide coverage first, so a stray symbol lands in a font that looks like the text around it
@@ -213,7 +225,9 @@ ref FontIndex index()
         built = true;
         foreach (dir; fontDirectories())
             scanDirectory(dir, idx);
-        // Last, so an installed DejaVu Sans is preferred to the bundled copy of it
+        // Last, so an installed copy of a bundled font is preferred to it
+        foreach (data; plexData)
+            addFaces(FaceSource(null, data, 0), idx);
         addFaces(FaceSource(null, bundledData, 0), idx);
     }
     return idx;
@@ -335,4 +349,17 @@ void addFaces(FaceSource source, ref FontIndex idx)
         e.style = FaceStyle.of(face);
         idx.add(e);
     }
+}
+
+unittest
+{
+    // The bundled IBM Plex Sans, in each of its four faces, under the one family
+    foreach (weight, italic; [FontWeight.regular: false, FontWeight.semiBold: false, FontWeight.bold: false])
+    {
+        auto f = bestFace("IBM Plex Sans", FaceStyle(weight, 5, italic));
+        assert(f && f.style.weight == weight, "IBM Plex Sans has its own face for each weight");
+    }
+    auto italic = bestFace("IBM Plex Sans", FaceStyle(FontWeight.regular, 5, true));
+    assert(italic && italic.style.italic && italic.style.weight == FontWeight.regular);
+    assert(hasFamily("IBM Plex Sans") && hasFamily("DejaVu Sans"));
 }
