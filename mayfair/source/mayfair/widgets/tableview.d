@@ -37,6 +37,13 @@ import mayfair.widgets.widget;
     its order. The selection stays with its items. Dragging a header's right edge sizes its
     column; the last column takes any room to spare.
 
+    Or, with fitColumns, the columns share out the table's width, as JavaFX's constrained resize
+    policy does: they're always as wide as the table together, never scrolling sideways, and
+    widen and narrow with it. Each resizable column's width is then its share, of all theirs
+    together; one that isn't resizable keeps its width, as a column of numbers wants to.
+
+        songs.fitColumns(true);
+
     As with a ListView, only the rows in view are made, however many items there are. Selecting,
     the keys and activating are as a list's, and so is selecting any number of rows at once, when
     selectionMode says it can.
@@ -104,6 +111,10 @@ public:
 
     /// What it says when it has no items.
     mixin(declareProperty!(string, "placeholder", `"No items"`, q{ _empty.setText(_placeholder); }));
+
+    /// Whether the columns share out the table's width rather than keeping their own, so they
+    /// widen and narrow with it and never scroll sideways.
+    mixin(declareProperty!(bool, "fitColumns", "false", q{ applyWidths(); }));
 
     /// Adds a column at the right. Returns this, so calls chain.
     final TableView add(TableColumn!S column)
@@ -367,13 +378,15 @@ private:
         foreach (c; _columns)
             total += c.width;
         const view = _pane.viewportBounds.width;
-        if (_columns.length && view > total)
+        if (_fitColumns && _columns.length && view > 0)
+            shareWidths(view);
+        else if (_columns.length && view > total)
             _columns[$ - 1]._shown = _columns[$ - 1].width + (view - total);
         else if (_columns.length)
             _columns[$ - 1]._shown = _columns[$ - 1].width;
         foreach (i, c; _columns)
         {
-            if (i + 1 < _columns.length)
+            if (i + 1 < _columns.length && !_fitColumns)
                 c._shown = c.width;
             fix(c._header, c._shown);
         }
@@ -383,6 +396,29 @@ private:
         _flow.setContentWidth(shownTotal);
         foreach (w; _flow.children)
             sizeRow(cast(TableRow) w);
+    }
+
+    // fitColumns: the room `view` leaves after the columns that aren't resizable, shared between
+    // those that are by their widths -- none narrower than its minWidth, which can take the
+    // total past `view` in a table too narrow for them all
+    void shareWidths(float view)
+    {
+        float fixed = 0, flexible = 0;
+        foreach (c; _columns)
+        {
+            if (c._resizable)
+                flexible += c.width;
+            else
+                fixed += c.width;
+        }
+        const room = view - fixed;
+        foreach (c; _columns)
+        {
+            float w = c.width;
+            if (c._resizable && flexible > 0)
+                w = room * c.width / flexible;
+            c._shown = w < c._minWidth ? c._minWidth : w;
+        }
     }
 
     void sizeRow(TableRow row)
@@ -685,7 +721,8 @@ public:
     /// What its header says.
     string title() const nothrow @nogc { return _title; }
 
-    /// How wide it is, in points. The last column may be shown wider, to fill the table.
+    /// How wide it is, in points. The last column may be shown wider, to fill the table; with the
+    /// table's fitColumns, it's the column's share of the table's width rather than its own.
     float width() const nothrow @nogc { return _width; }
     /// ditto
     TableColumn width(float w)
