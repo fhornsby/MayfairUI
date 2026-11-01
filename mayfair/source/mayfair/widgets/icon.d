@@ -8,7 +8,7 @@ import std.math : ceil;
 import mayfair.images;
 import mayfair.properties;
 import mayfair.renderers.thorvg;
-import mayfair.text.raster : replacePicture;
+import mayfair.text.raster : liftLightInk, replacePicture;
 import mayfair.theme;
 import mayfair.widgets.imageview;
 import mayfair.widgets.widget;
@@ -194,6 +194,10 @@ private:
         tvg_canvas_draw(_rasteriser, false);
         tvg_canvas_sync(_rasteriser);
         tvg_canvas_remove(_rasteriser, null); // and frees the copy
+        // A symbolic icon is all in iconColour, so its edges can be lifted as light text's are,
+        // and stand up as well light on dark as dark on light (see mayfair.text.raster)
+        if (_symbolic)
+            liftLightInk(_pixels, count, _iconColour);
         _bitmap = replacePicture(holder, _bitmap, _pixels, w, h);
         return true;
     }

@@ -592,7 +592,7 @@ public:
     */
     final void paintTree(float px, float py, float sx = 0, float sy = 0,
                          float parentOpacity = 1, ref const Tvg_Matrix parentMatrix = identity,
-                         Behind parentBehind = Behind.init) nothrow @nogc
+                         Behind base = Behind.init) nothrow @nogc
     {
         const w = YGNodeLayoutGetWidth(node);
         const h = YGNodeLayoutGetHeight(node);
@@ -621,10 +621,10 @@ public:
             repaint = true;
         }
 
-        // What's behind what it holds, for text drawn over it: a widget that asked is drawn again
-        // when that changes, as a hovered row's background does under its label
-        const own = behindContent(parentBehind);
-        if (readBehind && own != paintedBehind)
+        // What's behind what it holds, for text drawn over it (see behind()): a widget that asked
+        // is drawn again when that changes, as a hovered row's background does under its label
+        const seen = Rect(x - sx, y - sy, w, h);
+        if (readBehind && behindAt(seen, base) != paintedBehind)
             repaint = true;
 
         // drawn.x starts as NaN, which compares unequal to anything, so the first pass always paints
@@ -633,10 +633,11 @@ public:
         {
             paintRegion(x, y, w, h);
             tvg_shape_reset(shape);
-            _behind = own;
+            behindSeen = seen;
+            behindBase = base;
             readBehind = false;
             paint(x, y, w, h);
-            paintedBehind = own;
+            paintedBehind = readBehind ? _behind : Behind.init;
             if (moved)
             {
                 invalidateAccessible(); // its bounds
@@ -653,16 +654,18 @@ public:
         painted = Rect(x - sx, y - sy, w, h);
 
         foreach (child; _children)
-            child.paintTree(x, y, sx + _childOffsetX, sy + _childOffsetY, opacity, matrix, own);
+            child.paintTree(x, y, sx + _childOffsetX, sy + _childOffsetY, opacity, matrix, base);
     }
 
     /*
-        What's drawn behind this widget's content, as far as it's one solid colour: its own
-        background over its ancestors', and the window's under them all. Not known in a
+        What's drawn behind this widget's content, as far as it's one solid colour: each layer of
+        its ancestors' backgrounds and its own that covers its content, where it is in the window,
+        and the window's fill under them all. So a title bar's label over the part of the bar
+        that's opaque has that colour behind it, though another part is glass. Not known in a
         translucent window -- under frosted glass, say -- unless something opaque is in between,
-        nor in a popup with no opaque background of its own. For paint(), for text drawn with subpixel
-        antialiasing, which is mixed with what's behind it as it's drawn (see mayfair.text.raster);
-        a widget that asks is painted again whenever it changes.
+        nor in a popup with no opaque background of its own. For paint(), for text drawn with
+        subpixel antialiasing, which is mixed with what's behind it as it's drawn (see
+        mayfair.text.raster); a widget that asks is painted again whenever it changes.
 
         Only what's in the widget's ancestry is counted, not a sibling it's stacked over: a guess,
         then, but one that's wrong only at the letters' edges.
@@ -670,6 +673,7 @@ public:
     final Behind behind() nothrow @nogc
     {
         readBehind = true;
+        _behind = behindAt(behindSeen, behindBase);
         return _behind;
     }
 
@@ -1238,23 +1242,40 @@ private:
     Widget[] _children;
     Rect drawn;        // the rectangle this widget was last painted at, in its layer
     Behind _behind;        // what's behind its content as it's painted: see behind()
-    Behind paintedBehind;  // what was, when it was last painted
+    Behind paintedBehind;  // what was, when it was last painted, if it asked
     bool readBehind;       // whether its last paint() asked
+    Rect behindSeen;       // where it is in the window, and what's behind the window, for behind()
+    Behind behindBase;
 
     /*
-        What's behind this widget's content, with `parent` behind the widget: each layer of its
-        background that covers the content drawn over it in turn. Frosted glass needs nothing of
-        its own: it only blurs anything in a translucent window, whose own background isn't known.
+        What's behind the content of this widget, seen at `seen` in the window, with `base` behind
+        the window: each layer of each ancestor's background, then its own, that covers it.
     */
-    Behind behindContent(Behind parent) nothrow @nogc
+    Behind behindAt(Rect seen, Behind base) nothrow @nogc
     {
-        auto b = parent;
-        const padding = Insets(YGNodeLayoutGetPadding(node, YGEdgeTop), YGNodeLayoutGetPadding(node, YGEdgeRight),
-                               YGNodeLayoutGetPadding(node, YGEdgeBottom), YGNodeLayoutGetPadding(node, YGEdgeLeft));
+        const content = insidePadding(seen);
+        Widget[64] ancestors;
+        size_t n;
+        for (auto p = parent; p && n < ancestors.length; p = p.parent)
+            ancestors[n++] = p;
+        auto b = base;
+        foreach_reverse (a; ancestors[0 .. n])
+            b = a.coveredBy(b, a.painted, content);
+        return coveredBy(b, seen, content);
+    }
+
+    /// `b`, with each layer of this widget's background, as it's drawn at `at`, that covers `content`.
+    Behind coveredBy(Behind b, Rect at, Rect content) nothrow @nogc
+    {
+        enum slack = 0.5f; // in points: for edges that differ only by rounding
         foreach (ref f; _background.fills)
-            if (f.insets.left <= padding.left && f.insets.top <= padding.top && f.insets.right <= padding.right
-                && f.insets.bottom <= padding.bottom)
+        {
+            const fx = at.x + f.insets.left, fy = at.y + f.insets.top;
+            const fw = at.w - f.insets.left - f.insets.right, fh = at.h - f.insets.top - f.insets.bottom;
+            if (content.x >= fx - slack && content.y >= fy - slack && content.x + content.w <= fx + fw + slack
+                && content.y + content.h <= fy + fh + slack)
                 b = b.covered(f.fill);
+        }
         return b;
     }
     Rect painted;      // the same, where it's seen in the window: less any scrolling

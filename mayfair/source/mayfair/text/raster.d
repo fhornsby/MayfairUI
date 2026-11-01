@@ -459,6 +459,28 @@ private void coverageCurve(Colour colour, ref ubyte[256] table) nothrow @nogc
         table[i] = cast(ubyte)(powf(i / 255.0f, exponent) * 255 + 0.5f);
 }
 
+/*
+    A picture drawn in one colour -- a symbolic icon -- lifted as light text's coverage is (see
+    coverageCurve above): its edges are blended into sRGB too, so light strokes on a dark ground
+    look thinner and fainter than the same strokes dark on light. `pixels` are premultiplied
+    0xAARRGGBB, all in `colour`; dark colours are left as they are.
+*/
+package(mayfair) void liftLightInk(uint* pixels, size_t count, Colour colour) nothrow @nogc
+{
+    ubyte[256] table;
+    coverageCurve(colour, table);
+    foreach (ref p; pixels[0 .. count])
+    {
+        const a = p >> 24;
+        if (a == 0 || a == 255)
+            continue;
+        const lifted = table[a];
+        static uint scaled(uint c, uint by, uint from, uint most) { const v = c * by / from; return v > most ? most : v; }
+        p = (lifted << 24) | (scaled((p >> 16) & 0xFF, lifted, a, lifted) << 16)
+          | (scaled((p >> 8) & 0xFF, lifted, a, lifted) << 8) | scaled(p & 0xFF, lifted, a, lifted);
+    }
+}
+
 /// `colour` at `coverage` over `dst`, a premultiplied 0xAARRGGBB, as source-over does.
 private uint over(uint dst, Colour colour, ubyte coverage) pure nothrow @nogc
 {
@@ -878,4 +900,16 @@ unittest
     }
     assert(at[3] - at[0] > 0.9 && at[3] - at[0] < 1.1, "and a whole one after three");
     assert(middle(10.1f) == at[0] && middle(10.4f) == at[1], "to the nearest third");
+}
+
+unittest
+{
+    // A light icon's edges lifted as light text's are; a dark one's left as they are
+    uint[3] light = [0x80808080, 0xFFFFFFFF, 0];
+    liftLightInk(light.ptr, light.length, Colour(255, 255, 255));
+    assert(light[0] >> 24 > 0x80 && (light[0] & 0xFF) == light[0] >> 24, "more of the edge, still premultiplied");
+    assert(light[1] == 0xFFFFFFFF && light[2] == 0, "solid and clear stay so");
+    uint[1] dark = [0x80000000];
+    liftLightInk(dark.ptr, dark.length, Colour(0, 0, 0));
+    assert(dark[0] == 0x80000000);
 }
