@@ -390,8 +390,10 @@ public:
         {
             if (p._scrim)
             {
+                // Over the window's content, where its background is: inside the frame's margin,
+                // its shadow, and round at the corners as the window is
                 tvg_shape_reset(p._scrim);
-                tvg_shape_append_rect(p._scrim, 0, 0, w, h, 0, 0, true);
+                tvg_shape_append_rect(p._scrim, m, m, w, h, r, r, true);
                 tvg_paint_set_opacity(p._scrim, cast(ubyte)(p._shownAmount * 255));
             }
             p.paintTree(0, 0, 0, 0, p._shownAmount);
