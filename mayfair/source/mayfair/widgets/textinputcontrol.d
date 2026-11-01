@@ -439,27 +439,41 @@ protected:
     /*
         Draws the text into `text`, the selection into `selection` and the caret and anything
         being composed into `caret`, with the text's top left at `ox`, `oy`. For the subclass's
-        paint(), or its content's. The text is drawn by FreeType, at `pixelScale` pixels to the
-        point (see mayfair.text.raster).
+        paint(), or its content's, which says what's behind it with Widget.behind. The text is
+        drawn by FreeType, at `pixelScale` pixels to the point (see mayfair.text.raster).
     */
     final void drawText(Tvg_Paint selection, ref TextImage text, Tvg_Paint caret, float ox, float oy,
-                        float pixelScale) nothrow @nogc
+                        float pixelScale, Behind behind) nothrow @nogc
     {
         tvg_shape_reset(selection);
         tvg_shape_reset(caret);
-        text.begin(pixelScale);
+        text.begin(pixelScale, behind);
         tvg_shape_set_fill_color(selection, _highlightFill.tupleof);
         tvg_shape_set_fill_color(caret, _textFill.tupleof);
         const lh = lineHeight;
 
-        if (focused && _anchor != _caretPosition && !_composed.length)
+        const selecting = focused && _anchor != _caretPosition && !_composed.length;
+        if (selecting)
             appendBoxes(selection, selectionStart, selectionEnd, ox, oy, lh);
 
         if (!_text.length && !_composed.length && _promptText.length)
             text.addRun(_promptRun, ox, oy + _font.ascender, _promptTextFill);
-        else
+        else if (!selecting)
             foreach (ref l; _lines)
                 text.addRun(l.line.run, ox + l.x, oy + l.top + _font.ascender, _textFill);
+        else
+        {
+            // What's selected is over the selection's colour, not the field's
+            const over = behind.covered(_highlightFill);
+            const from = selectionStart, to = selectionEnd;
+            foreach (ref l; _lines)
+                foreach (ref g; l.line.run.glyphs)
+                {
+                    const at = l.start + g.cluster;
+                    text.behind = at >= from && at < to ? over : behind;
+                    text.addGlyph(g, ox + l.x + g.x, oy + l.top + _font.ascender + g.y, _textFill);
+                }
+        }
         text.finish();
 
         if (focused && canEdit() && _caretOn && (_anchor == _caretPosition || _composed.length))

@@ -741,6 +741,10 @@ public:
         // The App made last is the one views find their services in: one runs at a time
         currentApp = this;
         currentServices = services;
+        // How text is antialiased, from the desktop's settings (see mayfair.desktop), before
+        // anything's drawn: the first time they're read
+        import mayfair.text.raster : useDesktopTextSettings;
+        useDesktopTextSettings();
     }
 
     /*

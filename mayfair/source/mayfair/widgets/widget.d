@@ -12,6 +12,7 @@ import mayfair.widgets.popup : Popup;
 import mayfair.widgets.input;
 import mayfair.widgets.region;
 import mayfair.widgets.styling;
+import mayfair.text.raster : Behind;
 
 /// Space around the four sides of something, in points: padding inside a widget, or a margin
 /// outside it. JavaFX's Insets, in the same order: top, right, bottom, left.
@@ -590,7 +591,8 @@ public:
         because a parent can keep its own rectangle while a child moves inside it.
     */
     final void paintTree(float px, float py, float sx = 0, float sy = 0,
-                         float parentOpacity = 1, ref const Tvg_Matrix parentMatrix = identity) nothrow @nogc
+                         float parentOpacity = 1, ref const Tvg_Matrix parentMatrix = identity,
+                         Behind parentBehind = Behind.init) nothrow @nogc
     {
         const w = YGNodeLayoutGetWidth(node);
         const h = YGNodeLayoutGetHeight(node);
@@ -619,13 +621,22 @@ public:
             repaint = true;
         }
 
+        // What's behind what it holds, for text drawn over it: a widget that asked is drawn again
+        // when that changes, as a hovered row's background does under its label
+        const own = behindContent(parentBehind);
+        if (readBehind && own != paintedBehind)
+            repaint = true;
+
         // drawn.x starts as NaN, which compares unequal to anything, so the first pass always paints
         const moved = x != drawn.x || y != drawn.y || w != drawn.w || h != drawn.h;
         if (repaint || moved)
         {
             paintRegion(x, y, w, h);
             tvg_shape_reset(shape);
+            _behind = own;
+            readBehind = false;
             paint(x, y, w, h);
+            paintedBehind = own;
             if (moved)
             {
                 invalidateAccessible(); // its bounds
@@ -642,7 +653,24 @@ public:
         painted = Rect(x - sx, y - sy, w, h);
 
         foreach (child; _children)
-            child.paintTree(x, y, sx + _childOffsetX, sy + _childOffsetY, opacity, matrix);
+            child.paintTree(x, y, sx + _childOffsetX, sy + _childOffsetY, opacity, matrix, own);
+    }
+
+    /*
+        What's drawn behind this widget's content, as far as it's one solid colour: its own
+        background over its ancestors', and the window's under them all. Not known in a
+        translucent window -- under frosted glass, say -- unless something opaque is in between,
+        nor in a popup with no opaque background of its own. For paint(), for text drawn with subpixel
+        antialiasing, which is mixed with what's behind it as it's drawn (see mayfair.text.raster);
+        a widget that asks is painted again whenever it changes.
+
+        Only what's in the widget's ancestry is counted, not a sibling it's stacked over: a guess,
+        then, but one that's wrong only at the letters' edges.
+    */
+    final Behind behind() nothrow @nogc
+    {
+        readBehind = true;
+        return _behind;
     }
 
     /// How opaque it's drawn, its ancestors' opacity included, as of the last paint. For a widget
@@ -913,6 +941,12 @@ protected:
     }
 
 package(mayfair):
+    /// Paints the tree from here as the scene's top, over `behind`: the window's background.
+    final void paintTreeOver(Behind behind) nothrow @nogc
+    {
+        paintTree(0, 0, 0, 0, 1, identity, behind);
+    }
+
     /// Where an input method should put its candidate window: this widget's rectangle as last
     /// painted, and the caret within it, in points.
     final void textInputArea(out float x, out float y, out float w, out float h, out float caret) nothrow @nogc
@@ -1203,6 +1237,26 @@ private:
 
     Widget[] _children;
     Rect drawn;        // the rectangle this widget was last painted at, in its layer
+    Behind _behind;        // what's behind its content as it's painted: see behind()
+    Behind paintedBehind;  // what was, when it was last painted
+    bool readBehind;       // whether its last paint() asked
+
+    /*
+        What's behind this widget's content, with `parent` behind the widget: each layer of its
+        background that covers the content drawn over it in turn. Frosted glass needs nothing of
+        its own: it only blurs anything in a translucent window, whose own background isn't known.
+    */
+    Behind behindContent(Behind parent) nothrow @nogc
+    {
+        auto b = parent;
+        const padding = Insets(YGNodeLayoutGetPadding(node, YGEdgeTop), YGNodeLayoutGetPadding(node, YGEdgeRight),
+                               YGNodeLayoutGetPadding(node, YGEdgeBottom), YGNodeLayoutGetPadding(node, YGEdgeLeft));
+        foreach (ref f; _background.fills)
+            if (f.insets.left <= padding.left && f.insets.top <= padding.top && f.insets.right <= padding.right
+                && f.insets.bottom <= padding.bottom)
+                b = b.covered(f.fill);
+        return b;
+    }
     Rect painted;      // the same, where it's seen in the window: less any scrolling
     Tvg_Paint layer;   // what its shapes are in: see mount()
     Tvg_Paint _childLayer, _childClip; // from clipChildren()

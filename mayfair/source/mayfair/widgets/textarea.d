@@ -362,7 +362,7 @@ private:
         override void paint(float x, float y, float w, float h) nothrow @nogc
         {
             area.drawText(selection, text, caret, x + YGNodeLayoutGetPadding(node, YGEdgeLeft),
-                          y + YGNodeLayoutGetPadding(node, YGEdgeTop), scene ? scene.pixelScale : 1.0f);
+                          y + YGNodeLayoutGetPadding(node, YGEdgeTop), scene ? scene.pixelScale : 1.0f, behind);
         }
     }
 }

@@ -379,9 +379,13 @@ public:
         tvg_shape_reset(background);
         tvg_shape_append_rect(background, m, m, w, h, 0, 0, true);
         paintFrame(m, r, w, h);
-        _root.paintTree(0, 0);
+        // The window's fill is what's behind the tree, unless it's translucent, and then what's
+        // behind it isn't known: for subpixel text (see Widget.behind)
+        import mayfair.text.raster : Behind;
+        const behind = _translucent ? Behind.init : Behind.solid(_fill);
+        _root.paintTreeOver(behind);
         if (_titleBar)
-            _titleBar.paintTree(0, 0);
+            _titleBar.paintTreeOver(behind);
         foreach (p; popups)
         {
             if (p._scrim)

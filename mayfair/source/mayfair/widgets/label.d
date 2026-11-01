@@ -107,7 +107,7 @@ protected:
         // The width the layout settled on was measured from these lines, but rounded to the pixel
         // grid since, so a line that fitted it before rounding still does
         const lines = _paragraph.lines(_wrapText ? w + 1 : float.infinity);
-        _image.begin(scene ? scene.pixelScale : 1.0f);
+        _image.begin(scene ? scene.pixelScale : 1.0f, behind);
         float top = y;
         foreach (ref line; lines)
         {

@@ -151,7 +151,7 @@ protected:
             tvg_shape_reset(clip);
             tvg_shape_append_rect(clip, innerX - Theme.caret_width, y, innerW + 2 * Theme.caret_width, h, 0, 0, true);
         }
-        drawText(_selectionPaint, _text, _caretPaint, _originX, _lineTop, scene ? scene.pixelScale : 1.0f);
+        drawText(_selectionPaint, _text, _caretPaint, _originX, _lineTop, scene ? scene.pixelScale : 1.0f, behind);
     }
 
 private:
