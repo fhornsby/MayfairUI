@@ -24,8 +24,8 @@ import std.string : indexOf, strip;
     what's in it, isn't known until the app is running on it. Each theme's index is read once,
     each folder listed once, and each answer remembered.
 
-    Which theme is the desktop's is GNOME's setting, as `gsettings` reads it, or failing that
-    GTK's settings.ini, or failing that Adwaita. IconTheme.name can say otherwise.
+    Which theme is the desktop's is mayfair.desktop's to say -- GNOME's setting, today, or failing
+    that GTK's settings.ini, or failing that Adwaita. IconTheme.name can say otherwise.
 */
 struct IconTheme
 {
@@ -404,43 +404,9 @@ unittest
     assert(IconTheme.lookup("no-such-icon", 16) is null);
 }
 
-/*
-    The desktop's icon theme. GNOME keeps it in GSettings, which only its own library or D-Bus can
-    read, so this asks the `gsettings` tool -- once, when the first icon is looked up. Elsewhere,
-    GTK's settings.ini may say; and if nothing does, Adwaita, as GNOME's own default is.
-*/
+/// The desktop's icon theme, as mayfair.desktop finds it: Adwaita if nothing says.
 string desktopIconTheme()
 {
-    version (Emscripten) {} else // a browser has no programs to run, and no desktop to ask
-    try
-    {
-        import std.process : execute;
-        const r = execute(["gsettings", "get", "org.gnome.desktop.interface", "icon-theme"]);
-        if (r.status == 0)
-        {
-            const v = r.output.strip;
-            if (v.length > 2 && v[0] == '\'' && v[$ - 1] == '\'')
-                return v[1 .. $ - 1];
-        }
-    }
-    catch (Exception) {}
-
-    const home = environment.get("HOME", "");
-    const config = environment.get("XDG_CONFIG_HOME", home.length ? buildPath(home, ".config") : "");
-    foreach (gtk; ["gtk-4.0", "gtk-3.0"])
-    {
-        try
-            foreach (line; readText(buildPath(config, gtk, "settings.ini")).splitter('\n'))
-            {
-                const l = line.strip;
-                if (l.startsWith("gtk-icon-theme-name"))
-                {
-                    const eq = l.indexOf('=');
-                    if (eq > 0 && l[eq + 1 .. $].strip.length)
-                        return l[eq + 1 .. $].strip;
-                }
-            }
-        catch (Exception) {}
-    }
-    return "Adwaita";
+    import mayfair.desktop : Desktop;
+    return Desktop.settings.iconTheme;
 }

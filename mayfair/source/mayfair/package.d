@@ -6,6 +6,7 @@ public import mayfair.theme;
 public import mayfair.animation;
 public import mayfair.autowire;
 public import mayfair.clipboard;
+public import mayfair.desktop : Desktop, DesktopSettings, DesktopSource, SubpixelOrder, TextAntialiasing;
 public import mayfair.filechooser;
 public import mayfair.properties;
 public import mayfair.xml;
