@@ -134,6 +134,16 @@ public:
     void eachGlyph(ref const Line line, float x, float baseline,
                    scope void delegate(ref const PositionedGlyph, float, float) nothrow @nogc glyph) nothrow @nogc
     {
+        eachGlyphAt(line, x, baseline, (ref const PositionedGlyph g, size_t at, float gx, float gy) nothrow @nogc {
+            glyph(g, gx, gy);
+        });
+    }
+
+    /// The same, with where in the text each glyph came from, in bytes: for drawing what's
+    /// selected differently.
+    void eachGlyphAt(ref const Line line, float x, float baseline,
+                     scope void delegate(ref const PositionedGlyph, size_t, float, float) nothrow @nogc glyph) nothrow @nogc
+    {
         const block = &blocks[line.block];
         float pen = 0, penAll = 0;
         foreach (ref g; block.run.glyphs)
@@ -144,7 +154,7 @@ public:
             const at = block.start + g.cluster;
             if (at < line.start || at >= line.end)
                 continue;
-            glyph(g, x + pen + offset, baseline + g.y);
+            glyph(g, at, x + pen + offset, baseline + g.y);
             pen += g.advance;
         }
     }

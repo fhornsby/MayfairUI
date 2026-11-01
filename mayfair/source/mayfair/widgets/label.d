@@ -273,6 +273,9 @@ protected:
         _paintedWidth = w;
         paintSelection(x, y, w);
         _image.begin(scene ? scene.pixelScale : 1.0f, behind);
+        // What's selected is over the selection's colour, for subpixel text (see Widget.behind)
+        const selecting = _selectable && _anchor != _caret && (focused || (_menu && _menu.showing));
+        const selected = behind.covered(_highlightFill);
         float top = y;
         foreach (ref line; lines)
         {
@@ -282,7 +285,11 @@ protected:
             else if (_textAlignment == TextAlignment.right)
                 left += w - line.width;
             // A line's origin is its baseline, one ascender below its top
-            _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill);
+            if (selecting)
+                _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill, selectionStart, selectionEnd,
+                               selected);
+            else
+                _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill);
             top += _paragraph.lineHeight + _lineSpacing;
         }
         _image.finish();

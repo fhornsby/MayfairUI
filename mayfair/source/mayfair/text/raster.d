@@ -211,6 +211,19 @@ public:
         });
     }
 
+    /// The same, with the glyphs from bytes `from` to `to` of the text over `selected` -- a
+    /// selection's colour -- rather than what the rest is over.
+    void addLine(ref Paragraph paragraph, ref const Paragraph.Line line, float x, float baseline, Colour colour,
+                 size_t from, size_t to, Behind selected) nothrow @nogc
+    {
+        const rest = behind;
+        paragraph.eachGlyphAt(line, x, baseline, (ref const PositionedGlyph g, size_t at, float gx, float gy) nothrow @nogc {
+            behind = at >= from && at < to ? selected : rest;
+            addGlyph(g, gx, gy, colour);
+        });
+        behind = rest;
+    }
+
     /// One glyph, its origin at `x`, `y` in points.
     void addGlyph(ref const PositionedGlyph g, float x, float y, Colour colour) nothrow @nogc
     {
@@ -912,4 +925,46 @@ unittest
     uint[1] dark = [0x80000000];
     liftLightInk(dark.ptr, dark.length, Colour(0, 0, 0));
     assert(dark[0] == 0x80000000);
+}
+
+unittest
+{
+    import mayfair.text.fonts : defaultFont;
+
+    // A line with a selection: its glyphs over the selection's colour, the rest over what's behind it
+    tvg_engine_init(1);
+    scope (exit) tvg_engine_term();
+    enum w = 120, h = 30;
+    auto pixels = new uint[w * h];
+    auto canvas = tvg_swcanvas_create(TVG_ENGINE_OPTION_NONE);
+    scope (exit) tvg_canvas_destroy(canvas);
+    tvg_swcanvas_set_target(canvas, pixels.ptr, w, w, h, TVG_COLORSPACE_ARGB8888);
+    TextImage text;
+    text.create();
+    tvg_canvas_add(canvas, text.paint);
+    scope (exit) text.release();
+    const was = antialiasing;
+    scope (exit) antialiasing = was;
+    antialiasing = TextAntialiasing.subpixel;
+
+    auto paragraph = Paragraph(defaultFont(14), "llll mmmm");
+    auto lines = paragraph.lines(float.infinity);
+    const white = Colour(255, 255, 255);
+    text.begin(1, Behind.solid(white));
+    // "mmmm" selected, over a colour that isn't known: greyscale there, subpixel elsewhere
+    text.addLine(paragraph, lines[0], 2, 20, Colour(0, 0, 0), 5, 9, Behind.init);
+    text.finish();
+    assert(text.behind == Behind.solid(white), "what's behind the rest, as it was");
+    pixels[] = 0xFFFFFFFF;
+    tvg_canvas_update(canvas);
+    tvg_canvas_draw(canvas, false);
+    tvg_canvas_sync(canvas);
+    const split = cast(int)(2 + paragraph.lines(float.infinity)[0].width * 5 / 9); // about where "mmmm" starts
+    static bool coloured(uint p) { return ((p >> 16) & 0xFF) != ((p >> 8) & 0xFF) || ((p >> 8) & 0xFF) != (p & 0xFF); }
+    size_t left, right;
+    foreach (i, p; pixels)
+        if (coloured(p))
+            (cast(int)(i % w) < split ? left : right)++;
+    assert(left > 5, "the unselected glyphs in subpixel colour");
+    assert(right == 0, "the selected ones greyscale, over what isn't known");
 }
