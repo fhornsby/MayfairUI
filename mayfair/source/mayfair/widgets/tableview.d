@@ -44,6 +44,11 @@ import mayfair.widgets.widget;
 
         songs.fitColumns(true);
 
+    A row can have a style class of its own, from its item, for the stylesheet to show it by -- a
+    song whose file has gone, greyed out:
+
+        songs.rowStyleClass((Song s) => s.missing ? "missing" : null);
+
     As with a ListView, only the rows in view are made, however many items there are. Selecting,
     the keys and activating are as a list's, and so is selecting any number of rows at once, when
     selectionMode says it can.
@@ -115,6 +120,15 @@ public:
     /// Whether the columns share out the table's width rather than keeping their own, so they
     /// widen and narrow with it and never scroll sideways.
     mixin(declareProperty!(bool, "fitColumns", "false", q{ applyWidths(); }));
+
+    /// Gives each row the style class `classOf` says for its item, as well as `.table-row` -- or
+    /// none, for null. Returns this, so calls chain.
+    final TableView rowStyleClass(string delegate(S) classOf)
+    {
+        _rowClass = classOf;
+        refresh();
+        return this;
+    }
 
     /// Adds a column at the right. Returns this, so calls chain.
     final TableView add(TableColumn!S column)
@@ -326,6 +340,7 @@ private:
     TableColumn!S _sortColumn;
     bool _ascending = true;
     size_t[] _order;          // the index in `items` of each row, as sorted
+    string delegate(S) _rowClass;   // rowStyleClass's
     void delegate(int) _onActivate;
     void delegate() _onSelectionChanged;
     Selection _selection;     // by row, as sorted
@@ -360,6 +375,7 @@ private:
             if (c < _columns.length)
                 (cast(Label) cell).setText(_columns[c]._text(item));
         row.show(i, _selection.isSelected(cast(int) i), i == _selection.current);
+        row.setItemClass(_rowClass ? _rowClass(item) : null);
     }
 
     /// Makes each cell in view selectable or not, as its column now is.
@@ -666,6 +682,18 @@ private:
             invalidateAccessible();
         }
 
+        // The style class its item gives it, in place of the last one's
+        void setItemClass(string name)
+        {
+            if (name == _itemClass)
+                return;
+            if (_itemClass.length)
+                styleClass.remove(_itemClass);
+            if (name.length)
+                styleClass.add(name);
+            _itemClass = name;
+        }
+
         void showSelected(bool selected, bool current)
         {
             if (selected == _selected && current == _current)
@@ -689,6 +717,7 @@ private:
     private:
         size_t _index;
         bool _selected, _current;
+        string _itemClass;
     }
 }
 
