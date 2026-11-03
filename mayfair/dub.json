@@ -6,7 +6,7 @@
 	"dependencies": {
 		"sdl-d": "~>3.2.27"
 	},
-	"description": "A Ui kit library",
+	"description": "A desktop UI toolkit: widgets styled with CSS, views in XML, drawn on the GPU",
 	"license": "MIT",
 	"name": "mayfair",
 	"targetType": "library",
