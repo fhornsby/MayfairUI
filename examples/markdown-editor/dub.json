@@ -1,0 +1,14 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A Markdown editor: a folder's files, a tab per document, and a live preview.",
+	"license": "MIT",
+	"name": "markdown-editor",
+	"dependencies": {
+		"mayfair": {
+			"path": "../../mayfair"
+		}
+	}
+}

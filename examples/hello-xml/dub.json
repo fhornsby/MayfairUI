@@ -5,10 +5,10 @@
 	"copyright": "Copyright \u00a9 2026, Freddie Hornsby",
 	"description": "Hello world in Mayfair, its window written in XML.",
 	"license": "MIT",
-	"name": "my_mayfair_app",
+	"name": "hello-xml",
 	"dependencies": {
 		"mayfair": {
-			"path": "../mayfair"
+			"path": "../../mayfair"
 		}
 	},
 	"stringImportPaths": [

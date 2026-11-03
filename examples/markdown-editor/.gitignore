@@ -1,0 +1,20 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/markdown-editor
+markdown-editor.so
+markdown-editor.dylib
+markdown-editor.dll
+markdown-editor.a
+markdown-editor.lib
+markdown-editor-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+# profiling output
+/trace*.txt
+/strace.log
+/perf.data

@@ -9,7 +9,7 @@
 #   ./setup.sh --no-build install only; skip the first build
 #
 # Run it as yourself, not as root: it uses sudo for apt or pkg, and puts the web toolchain in your
-# home (~/dlang and ~/emsdk, where mayfair_web_test/build.sh looks for them).
+# home (~/dlang and ~/emsdk, where examples/hello-web/build.sh looks for them).
 #
 # What comes from where:
 #   apt or pkg   the D compiler (LDC) and dub, SDL3, CMake, Meson, Ninja, a C/C++ compiler, Rust's
@@ -147,13 +147,13 @@ if $build; then
     echo "==> Building Mayfair"
     (cd mayfair && dub build)
     echo "==> Building the test app"
-    (cd mayfair_test_app && dub build)
+    (cd examples/gallery && dub build)
 fi
 
 echo
 echo "Done. To run the test app:"
-echo "    cd mayfair_test_app && dub run"
+echo "    cd examples/gallery && dub run"
 if $web; then
     echo "For the browser build:"
-    echo "    cd mayfair_web_test && ./build.sh && cd out && python3 -m http.server 8765"
+    echo "    cd examples/hello-web && ./build.sh && cd out && python3 -m http.server 8765"
 fi

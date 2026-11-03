@@ -12,7 +12,7 @@ all the way up behind the title bar, while the page beside it stays opaque. The 
 opaque, and it switches between the two while it runs. The Appearance page says which it is now.
 
 ```sh
-cd oriel_app && dub run
+cd examples/oriel-hello && dub run
 ```
 
 ## What's where

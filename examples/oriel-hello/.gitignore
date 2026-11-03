@@ -1,0 +1,20 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/oriel-hello
+oriel-hello.so
+oriel-hello.dylib
+oriel-hello.dll
+oriel-hello.a
+oriel-hello.lib
+oriel-hello-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+# profiling output
+/trace*.txt
+/strace.log
+/perf.data

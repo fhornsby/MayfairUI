@@ -1,0 +1,8 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"appwrited": {"version":"0127bc6a9664fc885184fd4fced7be894c6c0e4b","repository":"git+ssh://git@github.com/fhornsby/AppWriteD.git"},
+		"mayfair": {"path":"../../mayfair"},
+		"sdl-d": "3.2.27"
+	}
+}

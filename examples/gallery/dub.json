@@ -3,12 +3,12 @@
 		"Freddie Hornsby"
 	],
 	"copyright": "Copyright \u00a9 2026, Freddie Hornsby",
-	"description": "A minimal D application.",
+	"description": "Every Mayfair widget, a page each.",
 	"license": "MIT",
-	"name": "mayfair_test_app",
+	"name": "gallery",
 	"dependencies": {
 		"mayfair": {
-			"path": "../mayfair"
+			"path": "../../mayfair"
 		}
 	},
 	"stringImportPaths": [
