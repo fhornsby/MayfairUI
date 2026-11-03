@@ -21,7 +21,7 @@ import mayfair.windowing.accessibility;
 import mayfair.windowing.platform;
 import mayfair.filechooser : FileChooser;
 import mayfair.windowing.decorations;
-import mayfair.windowing.wayland : WindowMover;
+import mayfair.windowing.wayland : TileWatcher, WindowMover;
 import mayfair.windowing.blur : BackgroundBlur;
 
 
@@ -89,6 +89,7 @@ Widget textInputWidget;
 SDL_Rect textInputRect;
 int textInputCursor;
 bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
+TileWatcher tiles;         // whether the window's snapped to an edge, on Wayland, for its frame to go flat
 WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
 BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
 bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
@@ -244,6 +245,8 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
                     queueInputEvent(event);
                 if (event.type == SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
                     frameChanged = true; // its shape, for the new size
+                if (event.type != SDL_EventType.SDL_EVENT_WINDOW_MOVED)
+                    noteSize();
             }
             break;
         case SDL_EventType.SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
@@ -647,17 +650,34 @@ bool frameChanged;     // maximised, restored, fullscreen or resized: the frame 
 
 /*
     The frame round a window drawing its own decorations: a margin with its shadow in, and rounded
-    corners -- unless it's maximised or fullscreen, when its edges are the screen's. And the
-    window's shape to match: the shadow beyond the band just outside the edge that sizes it lets
-    clicks through to what's underneath, as it would if the desktop had drawn it.
+    corners -- unless it's maximised, fullscreen or tiled, when its edges are the screen's or
+    another window's. And the window's shape to match: the shadow beyond the band just outside the
+    edge that sizes it lets clicks through to what's underneath, as it would if the desktop had
+    drawn it.
 */
 void applyFrame() {
     if (!drawsDecorations)
         return;
-    const flat = (SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN)) != 0;
+    watchTiling();
+    const flat = tiles.tiled
+              || (SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN)) != 0;
     _scene.setFrame(flat ? 0 : Theme.window_margin, flat ? 0 : Theme.window_radius);
     needsLayout = true;
     updateShape(flat);
+}
+
+/// Starts listening for whether the window's tiled, on Wayland, once it has an xdg_toplevel: it
+/// may not when the window's first made, so this is tried again whenever the frame's seen to.
+void watchTiling() {
+    if (tiles.watching)
+        return;
+    const driver = SDL_GetCurrentVideoDriver();
+    if (driver && strcmp(driver, "wayland") == 0)
+    {
+        auto toplevel = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null);
+        if (toplevel)
+            trace("tiles %s", tiles.open(toplevel) ? "watched, for a flat frame when tiled".ptr : "can't be watched".ptr);
+    }
 }
 
 void updateShape(bool flat) {
@@ -788,6 +808,50 @@ public:
         this.height = height;
     }
 
+    /// Whether the window opens maximised: as it was left last time, say. Set before run().
+    void setMaximised(bool maximised){
+        _startMaximised = maximised;
+    }
+
+    /*
+        The size the window was last when it wasn't maximised, fullscreen or tiled -- its inside, as
+        setSize takes -- and whether it was maximised: what an app keeps, to open as it was left.
+        Kept up as it's resized, so they're still there once run() has returned.
+    */
+    int restoredWidth() const { return _restoredWidth; }
+    int restoredHeight() const { return _restoredHeight; } /// ditto
+    bool wasMaximised() const { return _wasMaximised; }   /// ditto
+
+    /*
+        The app's id: reverse-DNS, as "org.gnome.Maps", and the name of its .desktop file without
+        the .desktop. The desktop matches the window to that file by it -- for its icon and name in
+        the dock and the task switcher -- as Wayland's app_id and X11's WM_CLASS. Without one the
+        window shows as an unknown app. Set it before run().
+    */
+    void setId(string id){
+        _id = id;
+    }
+
+    /*
+        The smallest the window can be made, as JavaFX's Stage.minWidth and minHeight: the size
+        below which the layout stops working, as the desktop won't let it be dragged smaller. Its
+        inside, as setSize's is: a frame's shadow margin is added on. 0 for no limit, as it starts.
+        Set before run() or while it's running.
+    */
+    void setMinSize(int width, int height){
+        _minWidth = width;
+        _minHeight = height;
+        applySizeLimits();
+    }
+
+    /// The biggest it can be made, as JavaFX's Stage.maxWidth and maxHeight; 0 for no limit, as
+    /// it starts. A window with one can't fill the screen, so most apps want none.
+    void setMaxSize(int width, int height){
+        _maxWidth = width;
+        _maxHeight = height;
+        applySizeLimits();
+    }
+
     /// What the window shows. Set it before run(); the tree in it is brought to life there, once
     /// there's a renderer whose canvas its shapes can go in.
     @property void scene(Scene scene){
@@ -805,6 +869,36 @@ public:
         translucent is the theme's, in its .root:translucent rule. Set it before run(); whether
         it is now, as the compositor's blur comes and goes, is the scene's translucentProperty.
     */
+    // The size limits on the window, if there is one yet: the frame's margin on each side of each
+    private void applySizeLimits() {
+        if (!window)
+            return;
+        int limit(int v) { return v > 0 ? v + 2 * _margin : 0; }
+        SDL_SetWindowMinimumSize(window, limit(_minWidth), limit(_minHeight));
+        SDL_SetWindowMaximumSize(window, limit(_maxWidth), limit(_maxHeight));
+    }
+
+    private int _minWidth, _minHeight, _maxWidth, _maxHeight; // the window's inside; 0 for none
+    private string _id;                                         // see setId
+    private bool _startMaximised, _wasMaximised;               // see setMaximised and wasMaximised
+    private int _restoredWidth, _restoredHeight;               // see restoredWidth
+
+    // Notes the window's size, as it's resized, maximised or restored (see restoredWidth)
+    private void noteSize() nothrow @nogc {
+        const f = SDL_GetWindowFlags(window);
+        _wasMaximised = (f & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0;
+        if ((f & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN
+                  | SDL_WindowFlags.SDL_WINDOW_MINIMIZED)) || tiles.tiled)
+            return;
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        if (w > 2 * _margin && h > 2 * _margin) {
+            _restoredWidth = w - 2 * _margin;
+            _restoredHeight = h - 2 * _margin;
+        }
+    }
+    private int _margin;                                       // its frame's, round the inside
+
     void setTranslucent(bool translucent) {
         _translucent = translucent;
     }
@@ -822,6 +916,16 @@ public:
         SDL_Event event;
         event.type = SDL_EventType.SDL_EVENT_QUIT;
         SDL_PushEvent(&event);
+    }
+
+    /// Brings the window to the front, out of being minimised if it is: for a media player's Raise,
+    /// or a second launch handing over to the first. On the UI thread; before run() it does nothing.
+    void raise() nothrow @nogc {
+        if (!window)
+            return;
+        if (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_MINIMIZED)
+            SDL_RestoreWindow(window);
+        SDL_RaiseWindow(window);
     }
 
     void run(){
@@ -842,6 +946,8 @@ public:
             quietStderr(true); // libdecor says, twice, that it found no plugins: what was meant
         }
 
+        // Before SDL starts, which is when it reads them: the window's app_id, and the app's name
+        SDL_SetAppMetadata(title.toStringz(), null, _id.length ? _id.toStringz() : null);
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             quietStderr(false);
             logError("SDL_Init failed: %s", SDL_GetError());
@@ -859,6 +965,11 @@ public:
         // Drawing its own frame, it's transparent, and bigger by the margin its shadow's in, so
         // what's inside is the size asked for
         const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
+        _margin = margin;
+        _restoredWidth = width;
+        _restoredHeight = height;
+        if (_startMaximised)
+            flags |= SDL_WindowFlags.SDL_WINDOW_MAXIMIZED;
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
         // One that's to be translucent needs its alpha from the start, though until the
@@ -869,6 +980,7 @@ public:
         // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
         scope(exit) if (window) SDL_DestroyWindow(window);
         scope(exit) mover.close(); // before the window, and SDL's connection, go
+        scope(exit) tiles.close();
         scope(exit) blur.close();
         scope(exit) if (renderer) renderer.release();
         scope(exit) releaseKeptDecodings(); // before the renderer's engine goes, and after the scene's pictures
@@ -896,6 +1008,7 @@ public:
                     logError("SDL_CreateWindow failed: %s", SDL_GetError());
                     return;
                 }
+                applySizeLimits();
                 version (Emscripten)
                     SDL_SetWindowFillDocument(window, true); // the page is the window: it fills it, and follows it as it's resized
                 int cw, ch;

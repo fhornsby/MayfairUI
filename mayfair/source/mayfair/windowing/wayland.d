@@ -199,3 +199,129 @@ private:
     static extern (C) void motion(void*, void*, uint, int, int) nothrow @nogc {}
     static extern (C) void axis(void*, void*, uint, uint, int) nothrow @nogc {}
 }
+
+/*
+    Whether the window's tiled: snapped to half the screen, a quarter, or against another window.
+    Its frame wants to be flat then, as a maximised one's is -- no shadow margin, square corners --
+    or the shadow fills the edge of the space it's snapped to and the window looks short of it.
+    GTK does the same, from the same states.
+
+    The compositor says so in xdg_toplevel.configure, whose states SDL reads but keeps to itself.
+    A proxy has one listener, SDL's (or libdecor's), so this one goes in front of it: libwayland
+    keeps a proxy's listener as the second field of the wl_object at its start, the same since
+    1.0, and this puts a table of its own there whose configure notes the states and then calls
+    the one it took the place of, as every other event does straight away. Only once it's checked
+    that the field holds what wl_proxy_get_listener says the listener is: if libwayland were ever
+    laid out differently, it leaves the proxy alone, and the window keeps its shadow when tiled.
+
+    The events arrive as SDL reads the connection, on the main thread, and there's one window, so
+    the state is the module's.
+*/
+struct TileWatcher
+{
+    /// Watches `toplevel`, the window's xdg_toplevel. False if it can't, when `tiled` stays false.
+    bool open(void* toplevel) nothrow @nogc
+    {
+        version (Posix)
+        {
+            import core.sys.posix.dlfcn : dlopen, dlsym, RTLD_LOCAL, RTLD_NOW;
+            if (!toplevel || watched)
+                return watched is toplevel;
+            if (!lib)
+                lib = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_LOCAL);
+            if (!lib)
+                return false;
+            auto getListener = cast(const(void)* function(void*) nothrow @nogc) dlsym(lib, "wl_proxy_get_listener");
+            if (!getListener)
+                return false;
+            auto object = cast(const(void)**) toplevel;  // { interface, implementation, id, ... }
+            const listener = getListener(toplevel);
+            if (!listener || object[1] !is listener)
+                return false;   // not laid out as it's always been: leave it be
+            sdlListener = cast(const(ToplevelListener)*) listener;
+            object[1] = &ownListener;
+            watched = toplevel;
+            return true;
+        }
+        else
+            return false;
+    }
+
+    /// Gives the proxy its own listener back, before the window and the proxy go.
+    void close() nothrow @nogc
+    {
+        version (Posix)
+        {
+            import core.sys.posix.dlfcn : dlclose;
+            if (watched)
+                (cast(const(void)**) watched)[1] = sdlListener;
+            if (lib)
+                dlclose(lib);
+        }
+        watched = null;
+        sdlListener = null;
+        lib = null;
+        tiledNow = false;
+    }
+
+    /// Whether the window's tiled against any edge, as the compositor last said.
+    bool tiled() const nothrow @nogc { return tiledNow; }
+
+    /// Whether it's watching a window.
+    bool watching() const nothrow @nogc { return watched !is null; }
+
+private:
+    void* lib;
+}
+
+private:
+
+// xdg_toplevel's events, in the order the protocol has them: up to version 6, which adds none
+struct ToplevelListener
+{
+    extern (C) nothrow @nogc:
+    void function(void*, void*, int, int, WlArray*) configure;
+    void function(void*, void*) close;
+    void function(void*, void*, int, int) configureBounds;     // version 4
+    void function(void*, void*, WlArray*) wmCapabilities;      // version 5
+}
+
+struct WlArray
+{
+    size_t size, alloc;
+    void* data;
+}
+
+__gshared void* watched;                           // the xdg_toplevel listened to
+__gshared const(ToplevelListener)* sdlListener;    // whose listener this goes in front of
+__gshared bool tiledNow;
+
+static immutable ownListener = ToplevelListener(&forwardConfigure, &forwardClose, &forwardConfigureBounds, &forwardWmCapabilities);
+
+extern (C) void forwardConfigure(void* data, void* toplevel, int width, int height, WlArray* states) nothrow @nogc
+{
+    // xdg_toplevel.state's tiled_left, tiled_right, tiled_top and tiled_bottom (version 2)
+    enum tiledLeft = 5, tiledBottom = 8;
+    bool tiled;
+    if (states)
+        foreach (s; (cast(const(uint)*) states.data)[0 .. states.size / uint.sizeof])
+            if (s >= tiledLeft && s <= tiledBottom)
+                tiled = true;
+    tiledNow = tiled;
+    sdlListener.configure(data, toplevel, width, height, states);
+}
+
+extern (C) void forwardClose(void* data, void* toplevel) nothrow @nogc
+{
+    sdlListener.close(data, toplevel);
+}
+
+extern (C) void forwardConfigureBounds(void* data, void* toplevel, int width, int height) nothrow @nogc
+{
+    sdlListener.configureBounds(data, toplevel, width, height);
+}
+
+extern (C) void forwardWmCapabilities(void* data, void* toplevel, WlArray* capabilities) nothrow @nogc
+{
+    sdlListener.wmCapabilities(data, toplevel, capabilities);
+}

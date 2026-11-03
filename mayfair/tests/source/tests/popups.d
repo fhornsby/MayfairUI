@@ -332,6 +332,38 @@ void dialogs()
             d.expect(answers, ["delete", "cancel"], "Escape: the cancel button");
             d.check(!dialog.showing, "which closes it too");
         });
+
+        // A start button: at the start of the row, on its own, the answers still at the end
+        Button importButton;
+        d.ui({
+            dialog = new Dialog("New list").addButton("Cancel", null, ButtonKind.cancel);
+            dialog.addStartButton("Import…", { answers ~= "import"; });
+            dialog.addButton("Create", { answers ~= "create"; }, ButtonKind.default_);
+            dialog.show(open);
+        });
+        d.settle();
+        d.ui({
+            Row row;
+            void find(Widget w)
+            {
+                if (w.styleClass.contains("buttons"))
+                    row = cast(Row) w;
+                foreach (c; w.children)
+                    find(cast() c);
+            }
+            find(dialog);
+            importButton = cast(Button) row.children[0];
+            auto create = cast(Button) row.children[$ - 1];
+            const box = row.boundsInScene;
+            d.expect(importButton.text, "Import…", "first in the row");
+            d.check(near(importButton.boundsInScene.minX, box.minX), "at its start");
+            d.check(near(create.boundsInScene.maxX, box.maxX), "Create at its end");
+        });
+        d.click(importButton);
+        d.ui({
+            d.expect(answers, ["delete", "cancel", "import"], "it does what it does");
+            d.check(!dialog.showing, "and closes it");
+        });
     });
 }
 

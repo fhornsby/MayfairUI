@@ -121,6 +121,22 @@ public:
         h = all.length * lineHeight + (all.length - 1) * spacing;
     }
 
+    /*
+        As much of `line` as fits in `maxWidth` points, cut between characters and without the
+        spaces before the cut: what's left of a line too long for its label when an ellipsis goes
+        after it. Cut at the end of the text, which is the right-hand end of text that reads left
+        to right.
+    */
+    Line truncated(ref const Line line, float maxWidth) const nothrow @nogc
+    {
+        const blockEnd = blocks[line.block].end;
+        size_t end = line.end;
+        while (end > line.start && ((end != blockEnd && !clusterStart[end]) || width(line.start, end) > maxWidth))
+            end--;
+        end = trimmed(line.start, end);
+        return Line(line.start, end, width(line.start, end), line.block);
+    }
+
     /// Draws `line` into `shape` with its left end at `x` and its baseline at `baseline`, in points.
     void emitLine(Tvg_Paint shape, ref const Line line, float x, float baseline, float scale) nothrow @nogc
     {
@@ -279,4 +295,11 @@ unittest
     assert(h == 3 * font.lineHeight + 2 * 2);
 
     assert(Paragraph(font, "").lines(10).length == 1);
+
+    // Cut short: what fits, without the space before the cut; nothing, if not a character fits
+    const line = p.lines(float.infinity)[0];
+    const cut = p.truncated(line, oneTwo + 1);
+    assert(cut.start == 0 && cut.end == 7 && cut.width == oneTwo);
+    assert(p.truncated(line, 0).end == 0);
+    assert(p.truncated(line, float.infinity).end == 13);
 }

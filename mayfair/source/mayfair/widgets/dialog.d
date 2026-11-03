@@ -31,7 +31,9 @@ enum ButtonKind
 
     Any of its buttons closes it, having done what it does. Enter presses the default button and
     Escape the cancel one -- or with no cancel button, just closes it. Something more than text,
-    such as a field to fill in, goes in `extra`, under the text.
+    such as a field to fill in, goes in `extra`, under the text. A button that does something
+    beside answering -- Help, Import… -- goes at the start of the row, apart from the others, with
+    addStartButton.
 
     Its style class is "dialog", as well as "popup", with a `.title`, the `.text`, and the
     `.buttons`. To a screen reader it's a dialog named by its title.
@@ -86,6 +88,30 @@ public:
         return this;
     }
 
+    /*
+        Adds a button saying `text` at the start of the row of buttons, on its own with a gap
+        between it and the others, as GNOME and macOS put Help: one that does something beside
+        answering. It does `action`, if there is one, and closes the dialog. Enter and Escape
+        don't press it. One only; another replaces it.
+    */
+    final Dialog addStartButton(string text, void delegate() action = null)
+    {
+        Widget[] answers;
+        foreach (w; _buttons.children.dup)
+        {
+            if (w !is _startButton && w !is _gap)
+                answers ~= w;
+            _buttons.remove(w);
+        }
+        _startButton = new Button(text).onAction(closing(action));
+        if (!_gap)
+            _gap = new Row().grow(1);   // pushes the answers to the end
+        _buttons.add(_startButton).add(_gap);
+        foreach (w; answers)
+            _buttons.add(w);
+        return this;
+    }
+
     /// Shows it, in the middle of the window `owner` is in.
     final Dialog show(Widget owner)
     {
@@ -113,6 +139,8 @@ private:
     Label _titleLabel, _textLabel;
     Row _buttons;
     Widget _shownExtra;
+    Button _startButton;
+    Row _gap;           // between the start button and the rest
 
     void delegate() closing(void delegate() action)
     {

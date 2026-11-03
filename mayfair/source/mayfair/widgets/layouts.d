@@ -8,12 +8,19 @@ import mayfair.widgets.widget;
 /// Where along one line something sits: a grid's column or row, a popup against what it's for.
 enum Alignment { start, centre, end }
 
-/// Where children sit in a container with room to spare. JavaFX's Pos.
+/*
+    Where children sit in a container with room to spare. JavaFX's Pos.
+
+    The baseline ones line text up by its first line's baseline, as a row of labels in different
+    sizes wants -- a heading with a count beside it -- where bottom would line up the bottoms of
+    their lines, which a bigger font's descent leaves higher. Across a Column, they're the top.
+*/
 enum Pos
 {
     topLeft, topCentre, topRight,
     centreLeft, centre, centreRight,
     bottomLeft, bottomCentre, bottomRight,
+    baselineLeft, baselineCentre, baselineRight,
 }
 
 /*
@@ -472,16 +479,16 @@ private:
 
 package:
 
-// Where along an axis: start, middle or end
-enum Place { start, middle, end }
+// Where along an axis: start, middle or end; or, down a row, by the children's baselines
+enum Place { start, middle, end, baseline }
 
 Place horizontal(Pos p) nothrow @nogc
 {
     final switch (p)
     {
-        case Pos.topLeft, Pos.centreLeft, Pos.bottomLeft: return Place.start;
-        case Pos.topCentre, Pos.centre, Pos.bottomCentre: return Place.middle;
-        case Pos.topRight, Pos.centreRight, Pos.bottomRight: return Place.end;
+        case Pos.topLeft, Pos.centreLeft, Pos.bottomLeft, Pos.baselineLeft: return Place.start;
+        case Pos.topCentre, Pos.centre, Pos.bottomCentre, Pos.baselineCentre: return Place.middle;
+        case Pos.topRight, Pos.centreRight, Pos.bottomRight, Pos.baselineRight: return Place.end;
     }
 }
 
@@ -492,21 +499,25 @@ Place vertical(Pos p) nothrow @nogc
         case Pos.topLeft, Pos.topCentre, Pos.topRight: return Place.start;
         case Pos.centreLeft, Pos.centre, Pos.centreRight: return Place.middle;
         case Pos.bottomLeft, Pos.bottomCentre, Pos.bottomRight: return Place.end;
+        case Pos.baselineLeft, Pos.baselineCentre, Pos.baselineRight: return Place.baseline;
     }
 }
 
 /// How far along an axis a place is, as a fraction of it
 float fraction(Place p) nothrow @nogc
 {
-    return p == Place.start ? 0 : p == Place.middle ? 0.5f : 1;
+    return p == Place.start || p == Place.baseline ? 0 : p == Place.middle ? 0.5f : 1;
 }
 
 /// Places a container's children: `along` its own direction, and `across` it those that don't
-/// stretch, which each say so for themselves with alignSelf (see placeChild).
+/// stretch, which each say so for themselves with alignSelf (see placeChild). A baseline along is
+/// the start: only across a row is there a baseline to line up.
 void placeChildren(YGNodeRef node, Place along, Place across) nothrow @nogc
 {
-    YGNodeStyleSetJustifyContent(node, along == Place.start ? YGJustifyFlexStart
-                                     : along == Place.middle ? YGJustifyCenter : YGJustifyFlexEnd);
+    YGNodeStyleSetJustifyContent(node, along == Place.middle ? YGJustifyCenter
+                                     : along == Place.end ? YGJustifyFlexEnd : YGJustifyFlexStart);
     YGNodeStyleSetAlignItems(node, across == Place.start ? YGAlignFlexStart
-                                 : across == Place.middle ? YGAlignCenter : YGAlignFlexEnd);
+                                 : across == Place.middle ? YGAlignCenter
+                                 : across == Place.end ? YGAlignFlexEnd
+                                 : YGNodeStyleGetFlexDirection(node) == YGFlexDirectionRow ? YGAlignBaseline : YGAlignFlexStart);
 }

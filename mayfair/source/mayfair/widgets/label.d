@@ -42,6 +42,10 @@ import mayfair.widgets.widget;
         status.textProperty.bind(count.map((int n) => format!"Clicked %d times"(n)));
 
     Made selectable, its text can be selected with the mouse and copied: see selectable.
+
+    Given less room than its text needs -- a table's cell, a row that's squeezed -- a line ends in
+    an ellipsis where it's cut short, as JavaFX's does, rather than running on past the label's
+    edge: see textOverrun.
 */
 @DefaultProperty("text")
 class Label : Widget
@@ -57,6 +61,7 @@ public:
         // here through the node's context pointer
         YGNodeSetContext(node, cast(void*) this);
         YGNodeSetMeasureFunc(node, &measureLabel);
+        YGNodeSetBaselineFunc(node, &labelBaseline);    // for Pos.baselineLeft and the like
         reshape();
     }
 
@@ -75,6 +80,11 @@ public:
 
     /// How lines line up with each other, and in a label wider than its text. JavaFX's textAlignment.
     mixin(declareStyleableProperty!(TextAlignment, "textAlignment", "text-align", "TextAlignment.left",
+                                    q{ invalidate(); }));
+
+    /// What a line too long for the label's width does: ends in "…" where it's cut, as it does
+    /// unless told otherwise, or is cut off at the edge. JavaFX's textOverrun.
+    mixin(declareStyleableProperty!(OverrunStyle, "textOverrun", "text-overrun", "OverrunStyle.ellipsis",
                                     q{ invalidate(); }));
 
     /// Extra room between lines, in points. JavaFX's lineSpacing.
@@ -277,19 +287,28 @@ protected:
         const selecting = _selectable && _anchor != _caret && (focused || (_menu && _menu.showing));
         const selected = behind.covered(_highlightFill);
         float top = y;
-        foreach (ref line; lines)
+        foreach (ref whole; lines)
         {
+            // Too long for the width, as rounding can't account for: cut short, with an ellipsis after
+            const cut = whole.width > w + 1;
+            const line = !cut ? whole
+                       : _textOverrun == OverrunStyle.ellipsis ? _paragraph.truncated(whole, w - _ellipsis.width)
+                       : _paragraph.truncated(whole, w);
+            const ellipsis = cut && _textOverrun == OverrunStyle.ellipsis && _ellipsis.width <= w;
+            const shown = line.width + (ellipsis ? _ellipsis.width : 0);
             float left = x;
             if (_textAlignment == TextAlignment.centre)
-                left += (w - line.width) / 2;
+                left += (w - shown) / 2;
             else if (_textAlignment == TextAlignment.right)
-                left += w - line.width;
+                left += w - shown;
             // A line's origin is its baseline, one ascender below its top
+            const baseline = top + _paragraph.ascender;
             if (selecting)
-                _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill, selectionStart, selectionEnd,
-                               selected);
+                _image.addLine(_paragraph, line, left, baseline, _textFill, selectionStart, selectionEnd, selected);
             else
-                _image.addLine(_paragraph, line, left, top + _paragraph.ascender, _textFill);
+                _image.addLine(_paragraph, line, left, baseline, _textFill);
+            if (ellipsis)
+                _image.addRun(_ellipsis, left + line.width, baseline, _textFill);
             top += _paragraph.lineHeight + _lineSpacing;
         }
         _image.finish();
@@ -302,6 +321,7 @@ private:
         if (!_font)
             _font = defaultFont(Theme.text_size); // none given, or a stylesheet's taken back
         _paragraph = Paragraph(_font, _text);
+        _ellipsis = shapeText(_font, "…");    // shaped now, as paint() can't
         if (_anchor || _caret)
             place(0, 0); // what was selected is gone
         remeasure();
@@ -513,6 +533,7 @@ private:
     }
 
     Paragraph _paragraph;
+    GlyphRun _ellipsis;             // "…", for the end of a line cut short
     TextImage _image; // the text, drawn by FreeType (see mayfair.text.raster)
     Tvg_Paint _selectionPaint;
     SelectLine[] _lines;            // laid out to select in, at _linesWidth; null till needed
@@ -531,6 +552,10 @@ package:
     bool menuOnlyForSelection;
 }
 
+/// What a line of text too long for its room does. JavaFX's OverrunStyle, less the ones that cut
+/// it at the start or in the middle, or by the word.
+enum OverrunStyle { clip, ellipsis }
+
 /// How lines of text line up. JavaFX's TextAlignment; justify is left, for now.
 enum TextAlignment { left, centre, right, justify }
 
@@ -540,6 +565,13 @@ enum TextAlignment { left, centre, right, justify }
     all it may have (at most) or what it will have (exactly); with no width to go by, the text's
     as wide as it is on its lines.
 */
+/// Where a label's first baseline is, down from its top: Yoga lining labels up by it.
+private extern(C) float labelBaseline(YGNodeConstRef node, float width, float height) nothrow @nogc
+{
+    auto self = cast(Label) YGNodeGetContext(node);
+    return self ? YGNodeLayoutGetPadding(node, YGEdgeTop) + self._paragraph.ascender : height;
+}
+
 private extern(C) YGSize measureLabel(YGNodeConstRef node, float width, YGMeasureMode widthMode,
                                       float height, YGMeasureMode heightMode) nothrow @nogc
 {
@@ -549,5 +581,9 @@ private extern(C) YGSize measureLabel(YGNodeConstRef node, float width, YGMeasur
     const wrap = self._wrapText && widthMode != YGMeasureModeUndefined;
     float w, h;
     self._paragraph.measure(wrap ? width : float.infinity, self._lineSpacing, w, h);
+    // Given at most so much room, no wider than that, as a JavaFX label shrinks: its lines are cut
+    // short to fit, with an ellipsis (see textOverrun), rather than running past what it's in
+    if (widthMode == YGMeasureModeAtMost && w > width)
+        w = width < 0 ? 0 : width;
     return YGSize(w, h);
 }
