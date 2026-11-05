@@ -66,8 +66,6 @@
 		"rt"
 	],
 	"toolchainRequirements": {
-		"dmd": ">=2.111.0",
-		"gdc": "no",
-		"ldc": ">=1.41.0"
+		"frontend": ">=2.111.0"
 	}
 }
