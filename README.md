@@ -60,11 +60,8 @@ doesn't exist) is a compile error, not a crash.
 
 ## What's in it
 
-Very little of Mayfair is new. The hard parts (drawing, layout, text, accessibility) are done by
-other people's libraries, listed under [Thanks](#thanks), and the way it's put together is
-mostly borrowed from JavaFX. What Mayfair adds is the glue: the widgets, the styling, views and
-strings compiled from XML, and making all of it feel like one toolkit rather than a dozen
-libraries.
+Mayfair builds on other people's libraries for drawing, layout and text (see [Thanks](#thanks)),
+and adds the toolkit around them.
 
 - **Widgets:** buttons, check boxes, toggles, text fields and areas, password fields, sliders,
   progress bars, combo boxes, menus, dialogs, tabs, list, tree and table views (virtualised, so
@@ -89,7 +86,7 @@ A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-termi
 
 | Platform | |
 |---|---|
-| Linux (Wayland and X11) | The main target: developed and tested on (Ubuntu 26, Gnome) |
+| Linux (Wayland and X11) | The main target: developed and tested on (Ubuntu 26.04, GNOME) |
 | FreeBSD | A primary intended target, but untested for now |
 | macOS and Windows | Not supported, as I can't test on them |
 
