@@ -71,14 +71,22 @@ In the [Appwrite console](https://cloud.appwrite.io), for your project:
    section's own **Update**.
 5. **Auth > Users** lists everyone who's made an account, where you can block or delete one.
 
-Then put the project's values in `source/app.d` -- the endpoint (with your region, as the
-console's project settings show it), the project ID, and the database's and table's IDs -- or set
-them in the environment:
+Then give the app your project's values. Copy `.env.example` to `.env` and fill in its four:
+the endpoint (with your region, as the console's project settings show it), the project ID, and
+the database's and table's IDs. `.env` is ignored by git, so they stay on your machine:
 
 ```sh
-APPWRITE_ENDPOINT=https://<REGION>.cloud.appwrite.io/v1 APPWRITE_PROJECT=<PROJECT_ID> \
-APPWRITE_DATABASE=<DATABASE_ID> APPWRITE_TABLE=<TABLE_ID> dub run
+cp .env.example .env    # then edit .env
+dub run
 ```
+
+Each can also be set in the environment, which wins over `.env`:
+
+```sh
+APPWRITE_PROJECT=<PROJECT_ID> dub run
+```
+
+Without them the app says what's missing and stops: there's no project to fall back on.
 
 The `appwrited` dependency in `dub.json` is pinned to a commit of the AppwriteD repository, fetched
 over SSH while that repository's private; for a local checkout, use
