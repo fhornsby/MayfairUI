@@ -122,6 +122,37 @@ few minutes; after that they're only rebuilt when they change.
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
 | [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |
 
+## To do
+
+What's still to be done, that I know of:
+
+**Text**
+- Plurals in `strings.xml`, so "1 file" and "3 files" can each be translated. Most languages
+  don't count the way English does: French treats 0 as singular, Russian and Polish have three or
+  four forms, and Arabic has six.
+- Read the display's subpixel layout (RGB, BGR or vertical) from Wayland's `wl_output`, rather
+  than assuming RGB.
+- At 14px, lowercase letters come out a pixel taller than Zed's, as the hinting rounds their
+  height up.
+- Choose a default font. IBM Plex Sans is bundled for now, so Mayfair can be compared side by
+  side with Zed.
+- Justified text: `TextAlignment.justify` lines text up on the left for now.
+
+**Desktop**
+- A settings source for Oriel, so that on Oriel Mayfair stops reading GNOME's GSettings.
+
+**Platforms**
+- Fix the browser build, and give it more than the CPU renderer.
+- Windows and macOS: get them building and tested. Accessibility there too, as Mayfair only
+  speaks to screen readers through AT-SPI (Linux and the BSDs) for now.
+
+**Building**
+- Find the real minimum LDC version. This README and `dub.json` say 1.30, but 1.36 can't build
+  Mayfair: its bindings use ImportC's `#pragma attribute` and `@standalone`, which are newer.
+
+**Before 1.0**
+- Audit the code by hand, once a few apps have been built with it (see below).
+
 ## Licence
 
 Mayfair is under the [MIT licence](LICENSE), and everything it depends on is under a permissive
