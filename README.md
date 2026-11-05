@@ -2,6 +2,8 @@
 
 Mayfair is a desktop UI toolkit for the D programming language. It features retained-mode widgets laid out in a tree, styled with CSS, optionally described in XML, and drawn on the GPU with vector graphics.
 
+![Screenshot of the gallery app with avaliable widgets listed](resources/GalleryScreenshot.png)
+
 > **Mayfair is at v0.1.** It's usable, and I am building personal and toy apps with it, but the API is still heavily in development and will have breaking changes. Mayfair is not ready for anything more than simple prototyping and playing with, and definitely not ready for production.
 >
 > It's also a side project, so updates may be slow and irregular, and it could be dropped
