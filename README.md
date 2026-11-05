@@ -87,13 +87,10 @@ A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-termi
 
 ## Platforms
 
-Mayfair is being made for Oriel, a desktop environment for FreeBSD and Linux that isn't released
-yet. Until it is, Linux is Mayfair's main target, with FreeBSD next.
-
 | Platform | |
 |---|---|
-| Linux (Wayland and X11) | The main target: developed and tested on |
-| FreeBSD | A primary target, but untested for now |
+| Linux (Wayland and X11) | The main target: developed and tested on (Ubuntu 26, Gnome) |
+| FreeBSD | A primary intended target, but untested for now |
 | macOS and Windows | Not supported, as I can't test on them |
 
 I won't be supporting macOS or Windows directly, but I'm happy to take fixes that get Mayfair
