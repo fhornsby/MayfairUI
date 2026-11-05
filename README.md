@@ -1,8 +1,8 @@
 # Mayfair
 
-Mayfair is a desktop UI toolkit for the D programming language. It features retained mode widget laid out in a tree, styled with CSS, optionally described in XML, and drawn on the GPU with vector graphics.
+Mayfair is a desktop UI toolkit for the D programming language. It features retained-mode widgets laid out in a tree, styled with CSS, optionally described in XML, and drawn on the GPU with vector graphics.
 
-> **Mayfair is at v0.1.** It's usable, and I am building personal and toy apps with it, but the API is still heavily in developement an will still have breaking changes. Mayfair is not ready for anything more than simple prototyping and playing with, and definintely not ready for production.
+> **Mayfair is at v0.1.** It's usable, and I am building personal and toy apps with it, but the API is still heavily in development and will have breaking changes. Mayfair is not ready for anything more than simple prototyping and playing with, and definitely not ready for production.
 
 ```d
 import mayfair;
@@ -57,6 +57,12 @@ doesn't exist) is a compile error, not a crash.
 
 ## What's in it
 
+Very little of Mayfair is new. The hard parts (drawing, layout, text, accessibility) are done by
+other people's libraries, listed under [Thanks](#thanks), and the way it's put together is
+mostly borrowed from JavaFX. What Mayfair adds is the glue: the widgets, the styling, views and
+strings compiled from XML, and making all of it feel like one toolkit rather than a dozen
+libraries.
+
 - **Widgets:** buttons, check boxes, toggles, text fields and areas, password fields, sliders,
   progress bars, combo boxes, menus, dialogs, tabs, list, tree and table views (virtualised, so
   they scale to large data), a navigation sidebar, a scroll pane, a canvas, images, icons, Lottie
@@ -78,14 +84,22 @@ A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-termi
 
 ## Platforms
 
-| Tier | Platform | |
-|---|---|---|
-| 1 | Linux (Wayland and X11) | Developed and tested on |
-| 2 | FreeBSD | Builds; less tested |
-| 3 | macOS | Expected to work; not tested |
+Mayfair is made for Oriel, a desktop environment for FreeBSD that also runs on Linux, and those
+two are what it's for. It isn't a cross-platform toolkit, though it's built on cross-platform
+libraries, so it may well run elsewhere.
 
-Windows and macOS arent currently supported, however as Mayfair uses standard platform agnostic libraries for its core there should be no reason why you shouldn't be able to get it running on their of them. An experimental browser build (WebAssembly, through Emscripten) is in
-[`mayfair/web`](mayfair/web), however it is currently not working due to introduction of desktop features.
+| Platform | |
+|---|---|
+| Linux (Wayland and X11) | Developed and tested on |
+| FreeBSD | A main target, as Oriel's home. It builds, but is less tested for now |
+| macOS and Windows | Not targets, and not tested |
+
+I won't be testing on macOS or Windows, but I don't want to break them on purpose, and fixes that
+get Mayfair running there are welcome. Some parts only work on Linux and the BSDs for now:
+screen readers are spoken to through AT-SPI, and the file chooser is the desktop portal's.
+
+An experimental browser build (WebAssembly, through Emscripten) is in [`mayfair/web`](mayfair/web),
+but it currently doesn't work, since desktop features were added.
 
 ## Building
 
@@ -142,9 +156,8 @@ What's still to be done, that I know of:
 - A settings source for Oriel, so that on Oriel Mayfair stops reading GNOME's GSettings.
 
 **Platforms**
+- Test on FreeBSD as much as on Linux, as it's Oriel's home.
 - Fix the browser build, and give it more than the CPU renderer.
-- Windows and macOS: get them building and tested. Accessibility there too, as Mayfair only
-  speaks to screen readers through AT-SPI (Linux and the BSDs) for now.
 
 **Building**
 - Find the real minimum LDC version. This README and `dub.json` say 1.30, but 1.36 can't build
