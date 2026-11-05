@@ -84,19 +84,18 @@ A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-termi
 
 ## Platforms
 
-Mayfair is made for Oriel, a desktop environment for FreeBSD that also runs on Linux, and those
-two are what it's for. It isn't a cross-platform toolkit, though it's built on cross-platform
-libraries, so it may well run elsewhere.
+Mayfair is being made for Oriel, a desktop environment for FreeBSD and Linux that isn't released
+yet. Until it is, Linux is Mayfair's main target, with FreeBSD next.
 
 | Platform | |
 |---|---|
-| Linux (Wayland and X11) | Developed and tested on |
-| FreeBSD | A main target, as Oriel's home. It builds, but is less tested for now |
-| macOS and Windows | Not targets, and not tested |
+| Linux (Wayland and X11) | The main target: developed and tested on |
+| FreeBSD | A primary target, but untested for now |
+| macOS and Windows | Not supported, as I can't test on them |
 
-I won't be testing on macOS or Windows, but I don't want to break them on purpose, and fixes that
-get Mayfair running there are welcome. Some parts only work on Linux and the BSDs for now:
-screen readers are spoken to through AT-SPI, and the file chooser is the desktop portal's.
+I won't be supporting macOS or Windows directly, but I'm happy to take fixes that get Mayfair
+running there. Some parts only work on Linux and the BSDs for now: screen readers are spoken to
+through AT-SPI, and the file chooser is the desktop portal's.
 
 An experimental browser build (WebAssembly, through Emscripten) is in [`mayfair/web`](mayfair/web),
 but it currently doesn't work, since desktop features were added.
@@ -156,7 +155,7 @@ What's still to be done, that I know of:
 - A settings source for Oriel, so that on Oriel Mayfair stops reading GNOME's GSettings.
 
 **Platforms**
-- Test on FreeBSD as much as on Linux, as it's Oriel's home.
+- Test on FreeBSD, a primary target that's untested so far.
 - Fix the browser build, and give it more than the CPU renderer.
 
 **Building**
