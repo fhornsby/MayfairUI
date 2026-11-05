@@ -99,9 +99,10 @@ but it currently doesn't work, since desktop features were added.
 
 ## Building
 
-Mayfair currently needs LDC (1.30 or later), dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's cargo too,
-for `mayfair-terminal`, and for Mayfair itself anywhere but Linux x86_64. On Ubuntu 26.04 or
-FreeBSD 14, `setup.sh` installs all of it and builds the gallery:
+Mayfair currently needs LDC 1.41 or later, dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's
+cargo too, for `mayfair-terminal`, and for Mayfair itself anywhere but Linux x86_64. DMD 2.111 or
+later may work instead of LDC, but is untested, and slower, as its optimiser isn't as good. On
+Ubuntu 26.04 or FreeBSD 14, `setup.sh` installs all of it and builds the gallery:
 
 ```sh
 git clone --recurse-submodules https://github.com/fhornsby/MayfairUI.git
@@ -156,8 +157,8 @@ What's still to be done, that I know of:
 - Fix the browser build, and give it more than the CPU renderer.
 
 **Building**
-- Find the real minimum LDC version. This README and `dub.json` say 1.30, but 1.36 can't build
-  Mayfair: its bindings use ImportC's `#pragma attribute` and `@standalone`, which are newer.
+- Try building with DMD, which is allowed but untested, and with LDCs older than 1.41, to find
+  what really works. 1.36 can't: its ImportC has no `#pragma attribute`.
 
 **Before 1.0**
 - Audit the code by hand, once a few apps have been built with it (see below).

@@ -58,7 +58,7 @@ if [ "$os" = Linux ]; then
     packages=(
         # Fetching and unpacking: git for the submodules, curl and unzip for wgpu-native and AccessKit
         git curl ca-certificates unzip xz-utils
-        # Compilers and build tools. LDC is the only D compiler Mayfair supports; binutils gives
+        # Compilers and build tools. LDC is the D compiler Mayfair's built and tested with; binutils gives
         # vendor/build.sh nm and objcopy
         build-essential binutils patch pkg-config cmake meson ninja-build ldc dub
         # mayfair-terminal's native half is Rust (cargo 1.85 or later)
