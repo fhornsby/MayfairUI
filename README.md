@@ -100,10 +100,11 @@ but it currently doesn't work, since desktop features were added.
 ## Building
 
 Mayfair currently needs LDC 1.41 or later, dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's
-cargo too, for `mayfair-terminal`, and for Mayfair itself anywhere but Linux x86_64. DMD or GDC
-may work instead of LDC, as long as their D front end is 2.111 or later, but neither is tested,
-and DMD's code is slower, as its optimiser isn't as good. On Ubuntu 26.04 or FreeBSD 14,
-`setup.sh` installs all of it and builds the gallery:
+cargo too, for `mayfair-terminal`, and for Mayfair itself anywhere but Linux x86_64. DMD 2.111 or
+later may work instead of LDC, but is untested, and its code is slower, as its optimiser isn't as
+good. GDC can't build Mayfair: its ImportC doesn't run the C preprocessor, so it can't read the
+headers the C bindings include. On Ubuntu 26.04 or FreeBSD 14, `setup.sh` installs all of it
+and builds the gallery:
 
 ```sh
 git clone --recurse-submodules https://github.com/fhornsby/MayfairUI.git
@@ -158,8 +159,8 @@ What's still to be done, that I know of:
 - Fix the browser build, and give it more than the CPU renderer.
 
 **Building**
-- Try building with DMD and GDC, which are allowed but untested, and with D front ends older
-  than 2.111 (LDC 1.41's), to find what really works. 2.106 (LDC 1.36) can't: its ImportC has no
+- Try building with DMD, which is allowed but untested, and with D front ends older than 2.111
+  (LDC 1.41's), to find what really works. 2.106 (LDC 1.36) can't: its ImportC has no
   `#pragma attribute`.
 
 **Before 1.0**
