@@ -1,10 +1,8 @@
 # Mayfair
 
-A desktop UI toolkit for the D programming language: widgets laid out in a tree, styled with
-CSS, optionally described in XML, and drawn on the GPU through WebGPU.
+Mayfair is a desktop UI toolkit for the D programming language. It features retained mode widget laid out in a tree, styled with CSS, optionally described in XML, and drawn on the GPU with vector graphics.
 
-> **Mayfair is at v0.1.** It's usable, and apps are being built with it, but the API will still
-> change and it isn't ready for anything that needs to be stable.
+> **Mayfair is at v0.1.** It's usable, and I am building personal and toy apps with it, but the API is still heavily in developement an will still have breaking changes. Mayfair is not ready for anything more than simple prototyping and playing with, and definintely not ready for production.
 
 ```d
 import mayfair;
@@ -54,7 +52,7 @@ void main()
 }
 ```
 
-The XML is read at compile time, so a mistake in a view (a misspelt widget, a handler that
+The XML is read and compiled into a widget tree at compile time, so a mistake in a view (a misspelt widget, a handler that
 doesn't exist) is a compile error, not a crash.
 
 ## What's in it
@@ -86,12 +84,12 @@ A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-termi
 | 2 | FreeBSD | Builds; less tested |
 | 3 | macOS | Expected to work; not tested |
 
-Windows isn't supported. An experimental browser build (WebAssembly, through Emscripten) is in
-[`mayfair/web`](mayfair/web).
+Windows and macOS arent currently supported, however as Mayfair uses standard platform agnostic libraries for its core there should be no reason why you shouldn't be able to get it running on their of them. An experimental browser build (WebAssembly, through Emscripten) is in
+[`mayfair/web`](mayfair/web), however it is currently not working due to introduction of desktop features.
 
 ## Building
 
-Mayfair needs LDC (1.30 or later), dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's cargo too,
+Mayfair currently needs LDC (1.30 or later), dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's cargo too,
 for `mayfair-terminal`, and for Mayfair itself anywhere but Linux x86_64. On Ubuntu 26.04 or
 FreeBSD 14, `setup.sh` installs all of it and builds the gallery:
 
@@ -122,7 +120,7 @@ few minutes; after that they're only rebuilt when they change.
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
-| [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop, with a frosted-glass sidebar |
+| [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |
 
 ## Licence
 
@@ -147,7 +145,7 @@ Mayfair stands on a lot of other people's work.
 [litehtml](https://github.com/litehtml/litehtml) lays out HTML, [AccessKit](https://accesskit.dev)
 speaks to screen readers, [SDL](https://libsdl.org) opens the windows,
 [alacritty_terminal](https://github.com/alacritty/alacritty) runs the terminal, and
-[IBM Plex](https://www.ibm.com/plex/) and [DejaVu](https://dejavu-fonts.github.io) are its fonts.
+[IBM Plex](https://www.ibm.com/plex/) and [DejaVu](https://dejavu-fonts.github.io) are its current default fonts.
 And [D](https://dlang.org) and [LDC](https://github.com/ldc-developers/ldc), which it's written in.
 
 **The toolkits it learnt from:** [JavaFX](https://openjfx.io) above all: the scene and its tree
@@ -160,5 +158,4 @@ them. [Flutter](https://flutter.dev), for how layout and painting are split. And
 ## About its development
 
 Mayfair is written with the help of AI (Claude, by Anthropic), and the commits it helped with
-say so. The code is being audited by hand after this first release; from then on, changes made
-with AI help are kept small and reviewed one at a time.
+say so. Further breaking changes are expected. Once a few apps have been made (to a reasonable production standard), and any bugs or oddities have been worked out, I intend to audit the code by hand. From then on, changes made with AI help are kept small and reviewed one at a time.
