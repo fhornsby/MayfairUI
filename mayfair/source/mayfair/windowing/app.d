@@ -5,6 +5,7 @@ import sdl;
 import sdl.hints;
 import sdl.error;
 import sdl.surface;
+import sdl.cpuinfo : SDL_GetNumLogicalCPUCores;
 import core.stdc.stdlib : getenv;
 import core.stdc.string : strcmp, strlen;
 import std.string;
@@ -17,12 +18,10 @@ import mayfair.widgets.styling : applyCss;
 import mayfair.theme : Theme;
 import mayfair.trace;
 import mayfair.accessibility;
-import mayfair.windowing.accessibility;
 import mayfair.windowing.platform;
 import mayfair.filechooser : FileChooser;
 import mayfair.windowing.decorations;
-import mayfair.windowing.wayland : TileWatcher, WindowMover;
-import mayfair.windowing.blur : BackgroundBlur;
+import mayfair.windowing.window;
 
 
 /*
@@ -39,6 +38,9 @@ import mayfair.windowing.blur : BackgroundBlur;
     animation: while one is running the loop stops waiting for events and wakes once a display refresh
     to advance it, then goes back to sleeping once it's done.
 
+    There's one loop however many windows the app has open (see Window): events are handed to the
+    window they're for, and layout, paint and present run for each window that needs them.
+
     Phases 1 and 3-5 run every frame, so they're @nogc nothrow, and the event watch (a C callback) needs
     them to be. Update isn't: it's where code written by the app's users runs, and that's free to use the
     GC. So handleEvent() only records what happened, and update() is where the app hears about it.
@@ -46,36 +48,26 @@ import mayfair.windowing.blur : BackgroundBlur;
 class App
 {
 private:
-// Window window;
-//SDL3 Variables
-SDL_Window* window;
-//Rendering
-Renderer renderer;
-//Layout
-Scene _scene;
 //App variables
 string title;
+//The windows, the main one first, in the order they were shown; and the main one
+Window[] _windows;
+Window _main;
 //The pointer's shape, and SDL's cursors for each, made as they're first wanted
 Cursor shownCursor = Cursor.default_;
 SDL_Cursor*[Cursor.max + 1] cursors;
 //Accessibility
-AccessibilityAdapter accessibility;
 uint accessibilityEventType; // the SDL event type AccessKit's requests arrive as
-int height, width;
-bool resizable;
+//What later windows are made like, once the main one's open (see adopt)
+bool desktopDecorates;     // whether the desktop draws windows' title bars, where it's asked
+bool wayland;              // whether SDL's on Wayland
+const(char)* rendererName; // the renderer the first window started
 //Frame state
 bool running;
-bool needsLayout = true;
-bool needsPaint;
-bool needsPresent;
-int viewWidth, viewHeight; // drawable size in pixels, set by layout()
-float scale = 1.0f;        // device pixels per point, set by updateScale()
-bool scaleApplied;         // whether updateScale() has told the scene anything yet
-ulong framePeriod;         // nanoseconds between display refreshes, set by updateRefreshRate()
 ulong lastUpdate;          // when update() last ran, on traceNow()'s clock
 //What views' @autowired fields are filled with (see mayfair.autowire)
 Services services;
-//Input waiting for update() to hand to the scene
+//Input waiting for update() to hand to the scenes, in the order it came, whichever window it's for
 struct QueuedInput {
     SDL_Event event;
     size_t textStart, textLength; // where a text event's text was copied to in inputText
@@ -84,16 +76,6 @@ QueuedInput[64] inputEvents;
 size_t inputEventCount;
 char[4096] inputText;
 size_t inputTextUsed;
-//Text input: which widget it's on for, and where SDL was last told it is
-Widget textInputWidget;
-SDL_Rect textInputRect;
-int textInputCursor;
-bool repickPending;        // things moved, by layout or scrolling, so what's under the pointer may have too
-TileWatcher tiles;         // whether the window's snapped to an edge, on Wayland, for its frame to go flat
-WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
-BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
-bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
-bool translucentNow;       // and is, as the scene was last told
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
 ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
@@ -101,44 +83,14 @@ size_t collections;        // druntime's count of collections, as of the loop's 
 size_t collectionsBetween; // how many of them collectGarbage() made
 size_t collectionsTraced, collectionsBetweenTraced; // both, as of the last frame traced
 
-/*
-    HiDPI. Layout and paint work in points; the scene transform turns those into device pixels, so
-    a point is the same physical size whatever the display. SDL_GetWindowDisplayScale() is the right
-    factor: it combines the window's pixel density with the scale the user asked for (a 150% Windows
-    display, or a Wayland fractional scale), which is what UI should be sized by. Yoga's point scale
-    factor makes it round layout so edges land on whole device pixels, which matters most at the
-    fractional scales, where otherwise adjacent boxes meet on a half pixel and the seam shows.
-*/
-void updateScale() nothrow @nogc {
-    const reported = SDL_GetWindowDisplayScale(window);
-    const next = reported > 0 ? reported : 1.0f; // 0 means SDL couldn't tell us
-    // The first call has to go through even when the scale is exactly 1, because it is also what
-    // hands the scene the renderer's supersample factor
-    if (scaleApplied && next == scale)
-        return;
-    scale = next;
-    scaleApplied = true;
-    _scene.setScale(scale, renderer.renderScale());
-    needsLayout = true;
-    trace("scale %.2f device pixels per point", scale);
-}
-
-/// Makes the window translucent or opaque as the compositor's blur comes and goes, if it's to be.
-void applyTranslucency() {
-    const on = _translucent && blur.available;
-    if (on == translucentNow)
-        return;
-    translucentNow = on;
-    _scene._setTranslucent(on);
-    trace("translucent %s", on ? "yes".ptr : "no".ptr);
-}
-
-/// How often the window's display refreshes, which is how often a running animation gets a frame.
-void updateRefreshRate() nothrow @nogc {
-    const mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-    const hz = mode && mode.refresh_rate > 0 ? mode.refresh_rate : 60.0f;
-    framePeriod = cast(ulong)(1e9 / hz);
-    trace("refresh %.2f Hz", hz);
+/// The open window SDL knows by `id`, if it's one of ours.
+Window windowFor(SDL_WindowID id) nothrow @nogc {
+    if (!id)
+        return null;
+    foreach (w; _windows)
+        if (w.sdl && SDL_GetWindowID(w.sdl) == id)
+            return w;
+    return null;
 }
 
 /*
@@ -148,7 +100,8 @@ void updateRefreshRate() nothrow @nogc {
 */
 void queueInputEvent(ref const SDL_Event event) nothrow @nogc {
     if (event.type == SDL_EventType.SDL_EVENT_MOUSE_MOTION && inputEventCount > 0
-        && inputEvents[inputEventCount - 1].event.type == SDL_EventType.SDL_EVENT_MOUSE_MOTION) {
+        && inputEvents[inputEventCount - 1].event.type == SDL_EventType.SDL_EVENT_MOUSE_MOTION
+        && inputEvents[inputEventCount - 1].event.motion.windowID == event.motion.windowID) {
         inputEvents[inputEventCount - 1].event = event;
         return;
     }
@@ -177,117 +130,86 @@ void queueInputEvent(ref const SDL_Event event) nothrow @nogc {
     inputEvents[inputEventCount++] = queued;
 }
 
-/*
-    SDL gives mouse positions in window coordinates. Those are points only when the pixel density
-    and the display scale agree, which they don't on, say, a 150% Windows display without a high
-    density drawable, so go through pixels, which both are defined against.
-*/
-float toPoints(float windowCoordinate) nothrow @nogc {
-    return windowCoordinate * SDL_GetWindowPixelDensity(window) / scale;
-}
-
 /// 1. Events: records what one SDL event changes. Anything the app's own code needs to hear about
 /// is passed on in update(), so this can stay @nogc.
 void handleEvent(ref const SDL_Event event) nothrow @nogc {
-    if (event.type >= SDL_EventType.SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EventType.SDL_EVENT_WINDOW_LAST)
-        trace("event %-19s %5d %5d  queued %.2f ms ago", windowEventName(event.type),
-              event.window.data1, event.window.data2, traceMs(event.common.timestamp, traceNow()));
+    if (event.type >= SDL_EventType.SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EventType.SDL_EVENT_WINDOW_LAST) {
+        trace("event %-19s %5d %5d  window %u  queued %.2f ms ago", windowEventName(event.type),
+              event.window.data1, event.window.data2, event.window.windowID, traceMs(event.common.timestamp, traceNow()));
+        if (auto w = windowFor(event.window.windowID))
+            if (w.handleWindowEvent(event))
+                queueInputEvent(event);
+        return;
+    }
 
     switch (event.type) {
         case SDL_EventType.SDL_EVENT_SYSTEM_THEME_CHANGED:
             // The desktop went light or dark: restyled in the next update, if the scene follows it
             const scheme = systemColourScheme();
-            if (scheme != _scene.platformColourScheme) {
-                _scene.platformColourScheme = scheme;
-                _scene.restyleAll();
-            }
+            foreach (w; _windows)
+                if (w.sdl && scheme != w._scene.platformColourScheme) {
+                    w._scene.platformColourScheme = scheme;
+                    w._scene.restyleAll();
+                }
             break;
         case SDL_EventType.SDL_EVENT_QUIT:
             running = false;
             break;
-        case SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-            if (event.window.windowID == SDL_GetWindowID(window))
-                needsLayout = true;
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_EXPOSED:
-            if (event.window.windowID == SDL_GetWindowID(window))
-                needsPresent = true;
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-            // The window moved to a display with a different scale
-            if (event.window.windowID == SDL_GetWindowID(window))
-                updateScale();
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_DISPLAY_CHANGED:
-            if (event.window.windowID == SDL_GetWindowID(window))
-                updateRefreshRate();
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_GAINED:
-        case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_LOST:
-            if (event.window.windowID == SDL_GetWindowID(window)) {
-                accessibility.windowFocus(event.type == SDL_EventType.SDL_EVENT_WINDOW_FOCUS_GAINED);
-                queueInputEvent(event);
-            }
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
-            if (event.window.windowID == SDL_GetWindowID(window))
-                queueInputEvent(event);
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_SHOWN:
-        case SDL_EventType.SDL_EVENT_WINDOW_MOVED:
-        case SDL_EventType.SDL_EVENT_WINDOW_RESIZED:
-        case SDL_EventType.SDL_EVENT_WINDOW_MAXIMIZED:
-        case SDL_EventType.SDL_EVENT_WINDOW_RESTORED:
-            if (event.window.windowID == SDL_GetWindowID(window)) {
-                accessibility.windowBoundsChanged();
-                if (event.type != SDL_EventType.SDL_EVENT_WINDOW_SHOWN && event.type != SDL_EventType.SDL_EVENT_WINDOW_MOVED
-                    && event.type != SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
-                    queueInputEvent(event);
-                if (event.type == SDL_EventType.SDL_EVENT_WINDOW_RESIZED)
-                    frameChanged = true; // its shape, for the new size
-                if (event.type != SDL_EventType.SDL_EVENT_WINDOW_MOVED)
-                    noteSize();
-            }
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
-        case SDL_EventType.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
-            if (event.window.windowID == SDL_GetWindowID(window))
-                frameChanged = true;
-            break;
         case SDL_EventType.SDL_EVENT_KEY_DOWN:
         case SDL_EventType.SDL_EVENT_KEY_UP:
-            if (event.key.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.key.windowID))
                 queueInputEvent(event);
             break;
         case SDL_EventType.SDL_EVENT_TEXT_INPUT:
-            if (event.text.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.text.windowID))
                 queueInputEvent(event);
             break;
         case SDL_EventType.SDL_EVENT_TEXT_EDITING:
-            if (event.edit.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.edit.windowID))
                 queueInputEvent(event);
             break;
         case SDL_EventType.SDL_EVENT_MOUSE_MOTION:
-            if (event.motion.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.motion.windowID))
                 queueInputEvent(event);
             break;
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
-            if (event.button.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.button.windowID))
                 queueInputEvent(event);
             break;
         case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
-            if (event.wheel.windowID == SDL_GetWindowID(window))
+            if (windowFor(event.wheel.windowID))
                 queueInputEvent(event);
             break;
         default:
             // AccessKit's requests, posted from its own thread, and Platform.runLater()'s tasks.
             // They're for the widgets, so they wait for update() like the rest of the input, and
             // in order with it.
-            if ((event.type == accessibilityEventType && event.user.windowID == SDL_GetWindowID(window))
+            if ((event.type == accessibilityEventType && windowFor(event.user.windowID))
                 || event.type == laterEventType)
                 queueInputEvent(event);
             break;
+    }
+}
+
+/// Which window an event queued for update() is for: null for Platform.runLater()'s, which
+/// are no window's. Looked up as it's handed on, as the window may have closed since.
+Window windowOf(ref const SDL_Event event) nothrow @nogc {
+    if (event.type >= SDL_EventType.SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EventType.SDL_EVENT_WINDOW_LAST)
+        return windowFor(event.window.windowID);
+    switch (event.type) {
+        case SDL_EventType.SDL_EVENT_KEY_DOWN:
+        case SDL_EventType.SDL_EVENT_KEY_UP:
+            return windowFor(event.key.windowID);
+        case SDL_EventType.SDL_EVENT_TEXT_INPUT: return windowFor(event.text.windowID);
+        case SDL_EventType.SDL_EVENT_TEXT_EDITING: return windowFor(event.edit.windowID);
+        case SDL_EventType.SDL_EVENT_MOUSE_MOTION: return windowFor(event.motion.windowID);
+        case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
+            return windowFor(event.button.windowID);
+        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL: return windowFor(event.wheel.windowID);
+        default:
+            return event.type == accessibilityEventType ? windowFor(event.user.windowID) : null;
     }
 }
 
@@ -299,77 +221,86 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
     it may be over something else now without having moved.
 
     It's also where the nodes of collected widgets are freed, being the UI thread with nothing else
-    using Yoga.
+    using Yoga, and where windows closed during it are taken down, once nothing of theirs is
+    running.
 
     Whatever it changes, it says so the way it would anywhere else: a widget invalidates itself, or
-    marks its Yoga node dirty. So afterwards this asks the scene rather than being told.
+    marks its Yoga node dirty. So afterwards each window asks its scene rather than being told.
 */
 void update() {
     freeRetiredNodes();
-    if (frameChanged) {
-        frameChanged = false;
-        applyFrame();
+    foreach (w; _windows)
+        if (w.sdl)
+            w.beforeInput();
+    // By index, and to the count as it stands now: a handler can show a window, which goes on the end
+    for (size_t i = 0; i < inputEventCount; i++) {
+        auto queued = inputEvents[i];
+        const text = inputText[queued.textStart .. queued.textStart + queued.textLength];
+        if (queued.event.type == laterEventType) {
+            foreach (task; Platform.take()) {
+                // A task that throws is the app's bug, not a reason to stop the UI
+                try
+                    task();
+                catch (Exception e)
+                    logError("Platform.runLater task failed: %.*s", cast(int) e.msg.length, e.msg.ptr);
+            }
+        }
+        else if (auto w = windowOf(queued.event))
+            if (!w._closing)
+                w.dispatchInputEvent(queued.event, text);
     }
-    if (repickPending) {
-        repickPending = false;
-        _scene.repick();
-    }
-    foreach (ref queued; inputEvents[0 .. inputEventCount])
-        dispatchInputEvent(queued.event, inputText[queued.textStart .. queued.textStart + queued.textLength]);
     inputEventCount = 0;
     inputTextUsed = 0;
 
     lastUpdate = traceNow();
     pulseAnimations(MonoTime.currTime);
-    applyCss(_scene); // what the input and animations changed, restyled before layout
-
-    updateTextInput();
+    // By index, as a window's handlers may show another
+    for (size_t i = 0; i < _windows.length; i++)
+        if (_windows[i].sdl && !_windows[i]._closing)
+            _windows[i].afterInput();
     updateCursor();
-
-    if (_scene.takePaintRequest())
-        needsPaint = true;
-    if (_scene.layoutNeeded())
-        needsLayout = true;
+    takeDownClosed();
 }
 
-/*
-    Keeps SDL's text input switched on exactly while a widget that takes text has focus: on, it's
-    what makes typed and input method events arrive, and on some platforms brings up an on-screen
-    keyboard, so it's not left on for widgets that don't want it. While it's on, the input method is
-    kept told where the widget is, so its candidate window sits by the text. That goes by where the
-    widget was last painted, which update() is always after.
-*/
-void updateTextInput() {
-    auto owner = _scene.textInputOwner();
-    if (owner !is textInputWidget) {
-        textInputWidget = owner;
-        if (owner) {
-            SDL_StartTextInput(window);
-            textInputRect = SDL_Rect.init;
-            textInputCursor = -1; // tell it where, below, even if it's the old place
-        } else {
-            SDL_StopTextInput(window);
+/// Takes down the windows closed since the last time, and stops once none are left.
+void takeDownClosed() {
+    for (size_t i = 0; i < _windows.length;) {
+        auto w = _windows[i];
+        if (!w._closing) {
+            i++;
+            continue;
         }
+        // Owned windows first: SDL takes them down with their owner, which would leave them dangling
+        foreach (child; _windows)
+            if (child._owner is w && !child._closing)
+                child.close();
+        if (w.sdl && w._owner && w._owner.sdl)
+            SDL_RaiseWindow(w._owner.sdl); // the one it was over, back to the front
+        w.takeDown();
+        w._shown = false;
+        w._closing = false;
+        import std.algorithm : remove;
+        _windows = _windows.remove(i);
+        if (w._onClosed) {
+            try
+                w._onClosed();
+            catch (Exception e)
+                logError("A window's onClosed failed: %.*s", cast(int) e.msg.length, e.msg.ptr);
+        }
+        i = 0; // its handler, or its owned windows, may have closed others
     }
-    if (!owner)
-        return;
-
-    float x, y, w, h, caret;
-    owner.textInputArea(x, y, w, h, caret);
-    if (x != x) // NaN: not painted yet, so there's nowhere to say
-        return;
-    SDL_Rect rect = { toWindow(x), toWindow(y), toWindow(w), toWindow(h) };
-    const cursor = toWindow(caret);
-    if (rect != textInputRect || cursor != textInputCursor) {
-        textInputRect = rect;
-        textInputCursor = cursor;
-        SDL_SetTextInputArea(window, &rect, cursor);
+    if (running && !_windows.length) {
+        trace("loop  the last window's closed");
+        running = false;
     }
 }
 
-/// Shows the pointer shape the widget under it asks for.
+/// Shows the pointer shape the widget under it asks for, in whichever window it's over.
 void updateCursor() {
-    const wanted = _scene.currentCursor();
+    auto focus = windowFor(SDL_GetWindowID(SDL_GetMouseFocus()));
+    if (!focus)
+        return;
+    const wanted = focus._scene.currentCursor();
     if (wanted == shownCursor)
         return;
     shownCursor = wanted;
@@ -379,175 +310,36 @@ void updateCursor() {
         SDL_SetCursor(cursors[wanted]);
 }
 
-/// The desktop's light or dark preference, which SDL reads from the XDG portal on Linux. Light
-/// when there's none to read, as JavaFX's default is.
-ColourScheme systemColourScheme() nothrow @nogc {
-    return SDL_GetSystemTheme() == SDL_SystemTheme.SDL_SYSTEM_THEME_DARK ? ColourScheme.dark : ColourScheme.light;
-}
-
-/// Points back to SDL's window coordinates, the opposite of toPoints().
-int toWindow(float points) nothrow @nogc {
-    return cast(int)(points * scale / SDL_GetWindowPixelDensity(window) + 0.5f);
-}
-
-/*
-    How many points one of SDL's wheel amounts is. SDL gives a wheel in notches, and a touchpad in
-    tenths of a notch's worth of finger movement -- SDL divides the pixels Wayland gives it by ten
-    -- and doesn't say which it's giving. The difference matters: a notch wants JavaFX's 40
-    points, where a touchpad should follow the fingers.
-
-    The amounts tell them apart. A wheel moves in whole notches, or a high-resolution one in
-    eighths of one, where a touchpad's movement comes in 256ths of a pixel and is almost never
-    exactly that. When it is, a touchpad's step is taken for a wheel's -- one in a few hundred,
-    and a fraction of a notch at most. If SDL ever says which it is, this is the place to use it.
-*/
-float wheelPoints(float amount) nothrow @nogc {
-    if (fromWheel(amount))
-        return amount * Theme.scroll_step;
-    return amount * 10; // SDL's tenth of a notch was 10 pixels, which on a touchpad are points
-}
-
-/// Whether one of SDL's amounts is a wheel's, as wheelPoints() tells: whole eighths of a notch.
-bool fromWheel(float amount) nothrow @nogc {
-    import std.math : abs, round;
-    const eighths = amount * 8;
-    return abs(eighths - round(eighths)) < 1e-4f;
-}
-
-void dispatchInputEvent(ref const SDL_Event event, const(char)[] text) {
-    // Mouse events don't carry the modifiers in SDL, so they're read as each is handed on
-    const mods = SDL_GetModState();
-    _scene.modifiers((mods & SDL_Keymod.KMOD_SHIFT) != 0, (mods & SDL_Keymod.KMOD_CTRL) != 0,
-                     (mods & SDL_Keymod.KMOD_ALT) != 0, (mods & SDL_Keymod.KMOD_GUI) != 0);
-    switch (event.type) {
-        case SDL_EventType.SDL_EVENT_MOUSE_MOTION:
-            _scene.mouseMoved(toPoints(event.motion.x), toPoints(event.motion.y));
-            break;
-        case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
-            _scene.mousePressed(toPoints(event.button.x), toPoints(event.button.y),
-                                mouseButton(event.button.button), event.button.clicks);
-            break;
-        case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
-            _scene.mouseReleased(toPoints(event.button.x), toPoints(event.button.y),
-                                 mouseButton(event.button.button), event.button.clicks);
-            break;
-        case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
-            const device = fromWheel(event.wheel.x) && fromWheel(event.wheel.y) ? ScrollDevice.wheel : ScrollDevice.touchpad;
-            float dx = wheelPoints(event.wheel.x), dy = wheelPoints(event.wheel.y);
-            // Shift turns the wheel sideways, as it does everywhere else on the desktop
-            if ((mods & SDL_Keymod.KMOD_SHIFT) && dx == 0) {
-                dx = dy;
-                dy = 0;
-            }
-            // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
-            _scene.scrolled(toPoints(event.wheel.mouse_x), toPoints(event.wheel.mouse_y), -dx, dy, device,
-                            event.wheel.timestamp / 1e9);
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
-            _scene.mouseLeft();
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_GAINED:
-            _scene.windowFocus(true);
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_MAXIMIZED:
-            _scene.windowMaximised(true);
-            frameChanged = true;
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_RESTORED:
-            _scene.windowMaximised(false);
-            frameChanged = true;
-            break;
-        case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_LOST:
-            _scene.windowFocus(false);
-            break;
-        case SDL_EventType.SDL_EVENT_KEY_DOWN:
-            _scene.keyPressed(keyEvent(event.key, KeyEventType.pressed));
-            break;
-        case SDL_EventType.SDL_EVENT_KEY_UP:
-            _scene.keyReleased(keyEvent(event.key, KeyEventType.released));
-            break;
-        case SDL_EventType.SDL_EVENT_TEXT_INPUT:
-            _scene.keyTyped(text.idup);
-            break;
-        case SDL_EventType.SDL_EVENT_TEXT_EDITING:
-            _scene.inputMethodTextChanged(text.idup, event.edit.start, event.edit.length);
-            break;
-        default:
-            if (event.type == laterEventType) {
-                foreach (task; Platform.take()) {
-                    // A task that throws is the app's bug, not a reason to stop the UI
-                    try
-                        task();
-                    catch (Exception e)
-                        logError("Platform.runLater task failed: %.*s", cast(int) e.msg.length, e.msg.ptr);
-                }
-            }
-            else if (event.type == accessibilityEventType) {
-                if (event.user.code == AccessibilityAdapter.Request.activate)
-                    accessibility.requestFullTree();
-                else {
-                    ulong target;
-                    accesskit_action action;
-                    AccessibleActionData data;
-                    AccessibilityAdapter.takeAction(cast(void*) event.user.data1, target, action, data); // ours to free
-                    _scene.performAccessibleAction(target, action, data);
-                }
-            }
-            break;
-    }
-}
-
 /*
     How long the loop can wait for an event before a running animation needs its next pulse, in
     milliseconds. One changing every frame wants the next display refresh, rounded down so it's
     early rather than late; one waiting for a set moment, like a caret's next blink, wants that
-    moment, rounded up so it doesn't wake just short of it and have to go round again.
+    moment, rounded up so it doesn't wake just short of it and have to go round again. With
+    windows on displays of different rates, the fastest's.
 */
 int msUntilNextPulse() nothrow @nogc {
     const wanted = untilNextPulse();
     const now = traceNow();
+    ulong period = ulong.max;
+    bool paced = true;
+    foreach (w; _windows)
+        if (w.sdl) {
+            if (w.framePeriod < period)
+                period = w.framePeriod;
+            paced &= w.renderer.pacedByDisplay();
+        }
+    if (period == ulong.max)
+        period = 16_666_667;
     // A renderer whose present waits for the display paces frames itself, and a timer of the
     // loop's own, knowing nothing of when the display refreshes, would make it miss them. So the
     // timer only stops it running flat out if the present stops waiting: a hidden window, say.
-    const frameDue = lastUpdate + (renderer.pacedByDisplay() ? framePeriod / 2 : framePeriod);
+    const frameDue = lastUpdate + (paced ? period / 2 : period);
     const untilFrame = frameDue > now ? cast(long)((frameDue - now) / 1_000_000) : 0;
     if (wanted == Duration.zero)
         return cast(int) untilFrame;
     const ns = wanted.total!"nsecs";
     const ms = (ns + 999_999) / 1_000_000;
     return cast(int)(ms > untilFrame ? (ms < int.max ? ms : int.max) : untilFrame);
-}
-
-/*
-    Tells assistive technology what changed. After rendering, because a widget's bounds are where
-    it was painted. It isn't a frame phase of its own, as it's the widgets describing themselves,
-    which is their code, not the kit's, and so free to allocate.
-*/
-void updateAccessibility() {
-    const pointsToWindow = scale / SDL_GetWindowPixelDensity(window);
-    if (accessibility.updateNeeded(_scene, pointsToWindow))
-        accessibility.update(_scene, title, pointsToWindow);
-}
-
-/// 3. Layout: Yoga works out every box's size and position for the current window size.
-void layout() nothrow @nogc {
-    SDL_GetWindowSizeInPixels(window, &viewWidth, &viewHeight); // pixels: what the renderer needs
-    _scene.layout(viewWidth / scale, viewHeight / scale); // points: what layout and paint work in
-    needsPaint = true;
-    repickPending = true;
-}
-
-/// 4. Paint: updates the ThorVG scene to match the layout. ThorVG only re-processes paints that changed.
-void paint() nothrow @nogc {
-    _scene.paint(viewWidth / scale, viewHeight / scale);
-    needsPresent = true;
-    repickPending = true; // scrolling moves things with no layout
-}
-
-/// 5. Present: the GPU draws the scene, and the frame is handed to the window.
-void present() nothrow @nogc {
-    if (renderer.resize(viewWidth, viewHeight))
-        renderer.present();
 }
 
 /*
@@ -587,176 +379,89 @@ void collectGarbage(bool animating) nothrow {
           traceMs(start, end), liveAfterCollect / 1048576.0);
 }
 
-/// Runs whichever of layout, paint and present are needed, in order.
+/// Runs whichever of layout, paint and present each window needs, in order.
 void render() nothrow @nogc {
-    if (!needsLayout && !needsPaint && !needsPresent)
-        return;
-    const start = traceNow();
-
-    if (needsLayout) {
-        needsLayout = false;
-        layout();
+    foreach (w; _windows) {
+        if (!w.sdl)
+            continue;
+        ulong layoutNs, paintNs, presentNs;
+        if (!w.render(layoutNs, paintNs, presentNs))
+            continue;
+        // "animating" tells a frame an animation asked for from one an event caused, for plotting frame pacing.
+        // "gc" is how many collections there were since the frame before, druntime's own and
+        // collectGarbage()'s, and "between" how many were collectGarbage()'s, in the wait before it.
+        trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms  animating %d  gc %d  between %d  window %u",
+              w.viewWidth, w.viewHeight, layoutNs / 1e6, paintNs / 1e6, presentNs / 1e6,
+              (layoutNs + paintNs + presentNs) / 1e6, cast(int) animationsRunning(),
+              cast(int)(collections - collectionsTraced), cast(int)(collectionsBetween - collectionsBetweenTraced),
+              SDL_GetWindowID(w.sdl));
+        collectionsTraced = collections;
+        collectionsBetweenTraced = collectionsBetween;
     }
-    const afterLayout = traceNow();
-    if (viewWidth <= 0 || viewHeight <= 0)
-        return; // minimised
-    if (needsPaint) {
-        needsPaint = false;
-        paint();
-        // Where to blur behind, worked out from where things were just painted, for the present to commit
-        if (blur.available)
-            blur.setRegion(_scene.backdropBlurRegion(blur.rects[]));
-    }
-    const afterPaint = traceNow();
-    if (needsPresent) {
-        needsPresent = false;
-        present();
-    }
-
-    // "animating" tells a frame an animation asked for from one an event caused, for plotting frame pacing.
-    // "gc" is how many collections there were since the frame before, druntime's own and
-    // collectGarbage()'s, and "between" how many were collectGarbage()'s, in the wait before it.
-    trace("frame %dx%d  layout %.2f  paint %.2f  present %.2f  total %.2f ms  animating %d  gc %d  between %d",
-          viewWidth, viewHeight, traceMs(start, afterLayout), traceMs(afterLayout, afterPaint),
-          traceMs(afterPaint, traceNow()), traceMs(start, traceNow()), cast(int) animationsRunning(),
-          cast(int)(collections - collectionsTraced), cast(int)(collectionsBetween - collectionsBetweenTraced));
-    collectionsTraced = collections;
-    collectionsBetweenTraced = collectionsBetween;
 }
 
 /*
-    What the title bar Mayfair draws asks the window to do.
+    The renderers a window opened after the first tries: a new one of the kind the first
+    started, software or not, as the first has already turned down what it was going to; then
+    the CPU's, which always can.
 */
-final class Controls : WindowControls {
-    void close() { quit(); }
-    void minimise() { SDL_MinimizeWindow(window); }
-    void toggleMaximised() {
-        if (maximised)
-            SDL_RestoreWindow(window);
-        else
-            SDL_MaximizeWindow(window);
-    }
-    bool maximised() { return (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0; }
-    void showMenu(float x, float y) { SDL_ShowWindowSystemMenu(window, toWindow(x), toWindow(y)); }
-    bool movesByDrag() { return mover.available; }
-    bool beginMove() {
-        return mover.move(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
-                                                 SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null));
+Renderer[] renderersLikeFirst() nothrow {
+    version (Emscripten)
+        return [cast(Renderer) new CpuRenderer];
+    else {
+    if (rendererName && strcmp(rendererName, "webgpu") == 0)
+        return [cast(Renderer) new WebGpuRenderer(true), new CpuRenderer];
+    if (rendererName && strcmp(rendererName, "opengl") == 0)
+        return [cast(Renderer) new OpenGlRenderer(true), new CpuRenderer];
+    return [cast(Renderer) new CpuRenderer];
     }
 }
 
-bool drawsDecorations; // Mayfair draws the title bar and edges, rather than the desktop
-bool frameChanged;     // maximised, restored, fullscreen or resized: the frame and shape to see to
-
-/*
-    The frame round a window drawing its own decorations: a margin with its shadow in, and rounded
-    corners -- unless it's maximised, fullscreen or tiled, when its edges are the screen's or
-    another window's. And the window's shape to match: the shadow beyond the band just outside the
-    edge that sizes it lets clicks through to what's underneath, as it would if the desktop had
-    drawn it.
-*/
-void applyFrame() {
-    if (!drawsDecorations)
-        return;
-    watchTiling();
-    const flat = tiles.tiled
-              || (SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN)) != 0;
-    _scene.setFrame(flat ? 0 : Theme.window_margin, flat ? 0 : Theme.window_radius);
-    needsLayout = true;
-    updateShape(flat);
-}
-
-/// Starts listening for whether the window's tiled, on Wayland, once it has an xdg_toplevel: it
-/// may not when the window's first made, so this is tried again whenever the frame's seen to.
-void watchTiling() {
-    if (tiles.watching)
-        return;
-    const driver = SDL_GetCurrentVideoDriver();
-    if (driver && strcmp(driver, "wayland") == 0)
-    {
-        auto toplevel = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null);
-        if (toplevel)
-            trace("tiles %s", tiles.open(toplevel) ? "watched, for a flat frame when tiled".ptr : "can't be watched".ptr);
+/// Opens `w`, now the loop's running. False, with it taken out again, if it couldn't be.
+bool open(Window w) {
+    auto candidates = rendererName ? renderersLikeFirst() : chooseRenderers();
+    if (!w.open(candidates, desktopDecorates, wayland, accessibilityEventType)) {
+        import std.algorithm : remove;
+        foreach (i, other; _windows)
+            if (other is w) {
+                _windows = _windows.remove(i);
+                break;
+            }
+        w._shown = false;
+        return false;
     }
+    if (!rendererName)
+        rendererName = w.renderer.name();
+    trace("open  window %u, renderer %s", SDL_GetWindowID(w.sdl), w.renderer.name());
+    return true;
 }
 
-void updateShape(bool flat) {
-    import core.stdc.string : strcmp;
-    // Only for a renderer SDL doesn't draw through: SDL applies a shape's alpha to what it draws
-    // itself, which would cut the CPU renderer's shadow off where the shape does
-    if (strcmp(renderer.name(), "cpu") == 0)
-        return;
-    int w, h;
-    SDL_GetWindowSize(window, &w, &h);
-    if (w <= 0 || h <= 0)
-        return;
-    auto shape = SDL_CreateSurface(w, h, SDL_PixelFormat.SDL_PIXELFORMAT_ARGB8888);
-    if (!shape)
-        return;
-    scope(exit) SDL_DestroySurface(shape);
-    // Maximised or fullscreen, all of it takes clicks. (Not a null shape, which is how SDL says to
-    // remove one, as SDL 3.4 crashes on it under Wayland.)
-    SDL_FillSurfaceRect(shape, null, 0);
-    const inset = flat ? 0 : toWindow(Theme.window_margin - Theme.window_resize_band);
-    auto solid = SDL_Rect(inset, inset, w - 2 * inset, h - 2 * inset);
-    SDL_FillSurfaceRect(shape, &solid, 0xFFFFFFFF);
-    SDL_SetWindowShape(window, shape);
+package(mayfair):
+
+/// Takes on a window being shown: opened now if the loop's running, or as it starts.
+void adopt(Window w) {
+    _windows ~= w;
+    if (running)
+        open(w);
 }
 
-/*
-    Where on the window a press is, for the window system, when Mayfair draws its decorations: an
-    edge or a corner to size it by -- unless it's maximised, when there's nothing to size -- the
-    title bar to move it by, where there's no control, or the app's. Also asked as the pointer
-    moves, which is how the pointer gets its resizing shapes at the edges.
-*/
-SDL_HitTestResult hitTestAt(float x, float y) nothrow @nogc {
-    enum inside = 4;  // points in from the window's visible edge that size it, as well as the band outside
-    enum corner = 16; // and along it from a corner that size both ways
-    // Measured from the visible edge, inside the frame's margin
-    const m = _scene ? _scene.frameMargin : 0;
-    const band = m > 0 ? Theme.window_resize_band : 0;
-    x -= m - band;
-    y -= m - band;
-    const edge = band + inside;
-    const w = viewWidth / scale - 2 * (m - band), h = viewHeight / scale - 2 * (m - band);
-    if (x < 0 || y < 0 || x >= w || y >= h)
-        return SDL_HitTestResult.SDL_HITTEST_NORMAL; // out in the shadow
-    const sized = !(SDL_GetWindowFlags(window) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN));
-    if (sized) {
-        const left = x < edge, right = x >= w - edge, top = y < edge, bottom = y >= h - edge;
-        const nearLeft = x < corner, nearRight = x >= w - corner, nearTop = y < corner, nearBottom = y >= h - corner;
-        if ((top && nearLeft) || (left && nearTop)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOPLEFT;
-        if ((top && nearRight) || (right && nearTop)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOPRIGHT;
-        if ((bottom && nearLeft) || (left && nearBottom)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOMLEFT;
-        if ((bottom && nearRight) || (right && nearBottom)) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOMRIGHT;
-        if (top) return SDL_HitTestResult.SDL_HITTEST_RESIZE_TOP;
-        if (bottom) return SDL_HitTestResult.SDL_HITTEST_RESIZE_BOTTOM;
-        if (left) return SDL_HitTestResult.SDL_HITTEST_RESIZE_LEFT;
-        if (right) return SDL_HitTestResult.SDL_HITTEST_RESIZE_RIGHT;
-    }
-    auto bar = _scene ? _scene.titleBar : null;
-    if (!bar)
-        return SDL_HitTestResult.SDL_HITTEST_NORMAL;
-    // A menu open: the press is to close it, so it goes to the scene
-    foreach (p; _scene.popups)
-        if (p.autoHide || p.modal)
-            return SDL_HitTestResult.SDL_HITTEST_NORMAL;
-    // With the mover, the press is the title bar's, to tell a double click from a drag by;
-    // without it, the window system moves the window from the press
-    if (mover.available)
-        return SDL_HitTestResult.SDL_HITTEST_NORMAL;
-    return bar.dragsWindowAt(x + m - band, y + m - band) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE
-                                                         : SDL_HitTestResult.SDL_HITTEST_NORMAL;
+/// Lets go of a window closed before it was ever opened.
+void forget(Window w) {
+    import std.algorithm : remove;
+    foreach (i, other; _windows)
+        if (other is w) {
+            _windows = _windows.remove(i);
+            break;
+        }
+    w._shown = false;
+    w._closing = false;
 }
 
 public:
 
-
-
     this(string title){
         this.title = title;
-        this.width = 800;
-        this.height = 500;
+        _main = new Window(title);
         services = newServices();
         // The App made last is the one views find their services in: one runs at a time
         currentApp = this;
@@ -803,24 +508,28 @@ public:
         return currentApp;
     }
 
-    void setSize(int width, int height){
-        this.width = width;
-        this.height = height;
-    }
-
-    /// Whether the window opens maximised: as it was left last time, say. Set before run().
-    void setMaximised(bool maximised){
-        _startMaximised = maximised;
-    }
-
     /*
-        The size the window was last when it wasn't maximised, fullscreen or tiled -- its inside, as
-        setSize takes -- and whether it was maximised: what an app keeps, to open as it was left.
-        Kept up as it's resized, so they're still there once run() has returned.
+        The main window: the one run() opens, which setSize, scene and the others below are for.
+        Others are opened with Window's show() (see Window).
     */
-    int restoredWidth() const { return _restoredWidth; }
-    int restoredHeight() const { return _restoredHeight; } /// ditto
-    bool wasMaximised() const { return _wasMaximised; }   /// ditto
+    Window window() { return _main; }
+
+    /// The windows open, the main one first, and any shown before run() that it's to open.
+    Window[] windows() nothrow @nogc { return _windows; }
+
+    // The main window's, for an app with just the one: see Window for each
+    void setSize(int width, int height){ _main.setSize(width, height); }
+    void setMaximised(bool maximised){ _main.setMaximised(maximised); }
+    int restoredWidth() const { return _main.restoredWidth; }
+    int restoredHeight() const { return _main.restoredHeight; }
+    bool wasMaximised() const { return _main.wasMaximised; }
+    void setMinSize(int width, int height){ _main.setMinSize(width, height); }
+    void setMaxSize(int width, int height){ _main.setMaxSize(width, height); }
+    @property void scene(Scene scene){ _main.scene = scene; }
+    @property inout(Scene) scene() inout { return _main._scene; }
+    void setTranslucent(bool translucent) { _main.setTranslucent(translucent); }
+    bool translucent() const { return _main.translucent; }
+    void raise() nothrow @nogc { _main.raise(); }
 
     /*
         The app's id: reverse-DNS, as "org.gnome.Maps", and the name of its .desktop file without
@@ -832,85 +541,12 @@ public:
         _id = id;
     }
 
-    /*
-        The smallest the window can be made, as JavaFX's Stage.minWidth and minHeight: the size
-        below which the layout stops working, as the desktop won't let it be dragged smaller. Its
-        inside, as setSize's is: a frame's shadow margin is added on. 0 for no limit, as it starts.
-        Set before run() or while it's running.
-    */
-    void setMinSize(int width, int height){
-        _minWidth = width;
-        _minHeight = height;
-        applySizeLimits();
-    }
-
-    /// The biggest it can be made, as JavaFX's Stage.maxWidth and maxHeight; 0 for no limit, as
-    /// it starts. A window with one can't fill the screen, so most apps want none.
-    void setMaxSize(int width, int height){
-        _maxWidth = width;
-        _maxHeight = height;
-        applySizeLimits();
-    }
-
-    /// What the window shows. Set it before run(); the tree in it is brought to life there, once
-    /// there's a renderer whose canvas its shapes can go in.
-    @property void scene(Scene scene){
-        this._scene = scene;
-    }
-
-    @property inout(Scene) scene() inout {
-        return _scene;
-    }
+    private string _id;
 
     /*
-        Whether the window's translucent, what's behind it showing through blurred. Only where the
-        compositor blurs (see mayfair.windowing.blur): elsewhere it's an ordinary opaque window,
-        as what's behind showing through unblurred makes the window's text hard to read. How
-        translucent is the theme's, in its .root:translucent rule. Set it before run(); whether
-        it is now, as the compositor's blur comes and goes, is the scene's translucentProperty.
-    */
-    // The size limits on the window, if there is one yet: the frame's margin on each side of each
-    private void applySizeLimits() {
-        if (!window)
-            return;
-        int limit(int v) { return v > 0 ? v + 2 * _margin : 0; }
-        SDL_SetWindowMinimumSize(window, limit(_minWidth), limit(_minHeight));
-        SDL_SetWindowMaximumSize(window, limit(_maxWidth), limit(_maxHeight));
-    }
-
-    private int _minWidth, _minHeight, _maxWidth, _maxHeight; // the window's inside; 0 for none
-    private string _id;                                         // see setId
-    private bool _startMaximised, _wasMaximised;               // see setMaximised and wasMaximised
-    private int _restoredWidth, _restoredHeight;               // see restoredWidth
-
-    // Notes the window's size, as it's resized, maximised or restored (see restoredWidth)
-    private void noteSize() nothrow @nogc {
-        const f = SDL_GetWindowFlags(window);
-        _wasMaximised = (f & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0;
-        if ((f & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN
-                  | SDL_WindowFlags.SDL_WINDOW_MINIMIZED)) || tiles.tiled)
-            return;
-        int w, h;
-        SDL_GetWindowSize(window, &w, &h);
-        if (w > 2 * _margin && h > 2 * _margin) {
-            _restoredWidth = w - 2 * _margin;
-            _restoredHeight = h - 2 * _margin;
-        }
-    }
-    private int _margin;                                       // its frame's, round the inside
-
-    void setTranslucent(bool translucent) {
-        _translucent = translucent;
-    }
-
-    bool translucent() const {
-        return _translucent;
-    }
-
-    /*
-        Ends run(), as closing the window does, once what's being handled now is done: for a Quit
-        menu item, say. Needs no App to hand, and is safe from any thread. Before run() it does
-        nothing.
+        Ends run(), closing every window, once what's being handled now is done: for a Quit menu
+        item, say. Needs no App to hand, and is safe from any thread. Before run() it does nothing.
+        The windows' onCloseRequest isn't asked.
     */
     static void quit() nothrow @nogc {
         SDL_Event event;
@@ -918,18 +554,12 @@ public:
         SDL_PushEvent(&event);
     }
 
-    /// Brings the window to the front, out of being minimised if it is: for a media player's Raise,
-    /// or a second launch handing over to the first. On the UI thread; before run() it does nothing.
-    void raise() nothrow @nogc {
-        if (!window)
-            return;
-        if (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_MINIMIZED)
-            SDL_RestoreWindow(window);
-        SDL_RaiseWindow(window);
-    }
-
+    /// Opens the main window, and any shown already, and runs until the last is closed or quit() is called.
     void run(){
         SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
+        // Closing the last window ends the loop here, once that window's had its say (see
+        // Window.onCloseRequest), rather than SDL sending a quit as it's asked to close
+        SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
 
         // Before stderr is quietened below, so a word about MAYFAIR_RENDERER gets out
         auto candidates = chooseRenderers();
@@ -937,9 +567,10 @@ public:
         // Who draws the title bar: the app, if it gave the scene one; otherwise the desktop, where
         // it will -- and where it won't, as on GNOME, a plain one of Mayfair's. Decided before SDL
         // starts, as SDL would otherwise have libdecor draw it, with GTK.
-        const appBar = _scene && _scene.titleBarChosen;
-        auto wayland = onWayland();
-        drawsDecorations = appBar || (wayland && !compositorDecorates());
+        const appBar = _main._scene && _main._scene.titleBarChosen;
+        wayland = onWayland();
+        desktopDecorates = !wayland || compositorDecorates();
+        const drawsDecorations = appBar || (wayland && !desktopDecorates);
         if (drawsDecorations && wayland)
         {
             keepLibdecorPluginsAway(true);
@@ -950,8 +581,14 @@ public:
         SDL_SetAppMetadata(title.toStringz(), null, _id.length ? _id.toStringz() : null);
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             quietStderr(false);
+            keepLibdecorPluginsAway(false);
             logError("SDL_Init failed: %s", SDL_GetError());
             return;
+        }
+        if (drawsDecorations && wayland)
+        {
+            quietStderr(false);
+            keepLibdecorPluginsAway(false);
         }
         scope(exit) SDL_Quit();
         traceOpen();
@@ -960,110 +597,42 @@ public:
         const driver = SDL_GetCurrentVideoDriver();
         wayland = driver && strcmp(driver, "wayland") == 0;
 
-        // Without HIGH_PIXEL_DENSITY the drawable stays at 1x and the compositor upscales it
-        auto flags = SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY;
-        // Drawing its own frame, it's transparent, and bigger by the margin its shadow's in, so
-        // what's inside is the size asked for
-        const margin = drawsDecorations ? cast(int) Theme.window_margin : 0;
-        _margin = margin;
-        _restoredWidth = width;
-        _restoredHeight = height;
-        if (_startMaximised)
-            flags |= SDL_WindowFlags.SDL_WINDOW_MAXIMIZED;
-        if (drawsDecorations)
-            flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
-        // One that's to be translucent needs its alpha from the start, though until the
-        // compositor's said it blurs it's drawn opaque. Only Wayland's compositors can.
-        else if (_translucent && wayland)
-            flags |= SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
+        // ThorVG's engine is held for as long as the loop runs, as well as by each window's
+        // renderer, so it outlasts the windows closing: the decodings images keep are ThorVG's
+        // (see releaseKeptDecodings), and go before it does
+        import mayfair.renderers.thorvg : tvg_engine_init, tvg_engine_term;
+        tvg_engine_init(SDL_GetNumLogicalCPUCores());
+        scope(exit) tvg_engine_term();
+        scope(exit) releaseKeptDecodings();
+        rendererName = null;
 
-        // scope(exit) runs in reverse order, so the renderer is released before the window is destroyed
-        scope(exit) if (window) SDL_DestroyWindow(window);
-        scope(exit) mover.close(); // before the window, and SDL's connection, go
-        scope(exit) tiles.close();
-        scope(exit) blur.close();
-        scope(exit) if (renderer) renderer.release();
-        scope(exit) releaseKeptDecodings(); // before the renderer's engine goes, and after the scene's pictures
+        // AccessKit's requests come as an SDL event, one type for every window's
+        accessibilityEventType = SDL_RegisterEvents(1);
 
-        // The first renderer that starts, in a window made for it. Most share one; OpenGL needs its
-        // own, as SDL can't make a window an OpenGL one once it's made.
-        SDL_WindowFlags madeFor;
-        foreach (i, candidate; candidates) {
-            if (!window || candidate.windowFlags() != madeFor) {
-                if (window)
-                    SDL_DestroyWindow(window);
-                madeFor = candidate.windowFlags();
-                if (drawsDecorations && wayland)
-                {
-                    keepLibdecorPluginsAway(true);
-                    quietStderr(true);
-                }
-                window = SDL_CreateWindow(title.toStringz(), width + 2 * margin, height + 2 * margin, flags | madeFor);
-                if (drawsDecorations && wayland)
-                {
-                    quietStderr(false);
-                    keepLibdecorPluginsAway(false);
-                }
-                if (!window) {
-                    logError("SDL_CreateWindow failed: %s", SDL_GetError());
-                    return;
-                }
-                applySizeLimits();
-                version (Emscripten)
-                    SDL_SetWindowFillDocument(window, true); // the page is the window: it fills it, and follows it as it's resized
-                int cw, ch;
-                SDL_GetWindowSize(window, &cw, &ch);
-                trace("window %dx%d asked %dx%d, decorations %s, flags %llx", cw, ch, width + 2 * margin,
-                      height + 2 * margin, drawsDecorations ? "ours".ptr : "the desktop's".ptr, SDL_GetWindowFlags(window));
-            }
-            if (candidate.initialise(window)) {
-                renderer = candidate;
-                break;
-            }
-            candidate.release();
-            if (i + 1 < candidates.length)
-                logInfo("Using the %s renderer, as %s couldn't start", candidates[i + 1].name(), candidate.name());
+        // The main window first, then any shown before run(), in the order they were
+        {
+            import std.algorithm : countUntil, remove;
+            const at = _windows.countUntil(_main);
+            if (at >= 0)
+                _windows = _windows.remove(at);
+            _windows = _main ~ _windows;
+            _main._shown = true;
+            _main._closing = false;
         }
-        if (!renderer) {
-            logError("No renderer could start");
+        // Whatever happens, every window's taken down before SDL goes (scope(exit)s run in reverse)
+        scope(exit) {
+            foreach_reverse (w; _windows) {
+                w.takeDown();
+                w._shown = w._closing = false;
+            }
+            _windows = null;
+        }
+        running = true; // from here, a window shown is opened straight away
+        if (!openMain(candidates))
             return;
-        }
-
-        if (!_scene)
-            _scene = new Scene(new Widget); // nothing to show, but everything below still works
-        if (drawsDecorations)
-        {
-            // The app's title bar, or a plain one, and the window's edges and bar for moving and sizing it
-            if (!_scene.titleBar)
-            {
-                _scene.titleBar(new TitleBar(title));
-                _scene.titleBarChosen = false;
-            }
-            else if (!_scene.titleBar.title.length)
-                _scene.titleBar.setTitle(title);
-            if (wayland)
-                mover.open(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
-                                                  SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null));
-            _scene.windowControls = new Controls;
-            SDL_SetWindowHitTest(window, &hitTest, cast(void*) this);
-            applyFrame();
-        }
-        if (wayland)
-        {
-            auto props = SDL_GetWindowProperties(window);
-            blur.open(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null),
-                      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null));
-            trace("blur  %s", blur.available ? "the compositor's, behind backdrop-blur".ptr : "none".ptr);
-        }
-        _scene.nativeWindow = window;
-        _scene.attach(renderer.canvas);
-        scope(exit) _scene.detach();
-        _scene.platformColourScheme = systemColourScheme();
-        applyTranslucency(); // before it's styled, as the theme styles :translucent
-        applyCss(_scene); // styled before it's first laid out
-        updateScale(); // needs both the window and the scene, so it goes after the two of them
-        updateRefreshRate();
-        trace("start video driver %s, renderer %s", SDL_GetCurrentVideoDriver(), renderer.name());
+        foreach (w; _windows[1 .. $].dup)
+            open(w);
+        trace("start video driver %s, renderer %s", SDL_GetCurrentVideoDriver(), rendererName);
 
         SDL_AddEventWatch(&windowEventWatch, cast(void*) this);
         scope(exit) SDL_RemoveEventWatch(&windowEventWatch, cast(void*) this);
@@ -1073,13 +642,7 @@ public:
         Platform.wakeWith(&postLaterEvent);
         scope(exit) Platform.wakeWith(null);
 
-        // After the scene is attached, since a screen reader already running asks for the tree
-        // straight away, and before the loop, which is what answers it
-        accessibilityEventType = SDL_RegisterEvents(1);
-        if (accessibilityEventType)
-            accessibility.open(window, accessibilityEventType);
-        scope(exit) accessibility.close();
-        scope(exit) foreach (c; cursors) if (c) SDL_DestroyCursor(c);
+        scope(exit) foreach (ref c; cursors) if (c) { SDL_DestroyCursor(c); c = null; }
 
         // Collections before now -- building the widgets, say -- aren't any frame's
         if (tracing()) {
@@ -1088,7 +651,6 @@ public:
         }
 
         // First frame, without waiting for an event
-        running = true;
         render();
 
         version (Emscripten)
@@ -1102,6 +664,18 @@ public:
             emscripten_set_main_loop(&browserFrame, 0, true);
         }
         while (running && turn(true)) {}
+        running = false;
+    }
+
+    // Opens the main window with the renderers to try first
+    private bool openMain(Renderer[] candidates) {
+        if (!_main.open(candidates, desktopDecorates, wayland, accessibilityEventType)) {
+            _windows = _windows[1 .. $];
+            _main._shown = false;
+            return false;
+        }
+        rendererName = _main.renderer.name();
+        return true;
     }
 
     /*
@@ -1118,6 +692,9 @@ public:
         collectGarbage(animationsRunning());
         const waitStart = traceNow();
         bool gotEvent;
+        bool repickPending;
+        foreach (w; _windows)
+            repickPending |= w.repickPending;
         // While something's animating, the next frame is when the display's ready for it, and
         // not before: the repick below waits for it too, rather than the loop going round as
         // fast as it can -- which, with a present mode that doesn't wait for the display, is
@@ -1149,9 +726,12 @@ public:
         }
         // The time in SDL_WaitEvent includes SDL handling what the window system sent, e.g. libdecor
         // redrawing the title bar during a resize, as well as time spent idle
-        mover.dispatch();
-        blur.dispatch();
-        applyTranslucency(); // the compositor can stop blurring, or start
+        foreach (w; _windows)
+            if (w.sdl) {
+                w.mover.dispatch();
+                w.blur.dispatch();
+                w.applyTranslucency(); // the compositor can stop blurring, or start
+            }
         trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
               traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));
 
@@ -1163,7 +743,9 @@ public:
                 collections = GC.profileStats().numCollections; // for the frame's trace line
             }
             render();
-            updateAccessibility();
+            foreach (w; _windows)
+                if (w.sdl)
+                    w.updateAccessibility();
         }
         return true;
     }
@@ -1175,8 +757,6 @@ version (Emscripten)
     // The browser's loop, which calls browserFrame once a frame: see App.run
     private extern (C) void emscripten_set_main_loop(void function() nothrow, int fps, bool simulateInfiniteLoop) nothrow;
     private extern (C) void emscripten_cancel_main_loop() nothrow;
-    // SDL 3.4's, newer than the sdl-d binding, and Emscripten's SDL is 3.4
-    private extern (C) bool SDL_SetWindowFillDocument(SDL_Window* window, bool fill) nothrow @nogc;
     private __gshared App browserApp;
 
     private extern (C) void browserFrame() nothrow
@@ -1219,19 +799,6 @@ private Renderer[] chooseRenderers() nothrow
     }
 }
 
-private KeyEvent keyEvent(ref const SDL_KeyboardEvent key, KeyEventType type) nothrow @nogc
-{
-    KeyEvent event;
-    event.type = type;
-    event.code = cast(KeyCode) key.key; // KeyCode's values are SDL's
-    event.shift = (key.mod & SDL_Keymod.KMOD_SHIFT) != 0;
-    event.control = (key.mod & SDL_Keymod.KMOD_CTRL) != 0;
-    event.alt = (key.mod & SDL_Keymod.KMOD_ALT) != 0;
-    event.meta = (key.mod & SDL_Keymod.KMOD_GUI) != 0;
-    event.repeat = key.repeat;
-    return event;
-}
-
 private SDL_SystemCursor systemCursor(Cursor c) nothrow @nogc
 {
     final switch (c) {
@@ -1261,19 +828,6 @@ private void postLaterEvent() nothrow @nogc
     SDL_PushEvent(&event); // safe from any thread
 }
 
-/// SDL's button index as a MouseButton.
-private MouseButton mouseButton(ubyte sdlButton) nothrow @nogc
-{
-    switch (sdlButton) {
-        case 1: return MouseButton.primary;
-        case 2: return MouseButton.middle;
-        case 3: return MouseButton.secondary;
-        case 4: return MouseButton.back;
-        case 5: return MouseButton.forward;
-        default: return MouseButton.none;
-    }
-}
-
 /// A readable name for the window events worth tracing.
 private const(char)* windowEventName(uint type) nothrow @nogc
 {
@@ -1295,69 +849,13 @@ private const(char)* windowEventName(uint type) nothrow @nogc
 private extern(C) bool windowEventWatch(void* userdata, SDL_Event* event) nothrow @nogc
 {
     auto self = cast(App) userdata;
-    if (event.type == SDL_EventType.SDL_EVENT_WINDOW_EXPOSED && event.window.data1 == 1
-        && event.window.windowID == SDL_GetWindowID(self.window)) {
-        self.needsLayout = true;
-        self.render();
-    }
-    return true;
-}
-
-private extern(C) SDL_HitTestResult hitTest(SDL_Window* window, const(SDL_Point)* area, void* data) nothrow @nogc
-{
-    auto app = cast(App) data;
-    return app.hitTestAt(app.toPoints(area.x), app.toPoints(area.y));
-}
-
-/*
-    Keeps libdecor from loading a plugin -- the GTK one, on GNOME -- while SDL makes the window, by
-    pointing it at a folder with none in it, and then puts the setting back as it was. libdecor
-    then draws nothing, and Mayfair draws the title bar.
-*/
-private void keepLibdecorPluginsAway(bool away) nothrow @nogc
-{
-    import core.stdc.stdlib : getenv;
-    import core.sys.posix.stdlib : setenv, unsetenv;
-    import core.stdc.string : strlen;
-    __gshared char[1024] saved;
-    __gshared bool hadOne;
-    enum none = "/proc/self/fdinfo/nonexistent\0"; // a folder that's never there
-    if (away) {
-        const was = getenv("LIBDECOR_PLUGIN_DIR");
-        hadOne = was !is null && strlen(was) < saved.length;
-        if (hadOne)
-            saved[0 .. strlen(was) + 1] = was[0 .. strlen(was) + 1];
-        setenv("LIBDECOR_PLUGIN_DIR", none.ptr, 1);
-    } else if (hadOne) {
-        setenv("LIBDECOR_PLUGIN_DIR", saved.ptr, 1);
-    } else {
-        unsetenv("LIBDECOR_PLUGIN_DIR");
-    }
-}
-
-/*
-    Stops anything reaching stderr, or lets it again: for libdecor, which, kept from its plugins,
-    says so as SDL starts and makes the window. Anything SDL itself has to say about that goes
-    through SDL_GetError, which is still reported.
-*/
-private void quietStderr(bool quiet) nothrow @nogc
-{
-    import core.sys.posix.fcntl : open, O_WRONLY;
-    import core.sys.posix.unistd : close, dup, dup2;
-    __gshared int saved = -1;
-    enum stderrFd = 2;
-    if (quiet && saved < 0) {
-        saved = dup(stderrFd);
-        const nul = open("/dev/null", O_WRONLY);
-        if (nul >= 0) {
-            dup2(nul, stderrFd);
-            close(nul);
+    if (event.type == SDL_EventType.SDL_EVENT_WINDOW_EXPOSED && event.window.data1 == 1)
+        if (auto w = self.windowFor(event.window.windowID)) {
+            w.needsLayout = true;
+            ulong layoutNs, paintNs, presentNs;
+            w.render(layoutNs, paintNs, presentNs);
         }
-    } else if (!quiet && saved >= 0) {
-        dup2(saved, stderrFd);
-        close(saved);
-        saved = -1;
-    }
+    return true;
 }
 
 unittest

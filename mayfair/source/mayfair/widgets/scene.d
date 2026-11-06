@@ -285,6 +285,10 @@ public:
         catch (Exception) {}
         releaseConfig(_root);
         YGConfigFree(config);
+        config = null;
+        // The canvas frees these with itself: none's to be used again, if the scene's shown again
+        paints = frameShadow = frameOutline = frameClip = background = null;
+        frameShadowRings[] = null;
     }
 
     /// Device pixels per point. Widgets work in points and don't need this; text is the exception,

@@ -233,8 +233,10 @@ final class Driver
         });
     }
 
-private:
+    /// The window input goes to: the test's own, or another one the script has opened.
     SDL_WindowID windowID;
+
+private:
     shared bool appGone;
     float pointsToWindow = 1;
     string[] kept;

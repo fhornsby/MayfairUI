@@ -1,0 +1,20 @@
+Forget the GL library once glTerm() has closed it.
+
+glTerm() dlcloses libGLESv2 (and libEGL) but leaves the handles set, and _glLoad() only opens them
+when they are null. So once the engine has been terminated, the next glInit() -- a second App in the
+same process using the GL engine -- looks functions up in a library it has already closed,
+and crashes in dlsym.
+
+--- a/src/renderer/gpu_engine/gl/tvgGl.cpp
++++ b/src/renderer/gpu_engine/gl/tvgGl.cpp
+@@ -890,8 +890,10 @@
+     #endif
+ #else
+     if (_libGL) dlclose(_libGL);
++    _libGL = nullptr;
+     #if defined(THORVG_GL_TARGET_GLES)
+         if (_libEGL) dlclose(_libEGL);
++        _libEGL = nullptr;
+     #endif
+ #endif
+ 

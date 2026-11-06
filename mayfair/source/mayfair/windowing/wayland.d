@@ -214,8 +214,9 @@ private:
     that the field holds what wl_proxy_get_listener says the listener is: if libwayland were ever
     laid out differently, it leaves the proxy alone, and the window keeps its shadow when tiled.
 
-    The events arrive as SDL reads the connection, on the main thread, and there's one window, so
-    the state is the module's.
+    The events arrive as SDL reads the connection, on the main thread. Every window's xdg_toplevel
+    shares the one table, so each is told apart by the proxy the event comes with, in a table of
+    the module's: SDL's listeners are all the same table too, but that's SDL's business.
 */
 struct TileWatcher
 {
@@ -225,8 +226,22 @@ struct TileWatcher
         version (Posix)
         {
             import core.sys.posix.dlfcn : dlopen, dlsym, RTLD_LOCAL, RTLD_NOW;
-            if (!toplevel || watched)
-                return watched is toplevel;
+            if (!toplevel || mine)
+                return mine && mine.toplevel is toplevel;
+            // An entry for a toplevel gone without close() -- replaced by SDL, and not yet
+            // noticed by its window -- whose memory this one now has
+            foreach (ref w; watches)
+                if (w.toplevel is toplevel)
+                    w.clear();
+            Watch* free;
+            foreach (ref w; watches)
+                if (!w.toplevel)
+                {
+                    free = &w;
+                    break;
+                }
+            if (!free)
+                return false; // more windows than there's room for: the rest keep their shadows tiled
             if (!lib)
                 lib = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_LOCAL);
             if (!lib)
@@ -238,9 +253,12 @@ struct TileWatcher
             const listener = getListener(toplevel);
             if (!listener || object[1] !is listener)
                 return false;   // not laid out as it's always been: leave it be
-            sdlListener = cast(const(ToplevelListener)*) listener;
+            free.sdlListener = cast(const(ToplevelListener)*) listener;
+            free.tiled = false;
+            free.toplevel = toplevel;
             object[1] = &ownListener;
-            watched = toplevel;
+            watch = free;
+            generation = free.generation;
             return true;
         }
         else
@@ -253,25 +271,45 @@ struct TileWatcher
         version (Posix)
         {
             import core.sys.posix.dlfcn : dlclose;
-            if (watched)
-                (cast(const(void)**) watched)[1] = sdlListener;
+            if (auto w = mine)
+                (cast(const(void)**) w.toplevel)[1] = w.sdlListener;
             if (lib)
                 dlclose(lib);
         }
-        watched = null;
-        sdlListener = null;
+        forget();
         lib = null;
-        tiledNow = false;
+    }
+
+    /*
+        Stops watching a toplevel that's already gone -- that SDL replaced with another -- without
+        touching it, as close() would to give it its listener back.
+    */
+    void forget() nothrow @nogc
+    {
+        if (auto w = mine)
+            w.clear();
+        watch = null;
     }
 
     /// Whether the window's tiled against any edge, as the compositor last said.
-    bool tiled() const nothrow @nogc { return tiledNow; }
+    bool tiled() const nothrow @nogc { return mine && mine.tiled; }
 
     /// Whether it's watching a window.
-    bool watching() const nothrow @nogc { return watched !is null; }
+    bool watching() const nothrow @nogc { return mine !is null; }
+
+    /// The xdg_toplevel it's watching, if it is.
+    const(void)* watched() const nothrow @nogc { return mine ? mine.toplevel : null; }
 
 private:
     void* lib;
+    Watch* watch;    // its entry in watches
+    uint generation; // the entry's, when it was this watcher's: another's once it's been cleared
+
+    // Its entry, if it's still its own
+    inout(Watch)* mine() inout nothrow @nogc
+    {
+        return watch && watch.generation == generation && watch.toplevel ? watch : null;
+    }
 }
 
 private:
@@ -292,9 +330,32 @@ struct WlArray
     void* data;
 }
 
-__gshared void* watched;                           // the xdg_toplevel listened to
-__gshared const(ToplevelListener)* sdlListener;    // whose listener this goes in front of
-__gshared bool tiledNow;
+// A watched xdg_toplevel, the listener this goes in front of, and what it last said
+struct Watch
+{
+    void* toplevel;
+    const(ToplevelListener)* sdlListener;
+    bool tiled;
+    uint generation; // counts its clearings, so a watcher can tell it's no longer its own
+
+    void clear() nothrow @nogc
+    {
+        toplevel = null;
+        sdlListener = null;
+        tiled = false;
+        generation++;
+    }
+}
+
+__gshared Watch[32] watches;
+
+Watch* watchOf(void* toplevel) nothrow @nogc
+{
+    foreach (ref w; watches)
+        if (w.toplevel is toplevel)
+            return &w;
+    assert(false, "an xdg_toplevel with this listener that isn't watched");
+}
 
 static immutable ownListener = ToplevelListener(&forwardConfigure, &forwardClose, &forwardConfigureBounds, &forwardWmCapabilities);
 
@@ -307,21 +368,22 @@ extern (C) void forwardConfigure(void* data, void* toplevel, int width, int heig
         foreach (s; (cast(const(uint)*) states.data)[0 .. states.size / uint.sizeof])
             if (s >= tiledLeft && s <= tiledBottom)
                 tiled = true;
-    tiledNow = tiled;
-    sdlListener.configure(data, toplevel, width, height, states);
+    auto w = watchOf(toplevel);
+    w.tiled = tiled;
+    w.sdlListener.configure(data, toplevel, width, height, states);
 }
 
 extern (C) void forwardClose(void* data, void* toplevel) nothrow @nogc
 {
-    sdlListener.close(data, toplevel);
+    watchOf(toplevel).sdlListener.close(data, toplevel);
 }
 
 extern (C) void forwardConfigureBounds(void* data, void* toplevel, int width, int height) nothrow @nogc
 {
-    sdlListener.configureBounds(data, toplevel, width, height);
+    watchOf(toplevel).sdlListener.configureBounds(data, toplevel, width, height);
 }
 
 extern (C) void forwardWmCapabilities(void* data, void* toplevel, WlArray* capabilities) nothrow @nogc
 {
-    sdlListener.wmCapabilities(data, toplevel, capabilities);
+    watchOf(toplevel).sdlListener.wmCapabilities(data, toplevel, capabilities);
 }

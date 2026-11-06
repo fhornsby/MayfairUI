@@ -132,6 +132,9 @@ public:
 
     void present(){
         const start = traceNow();
+        // Each window has a context of its own, and the last one used may be another's
+        if (SDL_GL_GetCurrentContext() !is context)
+            SDL_GL_MakeCurrent(window, context);
         tvg_canvas_update(_canvas);
         tvg_canvas_draw(_canvas, true);
         const afterDraw = traceNow();
