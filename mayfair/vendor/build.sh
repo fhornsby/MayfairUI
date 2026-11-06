@@ -53,8 +53,21 @@ ACCESSKIT_SHA256=dd2f84f51bea0bcf01270a7505b2b85a7945d40d703b6f479d64963accb4b95
 ACCESSKIT_COMMIT=0824c4a1e3a4d13ce5582df20e394fba49485a15
 ACCESSKIT_ZIP=accesskit-c-$ACCESSKIT_VERSION.zip
 
-for m in thorvg/meson.build yoga/yoga/Yoga.h freetype/include/ft2build.h litehtml/include/litehtml.h \
-         harfbuzz/src/hb.h libunibreak/src/linebreak.h sheenbidi/Headers/SheenBidi/SheenBidi.h; do
+# One file from each submodule, to tell whether it's been checked out
+SUBMODULE_FILES="thorvg/meson.build yoga/yoga/Yoga.h freetype/include/ft2build.h litehtml/include/litehtml.h
+    harfbuzz/src/hb.h libunibreak/src/linebreak.h sheenbidi/Headers/SheenBidi/SheenBidi.h"
+
+# A copy of the repository dub fetched as a git dependency has no submodules checked out, so they're
+# fetched here, at the commits the repository pins
+for m in $SUBMODULE_FILES; do
+    if [ ! -f "$m" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+        echo "Fetching the vendored sources (git submodules)"
+        git submodule update --init --recursive -- thorvg yoga freetype harfbuzz libunibreak sheenbidi litehtml
+        break
+    fi
+done
+
+for m in $SUBMODULE_FILES; do
     if [ ! -f "$m" ]; then
         echo "vendor/${m%%/*} is empty. Run: git submodule update --init" >&2
         exit 1

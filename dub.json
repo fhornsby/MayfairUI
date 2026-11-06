@@ -1,0 +1,9 @@
+{
+	"name": "mayfairui",
+	"description": "Mayfair, a desktop UI toolkit. Depend on mayfairui:mayfair to fetch it from git",
+	"license": "MIT",
+	"targetType": "none",
+	"subPackages": [
+		"mayfair"
+	]
+}
