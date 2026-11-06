@@ -154,7 +154,7 @@ What's still to be done, that I know of:
 - Justified text: `TextAlignment.justify` lines text up on the left for now.
 
 **Desktop**
-- A settings source for Oriel, so that on Oriel Mayfair stops reading GNOME's GSettings.
+- A settings source for to replace GSettings, reducing dependency on GNOME.
 
 **Platforms**
 - Test on FreeBSD, a primary target that's untested so far.
