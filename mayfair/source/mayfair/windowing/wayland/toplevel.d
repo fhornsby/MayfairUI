@@ -1,4 +1,4 @@
-module mayfair.windowing.wayland;
+module mayfair.windowing.wayland.toplevel;
 
 import core.stdc.string : strcmp;
 

@@ -27,7 +27,7 @@ import mayfair.widgets.widget;
 
     Given one, a window draws its own decorations whatever the desktop is. Without one, the desktop
     draws them where it will, and Mayfair draws a plain one where it won't (see
-    mayfair.windowing.decorations).
+    mayfair.windowing.backend).
 
     The title is in the middle of the window, as GNOME's is, whatever's at either end -- moved
     aside only if they'd cover it. titleWidget puts something else there: a search field, or tabs.

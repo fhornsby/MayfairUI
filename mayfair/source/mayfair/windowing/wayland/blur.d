@@ -1,4 +1,4 @@
-module mayfair.windowing.blur;
+module mayfair.windowing.wayland.blur;
 
 import core.stdc.string : strcmp;
 

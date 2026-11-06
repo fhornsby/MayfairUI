@@ -355,7 +355,7 @@ public:
         glass: macOS's sidebars. `backdrop-blur: true` in CSS. It shows through only a background
         that's partly transparent, and everything under it in the window has to be too: the root's
         background, and the scene's fill. The blur is the compositor's, asked for over Wayland's
-        ext-background-effect-v1 (see mayfair.windowing.blur), and how much it blurs is up to the
+        ext-background-effect-v1 (see mayfair.windowing.wayland.blur), and how much it blurs is up to the
         compositor. One that doesn't do it shows the background just translucent.
     */
     mixin(declareStyleableProperty!(bool, "backdropBlur", "backdrop-blur", "false", q{

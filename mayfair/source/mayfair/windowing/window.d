@@ -14,9 +14,7 @@ import mayfair.trace;
 import mayfair.accessibility;
 import mayfair.windowing.accessibility;
 import mayfair.windowing.app;
-import mayfair.windowing.decorations;
-import mayfair.windowing.wayland : TileWatcher, WindowMover;
-import mayfair.windowing.blur : BackgroundBlur;
+import mayfair.windowing.backend;
 
 /*
     A window: a Scene, in a window of the desktop's, with a renderer of its own drawing it. The
@@ -135,7 +133,7 @@ class Window
 
     /*
         Whether it's translucent, what's behind it showing through blurred. Only where the
-        compositor blurs (see mayfair.windowing.blur): elsewhere it's an ordinary opaque window,
+        compositor blurs (see Widget.backdropBlur): elsewhere it's an ordinary opaque window,
         as what's behind showing through unblurred makes its text hard to read. How translucent is
         the theme's, in its .root:translucent rule. Set it before it's shown; whether it is now, as
         the compositor's blur comes and goes, is the scene's translucentProperty.
@@ -229,10 +227,7 @@ class Window
             if (w._owner is this)
                 w.close();
         if (sdl) {
-            // SDL lets go of the xdg_toplevel as it hides the window, on Wayland, so the tile
-            // watcher's to give it its listener back first, while it's there to be given it
-            watchTiling();
-            tiles.close();
+            backend.hiding();
             SDL_HideWindow(sdl);
         }
         else if (auto app = App.current)
@@ -287,9 +282,7 @@ package(mayfair):
     SDL_Rect textInputRect;
     int textInputCursor;
 
-    TileWatcher tiles;         // whether the window's snapped to an edge, on Wayland, for its frame to go flat
-    WindowMover mover;         // moves the window by Mayfair's title bar on Wayland, once a press turns into a drag
-    BackgroundBlur blur;       // the compositor's blur behind widgets with backdrop-blur, on Wayland
+    WindowBackend backend;     // what the desktop does for it that SDL doesn't: see mayfair.windowing.backend
     bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
     bool translucentNow;       // and is, as the scene was last told
     bool drawsDecorations;     // Mayfair draws the title bar and edges, rather than the desktop
@@ -325,14 +318,13 @@ package(mayfair):
 
     /*
         Makes the desktop's window, with the first of `candidates` that starts in it, and brings
-        the scene to life in it. `drawsDecorations` is whether Mayfair draws its frame; `wayland`
-        whether SDL's on Wayland. False if no renderer could start.
+        the scene to life in it, on `desktop`. False if no renderer could start.
     */
-    bool open(Renderer[] candidates, bool desktopDecorates, bool wayland, uint accessibilityEventType)
+    bool open(Renderer[] candidates, DesktopBackend desktop, uint accessibilityEventType)
     {
         // Who draws the title bar: the app, if it gave the scene one; otherwise the desktop, where
         // it will -- and where it won't, as on GNOME, a plain one of Mayfair's.
-        drawsDecorations = (_scene && _scene.titleBarChosen) || (wayland && !desktopDecorates);
+        drawsDecorations = (_scene && _scene.titleBarChosen) || !desktop.decoratesWindows();
 
         // Without HIGH_PIXEL_DENSITY the drawable stays at 1x and the compositor upscales it
         auto flags = SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WindowFlags.SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -347,8 +339,8 @@ package(mayfair):
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
         // One that's to be translucent needs its alpha from the start, though until the
-        // compositor's said it blurs it's drawn opaque. Only Wayland's compositors can.
-        else if (_translucent && wayland)
+        // compositor's said it blurs it's drawn opaque.
+        else if (_translucent && desktop.mayBlur())
             flags |= SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
 
         // The first renderer that starts, in a window made for it. Most share one; OpenGL needs its
@@ -359,17 +351,9 @@ package(mayfair):
                 if (sdl)
                     SDL_DestroyWindow(sdl);
                 madeFor = candidate.windowFlags();
-                if (drawsDecorations && wayland)
-                {
-                    keepLibdecorPluginsAway(true);
-                    quietStderr(true);
-                }
+                desktop.beforeSdl(drawsDecorations);
                 sdl = SDL_CreateWindow(_title.toStringz(), width + 2 * margin, height + 2 * margin, flags | madeFor);
-                if (drawsDecorations && wayland)
-                {
-                    quietStderr(false);
-                    keepLibdecorPluginsAway(false);
-                }
+                desktop.afterSdl(drawsDecorations);
                 if (!sdl) {
                     logError("SDL_CreateWindow failed: %s", SDL_GetError());
                     return false;
@@ -416,20 +400,13 @@ package(mayfair):
             }
             else if (!_scene.titleBar.title.length)
                 _scene.titleBar.setTitle(_title);
-            if (wayland)
-                mover.open(SDL_GetPointerProperty(SDL_GetWindowProperties(sdl),
-                                                  SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null));
             _scene.windowControls = new Controls;
             SDL_SetWindowHitTest(sdl, &hitTest, cast(void*) this);
+        }
+        backend = desktop.newWindow();
+        backend.open(sdl, drawsDecorations);
+        if (drawsDecorations)
             applyFrame();
-        }
-        if (wayland)
-        {
-            auto props = SDL_GetWindowProperties(sdl);
-            blur.open(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null),
-                      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null));
-            trace("blur  %s", blur.available ? "the compositor's, behind backdrop-blur".ptr : "none".ptr);
-        }
         _scene.nativeWindow = sdl;
         _scene.attach(renderer.canvas);
         _scene.platformColourScheme = systemColourScheme();
@@ -460,11 +437,8 @@ package(mayfair):
         _scene.windowControls = null;
         renderer.release();
         renderer = null;
-        blur.close();
-        if (tiles.watching)
-            watchTiling(); // so close() doesn't write to a replaced one
-        tiles.close(); // before the window, and its xdg_toplevel, go
-        mover.close(); // before the window, and SDL's connection, go
+        backend.close();
+        backend = null;
         SDL_DestroyWindow(sdl);
         sdl = null;
         needsLayout = true;
@@ -497,7 +471,7 @@ package(mayfair):
 
     /// Makes the window translucent or opaque as the compositor's blur comes and goes, if it's to be.
     void applyTranslucency() {
-        const on = _translucent && blur.available;
+        const on = _translucent && backend.blurs();
         if (on == translucentNow)
             return;
         translucentNow = on;
@@ -575,8 +549,6 @@ package(mayfair):
 
     /// 2. Update, before the input's handed on: the frame's shape, and what's under the pointer.
     void beforeInput() {
-        if (tiles.watching)
-            watchTiling(); // still the window's xdg_toplevel?
         if (frameChanged) {
             frameChanged = false;
             applyFrame();
@@ -779,8 +751,8 @@ package(mayfair):
             needsPaint = false;
             paint();
             // Where to blur behind, worked out from where things were just painted, for the present to commit
-            if (blur.available)
-                blur.setRegion(_scene.backdropBlurRegion(blur.rects[]));
+            if (backend.blurs())
+                backend.blurBehind(_scene);
         }
         const afterPaint = traceNow();
         paintNs = afterPaint - afterLayout;
@@ -806,11 +778,8 @@ package(mayfair):
         }
         bool maximised() { return (SDL_GetWindowFlags(sdl) & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0; }
         void showMenu(float x, float y) { SDL_ShowWindowSystemMenu(sdl, toWindow(x), toWindow(y)); }
-        bool movesByDrag() { return mover.available; }
-        bool beginMove() {
-            return mover.move(SDL_GetPointerProperty(SDL_GetWindowProperties(sdl),
-                                                     SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null));
-        }
+        bool movesByDrag() { return backend.movesByDrag(); }
+        bool beginMove() { return backend.beginMove(); }
     }
 
     /*
@@ -823,30 +792,11 @@ package(mayfair):
     void applyFrame() {
         if (!drawsDecorations)
             return;
-        watchTiling();
-        const flat = tiles.tiled
+        const flat = backend.tiled()
                   || (SDL_GetWindowFlags(sdl) & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN)) != 0;
         _scene.setFrame(flat ? 0 : Theme.window_margin, flat ? 0 : Theme.window_radius);
         needsLayout = true;
         updateShape(flat);
-    }
-
-    /// Starts listening for whether the window's tiled, on Wayland, once it has an xdg_toplevel: it
-    /// may not when the window's first made, so this is tried again whenever the frame's seen to.
-    void watchTiling() nothrow @nogc {
-        const driver = SDL_GetCurrentVideoDriver();
-        if (!driver || strcmp(driver, "wayland") != 0)
-            return;
-        auto toplevel = SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null);
-        if (tiles.watching && tiles.watched !is toplevel)
-        {
-            // SDL made the window a new xdg_toplevel -- it does, through libdecor, as the CPU
-            // renderer's first frame goes up -- and the old one's gone, listener and all
-            tiles.forget();
-            trace("tiles the window's xdg_toplevel was replaced");
-        }
-        if (toplevel && !tiles.watching)
-            trace("tiles %s", tiles.open(toplevel) ? "watched, for a flat frame when tiled".ptr : "can't be watched".ptr);
     }
 
     void updateShape(bool flat) {
@@ -912,9 +862,9 @@ package(mayfair):
         foreach (p; _scene.popups)
             if (p.autoHide || p.modal)
                 return SDL_HitTestResult.SDL_HITTEST_NORMAL;
-        // With the mover, the press is the title bar's, to tell a double click from a drag by;
-        // without it, the window system moves the window from the press
-        if (mover.available)
+        // Where the backend moves the window, the press is the title bar's, to tell a double click
+        // from a drag by; elsewhere, the window system moves the window from the press
+        if (backend && backend.movesByDrag())
             return SDL_HitTestResult.SDL_HITTEST_NORMAL;
         return bar.dragsWindowAt(x + m - band, y + m - band) ? SDL_HitTestResult.SDL_HITTEST_DRAGGABLE
                                                              : SDL_HitTestResult.SDL_HITTEST_NORMAL;
@@ -934,7 +884,7 @@ package(mayfair):
         const f = SDL_GetWindowFlags(sdl);
         _wasMaximised = (f & SDL_WindowFlags.SDL_WINDOW_MAXIMIZED) != 0;
         if ((f & (SDL_WindowFlags.SDL_WINDOW_MAXIMIZED | SDL_WindowFlags.SDL_WINDOW_FULLSCREEN
-                  | SDL_WindowFlags.SDL_WINDOW_MINIMIZED)) || tiles.tiled)
+                  | SDL_WindowFlags.SDL_WINDOW_MINIMIZED)) || (backend && backend.tiled()))
             return;
         int w, h;
         SDL_GetWindowSize(sdl, &w, &h);
@@ -1031,55 +981,4 @@ version (Emscripten)
 {
     // SDL 3.4's, newer than the sdl-d binding, and Emscripten's SDL is 3.4
     extern (C) bool SDL_SetWindowFillDocument(SDL_Window* window, bool fill) nothrow @nogc;
-}
-
-/*
-    Keeps libdecor from loading a plugin -- the GTK one, on GNOME -- while SDL makes the window, by
-    pointing it at a folder with none in it, and then puts the setting back as it was. libdecor
-    then draws nothing, and Mayfair draws the title bar.
-*/
-package(mayfair) void keepLibdecorPluginsAway(bool away) nothrow @nogc
-{
-    import core.stdc.stdlib : getenv;
-    import core.sys.posix.stdlib : setenv, unsetenv;
-    import core.stdc.string : strlen;
-    __gshared char[1024] saved;
-    __gshared bool hadOne;
-    enum none = "/proc/self/fdinfo/nonexistent\0"; // a folder that's never there
-    if (away) {
-        const was = getenv("LIBDECOR_PLUGIN_DIR");
-        hadOne = was !is null && strlen(was) < saved.length;
-        if (hadOne)
-            saved[0 .. strlen(was) + 1] = was[0 .. strlen(was) + 1];
-        setenv("LIBDECOR_PLUGIN_DIR", none.ptr, 1);
-    } else if (hadOne) {
-        setenv("LIBDECOR_PLUGIN_DIR", saved.ptr, 1);
-    } else {
-        unsetenv("LIBDECOR_PLUGIN_DIR");
-    }
-}
-
-/*
-    Stops anything reaching stderr, or lets it again: for libdecor, which, kept from its plugins,
-    says so as SDL starts and makes the window. Anything SDL itself has to say about that goes
-    through SDL_GetError, which is still reported.
-*/
-package(mayfair) void quietStderr(bool quiet) nothrow @nogc
-{
-    import core.sys.posix.fcntl : open, O_WRONLY;
-    import core.sys.posix.unistd : close, dup, dup2;
-    __gshared int saved = -1;
-    enum stderrFd = 2;
-    if (quiet && saved < 0) {
-        saved = dup(stderrFd);
-        const nul = open("/dev/null", O_WRONLY);
-        if (nul >= 0) {
-            dup2(nul, stderrFd);
-            close(nul);
-        }
-    } else if (!quiet && saved >= 0) {
-        dup2(saved, stderrFd);
-        close(saved);
-        saved = -1;
-    }
 }

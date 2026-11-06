@@ -20,7 +20,7 @@ import mayfair.trace;
 import mayfair.accessibility;
 import mayfair.windowing.platform;
 import mayfair.filechooser : FileChooser;
-import mayfair.windowing.decorations;
+import mayfair.windowing.backend;
 import mayfair.windowing.window;
 
 
@@ -59,8 +59,7 @@ SDL_Cursor*[Cursor.max + 1] cursors;
 //Accessibility
 uint accessibilityEventType; // the SDL event type AccessKit's requests arrive as
 //What later windows are made like, once the main one's open (see adopt)
-bool desktopDecorates;     // whether the desktop draws windows' title bars, where it's asked
-bool wayland;              // whether SDL's on Wayland
+DesktopBackend desktop;    // what the desktop does that SDL doesn't: see mayfair.windowing.backend
 const(char)* rendererName; // the renderer the first window started
 //Frame state
 bool running;
@@ -420,7 +419,7 @@ Renderer[] renderersLikeFirst() nothrow {
 /// Opens `w`, now the loop's running. False, with it taken out again, if it couldn't be.
 bool open(Window w) {
     auto candidates = rendererName ? renderersLikeFirst() : chooseRenderers();
-    if (!w.open(candidates, desktopDecorates, wayland, accessibilityEventType)) {
+    if (!w.open(candidates, desktop, accessibilityEventType)) {
         import std.algorithm : remove;
         foreach (i, other; _windows)
             if (other is w) {
@@ -564,38 +563,29 @@ public:
         // Before stderr is quietened below, so a word about MAYFAIR_RENDERER gets out
         auto candidates = chooseRenderers();
 
-        // Who draws the title bar: the app, if it gave the scene one; otherwise the desktop, where
-        // it will -- and where it won't, as on GNOME, a plain one of Mayfair's. Decided before SDL
-        // starts, as SDL would otherwise have libdecor draw it, with GTK.
+        // Who draws the main window's title bar: the app, if it gave the scene one; otherwise the
+        // desktop, where it will -- and where it won't, as on GNOME, a plain one of Mayfair's.
+        // Decided before SDL starts, as on Wayland SDL would otherwise have libdecor draw it, with GTK.
         const appBar = _main._scene && _main._scene.titleBarChosen;
-        wayland = onWayland();
-        desktopDecorates = !wayland || compositorDecorates();
-        const drawsDecorations = appBar || (wayland && !desktopDecorates);
-        if (drawsDecorations && wayland)
-        {
-            keepLibdecorPluginsAway(true);
-            quietStderr(true); // libdecor says, twice, that it found no plugins: what was meant
-        }
+        desktop = chooseDesktop(false);
+        const drawsDecorations = appBar || !desktop.decoratesWindows();
+        desktop.beforeSdl(drawsDecorations);
 
         // Before SDL starts, which is when it reads them: the window's app_id, and the app's name
         SDL_SetAppMetadata(title.toStringz(), null, _id.length ? _id.toStringz() : null);
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-            quietStderr(false);
-            keepLibdecorPluginsAway(false);
+        const started = SDL_Init(SDL_INIT_VIDEO);
+        desktop.afterSdl(drawsDecorations);
+        if (!started) {
             logError("SDL_Init failed: %s", SDL_GetError());
             return;
-        }
-        if (drawsDecorations && wayland)
-        {
-            quietStderr(false);
-            keepLibdecorPluginsAway(false);
         }
         scope(exit) SDL_Quit();
         traceOpen();
         scope(exit) traceClose();
-        // Which SDL chose, now it has: the window's blur and moving go by that, not the guess
-        const driver = SDL_GetCurrentVideoDriver();
-        wayland = driver && strcmp(driver, "wayland") == 0;
+        // The desktop SDL chose, now it has: the windows go by that, not the guess
+        auto chosen = chooseDesktop(true);
+        if (strcmp(chosen.name(), desktop.name()) != 0)
+            desktop = chosen;
 
         // ThorVG's engine is held for as long as the loop runs, as well as by each window's
         // renderer, so it outlasts the windows closing: the decodings images keep are ThorVG's
@@ -632,7 +622,7 @@ public:
             return;
         foreach (w; _windows[1 .. $].dup)
             open(w);
-        trace("start video driver %s, renderer %s", SDL_GetCurrentVideoDriver(), rendererName);
+        trace("start video driver %s, backend %s, renderer %s", SDL_GetCurrentVideoDriver(), desktop.name(), rendererName);
 
         SDL_AddEventWatch(&windowEventWatch, cast(void*) this);
         scope(exit) SDL_RemoveEventWatch(&windowEventWatch, cast(void*) this);
@@ -669,7 +659,7 @@ public:
 
     // Opens the main window with the renderers to try first
     private bool openMain(Renderer[] candidates) {
-        if (!_main.open(candidates, desktopDecorates, wayland, accessibilityEventType)) {
+        if (!_main.open(candidates, desktop, accessibilityEventType)) {
             _windows = _windows[1 .. $];
             _main._shown = false;
             return false;
@@ -728,8 +718,7 @@ public:
         // redrawing the title bar during a resize, as well as time spent idle
         foreach (w; _windows)
             if (w.sdl) {
-                w.mover.dispatch();
-                w.blur.dispatch();
+                w.backend.dispatch();
                 w.applyTranslucency(); // the compositor can stop blurring, or start
             }
         trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",

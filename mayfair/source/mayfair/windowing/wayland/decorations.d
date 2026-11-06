@@ -1,18 +1,11 @@
-module mayfair.windowing.decorations;
+module mayfair.windowing.wayland.decorations;
 
 import core.stdc.stdlib : getenv;
 import core.stdc.string : strcmp;
 
 /*
-    Who draws a window's title bar and edges. The desktop should, and Mayfair lets it wherever it
-    will: on X11 the window manager always does, and so does macOS; on Wayland, a compositor that
-    offers the xdg-decoration protocol does -- KDE's, wlroots-based ones. GNOME's doesn't, and
-    leaves every app to draw its own, which SDL would do through libdecor and its GTK plugin: GTK 3
-    loaded to draw one bar. So there Mayfair draws it, with a TitleBar, and libdecor is kept from
-    loading a plugin.
-
-    An app can ask for a TitleBar of its own anywhere, to put its own things in it, as macOS apps
-    do; then Mayfair draws the bar whatever the desktop would have done.
+    What's known about Wayland before SDL starts, for what has to be decided then: whether SDL is
+    going to use it, and whether its compositor draws title bars (see mayfair.windowing.wayland).
 */
 
 /*
