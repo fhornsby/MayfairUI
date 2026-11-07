@@ -31,6 +31,7 @@ Dock buildGallery(string start = null)
         Page("Layout", "view-grid-symbolic", layoutPage(&report)),
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
+        Page("Windows", "window-new-symbolic", windowsPage(&report)),
         Page("Lists & tables", "view-list-symbolic", listsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
@@ -648,6 +649,118 @@ Widget popupsPage(Report report)
                 .tooltip("A longer tooltip wraps once it's wider than a comfortable line, so it never runs off the window"))));
     result.stylesheets.add(sheet);
     return result;
+}
+
+/*
+    Windows of the app's own: more of them, a dialog that keeps its owner waiting, one that asks
+    before it closes, and menus that reach past the edges of a small window.
+*/
+Widget windowsPage(Report report)
+{
+    int made;
+
+    // Each one's own scene, in the colours the gallery's in now
+    Scene sceneLike(Widget from, Widget root)
+    {
+        auto scene = new Scene(root);
+        scene.setColourScheme(from.scene.effectiveColourScheme);
+        return scene;
+    }
+
+    // Another window: its own widgets, menus and all, and a button that closes it
+    auto another = new Button("Open a window").graphic(new Icon("window-new-symbolic"));
+    another.setOnAction({
+        const n = ++made;
+        auto close = new Button("Close this window");
+        close.setOnAction({ Window.of(close).close(); });
+        auto menu = new ContextMenu()
+            .add(new MenuItem("Say hello", { report(format!"Hello from window %s"(n)); }))
+            .add(new MenuItem("Close", { Window.of(close).close(); }));
+        auto content = new Column().spacing(12).padding(24).fillWidth(false)
+            .add(new Label(format!"Window %s"(n)).style("font-size: 20px; font-weight: bold;"))
+            .add(new Label("Its own scene, with its own focus and menus. Type here:").wrapText(true))
+            .add(new TextField().promptText("Something"))
+            .add(row(new MenuButton("A menu").menu(menu), new ComboBox(["One", "Two", "Three"]).selectedIndex(0)))
+            .add(close);
+        auto w = new Window(format!"Window %s"(n)).setSize(420, 320);
+        w.scene = sceneLike(another, content);
+        w.onClosed({ report(format!"Window %s closed"(n)); }).show();
+        report(format!"Opened window %s"(n));
+    });
+
+    // A modal one, over the gallery: the gallery takes no input until it's answered
+    auto modal = new Button("Open a modal window");
+    modal.setOnAction({
+        Window dialog;
+        auto ok = new Button("OK").defaultButton(true);
+        ok.setOnAction({ report("The modal window said OK"); dialog.close(); });
+        auto cancel = new Button("Cancel");
+        cancel.setOnAction({ report("The modal window was cancelled"); dialog.close(); });
+        auto content = new Column().spacing(16).padding(24)
+            .add(new Label("A modal window").style("font-size: 18px; font-weight: bold;"))
+            .add(new Label("The gallery behind waits until this is closed: clicking it brings this "
+                           ~ "back to the front.").wrapText(true))
+            .add(row(cancel, ok));
+        dialog = new Window("Modal window").setSize(380, 200);
+        dialog.scene = sceneLike(modal, content);
+        dialog.setOwner(Window.of(modal)).setModal(true).show();
+    });
+
+    // One that asks before it closes, as an editor with unsaved changes does
+    auto asking = new Button("Open a window that asks before closing");
+    asking.setOnAction({
+        auto edits = new TextArea().prefHeight(120);
+        edits.setText("Change this, then close the window.");
+        const original = edits.text;
+        auto content = new Column().spacing(12).padding(24)
+            .add(new Label("Unsaved changes").style("font-size: 18px; font-weight: bold;"))
+            .add(edits);
+        auto w = new Window("Unsaved changes").setSize(420, 300);
+        w.scene = sceneLike(asking, content);
+        w.onCloseRequest({
+            if (edits.text == original)
+                return true;
+            new Dialog("Close without saving?")
+                .text("The changes will be lost.")
+                .addButton("Keep editing", null, ButtonKind.cancel)
+                .addButton("Close anyway", { report("Closed without saving"); w.close(); }, ButtonKind.default_)
+                .show(edits);
+            return false;
+        });
+        w.show();
+    });
+
+    // Menus longer than the window, or near its edges: they go past them, in windows of their own
+    auto long_ = new ContextMenu();
+    foreach (i; 1 .. 41)
+        long_.add(new MenuItem(format!"Item %s"(i), reportKey(report, format!"item %s"(i))));
+    auto longButton = new MenuButton("A long menu").menu(long_);
+    string[] places = ["Aberdeen", "Bath", "Belfast", "Birmingham", "Brighton", "Bristol", "Cambridge", "Cardiff",
+                       "Carlisle", "Chester", "Durham", "Edinburgh", "Exeter", "Glasgow", "Inverness", "Leeds",
+                       "Liverpool", "London", "Manchester", "Newcastle", "Norwich", "Oxford", "Plymouth", "York"];
+    auto place = new ComboBox(places).promptText("Choose a city");
+    place.selectedIndexProperty.addListener((int was, int now) { report("City: " ~ place.value); });
+    auto small = new Button("Make this window small");
+    small.setOnAction({
+        auto w = Window.of(small);
+        if (w && w.nativeWindow)
+        {
+            import sdl : SDL_RestoreWindow, SDL_SetWindowSize;
+            SDL_RestoreWindow(w.nativeWindow);
+            SDL_SetWindowSize(w.nativeWindow, 700, 420);
+        }
+    });
+
+    return page("Windows", "An app can have as many windows as it likes, each with a scene of its own, all run by "
+                ~ "the one App. Menus and drop-downs are windows too, over the one they're for, so a long one "
+                ~ "isn't cut off at that window's edge.")
+        .add(section("More windows", row(another)))
+        .add(section("A modal window", row(modal)))
+        .add(section("Asking before closing", row(asking)))
+        .add(section("Menus past the window's edges",
+            new Column().spacing(10).fillWidth(false)
+                .add(new Label("Make the window small, scroll so these are near its bottom, and open them.").wrapText(true))
+                .add(row(small, longButton, place))));
 }
 
 /// A made-up person, for the table.

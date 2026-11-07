@@ -49,7 +49,7 @@ void navigation()
         d.ui({
             foreach (child; find!NavigationList(dock.left).children)
                 items ~= cast(NavigationItem) child;
-            d.expect(items.length, 14, "a page for each part of the kit");
+            d.expect(items.length, 15, "a page for each part of the kit");
         });
 
         // Each brought into view first, as the sidebar scrolls in a short window
