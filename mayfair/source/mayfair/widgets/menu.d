@@ -12,6 +12,7 @@ import mayfair.widgets.input;
 import mayfair.widgets.label;
 import mayfair.widgets.layouts;
 import mayfair.widgets.popup;
+import mayfair.widgets.scrollpane;
 import mayfair.widgets.styling;
 import mayfair.widgets.widget;
 
@@ -35,6 +36,9 @@ import mayfair.widgets.widget;
     Enter and a click; Left, or Escape, closes it again. Choosing an item in a submenu puts away
     every menu it was opened from.
 
+    One with more items than fit on the screen -- or than visibleRowCount, if that's set --
+    scrolls, with the overlay bar a ScrollPane has; the keys scroll it to the item they move to.
+
     Its style class is "menu", as well as "popup"; each item is a `.menu-item`, with its shortcut
     in an `.accelerator`, and a separator is a `.separator`. To a screen reader it's a menu of
     menu items.
@@ -46,7 +50,9 @@ public:
     {
         _items = new Column();
         _items.styleClass.add("menu-items");
-        super(_items);
+        _scroll = new ScrollPane(_items).fitToWidth(true).hbarPolicy(ScrollBarPolicy.never);
+        _scroll.styleClass.add("menu-scroll");
+        super(_scroll);
         styleClass.add("menu");
         setAccessibleRole(AccessibleRole.menu);
     }
@@ -64,7 +70,49 @@ public:
     /// The items, in order.
     final inout(Widget)[] items() inout nothrow @nogc { return _items.children; }
 
+    /// How many items it shows before it scrolls, or 0 for as many as fit on the screen, the
+    /// default. JavaFX's ComboBox.visibleRowCount, here for any menu: a drop-down's list is 10.
+    mixin(declareProperty!(int, "visibleRowCount", "0"));
+
+    /// Scrolls it so the item at `index` is in the middle of what shows, or as near as it goes: a
+    /// drop-down's list opens on its choice. Before it's been laid out, the items are taken to be
+    /// the same height, as a drop-down's are.
+    final void scrollToItem(size_t index)
+    {
+        const n = _items.children.length;
+        if (index >= n)
+            return;
+        const shown = _visibleRowCount > 0 && _visibleRowCount < n ? _visibleRowCount : n;
+        if (shown >= n)
+            return;
+        const from = cast(float) index - (shown - 1) / 2.0f;
+        const v = from / (n - shown);
+        _scroll.setVvalue(v < 0 ? 0 : v > 1 ? 1 : v);
+    }
+
 protected:
+    // Its content, the items' scroll pane, shrinks to the height it's let have and scrolls
+    override void placeChild(Widget child) nothrow @nogc
+    {
+        super.placeChild(child);
+        YGNodeStyleSetFlexShrink(child.node, 1);
+        YGNodeStyleSetMinHeight(child.node, 0);
+    }
+
+    // As tall as visibleRowCount items, and its padding, if that's fewer than it has
+    override float heightLimit() nothrow @nogc
+    {
+        const n = _items.children.length;
+        if (_visibleRowCount <= 0 || _visibleRowCount >= n)
+            return float.nan;
+        auto last = _items.children[_visibleRowCount - 1];
+        // From its top in the items, and theirs in this, unscrolled
+        float bottom = YGNodeLayoutGetTop(last.node) + YGNodeLayoutGetHeight(last.node);
+        for (Widget w = _items; w && w !is this; w = w.parent)
+            bottom += YGNodeLayoutGetTop(w.node);
+        return bottom + YGNodeLayoutGetPadding(node, YGEdgeBottom) + YGNodeLayoutGetBorder(node, YGEdgeBottom);
+    }
+
     /// Up and Down, Home and End, from item to item: where focus goes, it's what's picked out.
     override void handleKey(ref KeyEvent event)
     {
@@ -114,6 +162,7 @@ protected:
         cancelPending();
         if (_openChild)
             _openChild.closeMenu(); // the keys have moved on from it
+        _pointerPicked = null;
         order[to].focusFromKeyboard();
         event.consume();
     }
@@ -122,6 +171,7 @@ protected:
     {
         cancelPending();
         _openChild = null;
+        _pointerPicked = null;
         if (_parentItem)
             _parentItem.menuHidden();
     }
@@ -129,6 +179,7 @@ protected:
 package:
     Menu _parentItem; // the Menu this is the items of: a submenu's item, or a menu bar's title
     Menu _openChild;  // the submenu open from this one
+    MenuItem _pointerPicked; // the item the pointer last moved onto, since the keys last moved
 
     /// The menu this was opened from, and that from, as far back as they go.
     ContextMenu rootMenu() nothrow @nogc
@@ -164,6 +215,7 @@ package:
 
 private:
     Column _items;
+    ScrollPane _scroll;
     Timeline _pending;              // waiting a moment before opening or closing a submenu,
     void delegate() _pendingAction; // to do this
 
@@ -290,9 +342,12 @@ protected:
 
     override void handleMouse(ref MouseEvent event)
     {
-        // The pointer picks it out, and from there the keys carry on
-        if (event.type == MouseEventType.entered && !disabled)
+        // The pointer moving onto it picks it out, and from there the keys carry on. Moving, not
+        // entering: a menu that scrolls, or opens, under a pointer that's still picks nothing
+        if (event.type == MouseEventType.moved && !disabled && (!_menu || _menu._pointerPicked !is this))
         {
+            if (_menu)
+                _menu._pointerPicked = this;
             requestFocus();
             if (_menu)
                 _menu.pointerOn(this);

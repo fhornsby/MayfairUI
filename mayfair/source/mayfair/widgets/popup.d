@@ -130,6 +130,10 @@ protected:
     /// Called once it's hidden, however that happened: for a subclass to put itself back to rest.
     void hidden() {}
 
+    /// Once it's been laid out as big as it asks, how tall it should be at most, or NaN for no
+    /// less than that: a menu showing only so many of its items.
+    float heightLimit() nothrow @nogc { return float.nan; }
+
 package:
     enum Placement { beside, at, centre }
     Scene _showingIn;
@@ -193,6 +197,8 @@ package:
         cellX = round((originX + x) * scale) / scale;
         cellY = round((originY + y) * scale) / scale;
     }
+
+    float limitHeight() nothrow @nogc { return heightLimit(); } // for the scene: see heightLimit()
 
     void opened()
     {

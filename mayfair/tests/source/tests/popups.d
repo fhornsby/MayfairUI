@@ -284,6 +284,69 @@ void comboBoxes()
     });
 }
 
+/// Long menus scroll: a drop-down's list shows visibleRowCount choices, opened on its choice, and
+/// the keys scroll it; a menu taller than the screen is as tall as the screen, and scrolls.
+void longMenus()
+{
+    ComboBox combo;
+    MenuButton button;
+    ContextMenu menu;
+    run("popups: long menus scroll", {
+        string[] names;
+        foreach (i; 0 .. 30)
+            names ~= format!"Choice %s"(i);
+        combo = new ComboBox(names).selectedIndex(20);
+        menu = new ContextMenu();
+        foreach (i; 0 .. 200)
+            menu.add(new MenuItem(format!"Item %s"(i)));
+        button = new MenuButton("Menu").menu(menu);
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(combo).add(button);
+    }, (Driver d) {
+        bool inView(Widget item, Widget list)
+        {
+            const b = item.boundsInScene, l = list.boundsInScene;
+            return b.minY >= l.minY - 0.5f && b.maxY <= l.maxY + 0.5f;
+        }
+        d.click(combo);
+        d.settle();
+        ContextMenu list;
+        d.ui({
+            list = cast(ContextMenu) combo.scene.showingPopups[0];
+            const row = list.items[0].boundsInScene.height;
+            const h = list.boundsInScene.height;
+            d.check(h > 10 * row && h < 11 * row, format!"ten rows tall: %s, rows of %s"(h, row));
+            d.check(inView(list.items[20], list), "opened on the choice");
+            d.check(!inView(list.items[0], list), "scrolled past the first");
+        });
+        foreach (_; 0 .. 8)
+            d.key(SDL_Keycode.SDLK_DOWN);
+        d.settle();
+        d.ui({ d.check(list.items[28].focused && inView(list.items[28], list), "Down scrolls to the item it reaches"); });
+        d.key(SDL_Keycode.SDLK_HOME);
+        d.settle();
+        d.ui({ d.check(list.items[0].focused && inView(list.items[0], list), "Home: back to the top"); });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+
+        d.click(button);
+        d.settle();
+        d.ui({
+            d.check(menu.showing, "the long menu's showing");
+            SDL_Rect r;
+            SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(d.window), &r);
+            const screen = r.h / d.pointsToWindow;
+            d.check(menu.boundsInScene.height <= screen, format!"no taller than the screen: %s in %s"(menu.boundsInScene.height, screen));
+            d.check(!inView(menu.items[199], menu), "so the last item's out of view");
+        });
+        d.key(SDL_Keycode.SDLK_END);
+        d.settle();
+        d.ui({
+            d.check(menu.items[199].focused, "End: the last item, though the menu scrolled under the pointer");
+            d.check(inView(menu.items[199], menu), format!"scrolled to it: %s in %s"(menu.items[199].boundsInScene, menu.boundsInScene));
+        });
+        d.key(SDL_Keycode.SDLK_ESCAPE);
+    });
+}
+
 /// Dialogs: modal, so a click outside does nothing; Enter presses the default button and Escape the
 /// cancel one; and each closes it.
 void dialogs()

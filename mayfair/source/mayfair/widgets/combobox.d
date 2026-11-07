@@ -19,7 +19,8 @@ import mayfair.widgets.widget;
 
     It shows the choice, or promptText while there isn't one, with an arrow at its right. A click,
     or Enter, Space or Alt+Down, drops the list down below it, as wide as it is at least, with the
-    choice ticked and picked out; choosing from the list chooses. Up and Down change the choice
+    choice ticked and picked out, and scrolled to if there are more than visibleRowCount; choosing
+    from the list chooses. Up and Down change the choice
     without opening the list, as a desktop's drop-downs do.
 
     Its style class is "combo-box", :showing while the list is. To a screen reader it's a combo
@@ -55,6 +56,9 @@ public:
     /// What it says while nothing's chosen.
     mixin(declareProperty!(string, "promptText", "null", q{ showChoice(); }));
 
+    /// How many choices the list shows before it scrolls. JavaFX's visibleRowCount.
+    mixin(declareProperty!(int, "visibleRowCount", "10"));
+
     /// The choice, or null.
     final string value() nothrow @nogc
     {
@@ -71,6 +75,7 @@ public:
             return;
         _list = new ContextMenu();
         _list.styleClass.add("combo-box-popup");
+        _list.setVisibleRowCount(_visibleRowCount);
         foreach (i, item; _items)
         {
             auto choice = new CheckMenuItem(item, chooser(cast(int) i));
@@ -85,9 +90,13 @@ public:
         });
         pseudoClassStateChanged(pseudo!"showing", true);
         _list.show(this, Side.below, 4);
-        // The choice picked out, for the keys to go on from
+        // The choice picked out, for the keys to go on from, and in the middle of the list -- after
+        // focus, which would scroll it only just into view, and before layout, to the top
         if (_selectedIndex >= 0)
+        {
             (cast(MenuItem) _list.items[_selectedIndex]).focusFromKeyboard();
+            _list.scrollToItem(_selectedIndex);
+        }
         invalidateAccessible();
     }
 

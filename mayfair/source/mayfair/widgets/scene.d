@@ -372,8 +372,16 @@ public:
                 }
             }
             YGNodeStyleSetMaxWidth(p.node, room(rw, p.maxWidth));
-            YGNodeStyleSetMaxHeight(p.node, room(rh, p.maxHeight));
+            const roomHeight = room(rh, p.maxHeight);
+            YGNodeStyleSetMaxHeight(p.node, roomHeight);
             YGNodeCalculateLayout(p.node, float.nan, float.nan, YGDirectionLTR);
+            // Shorter still, if it asks to be once it knows how tall its parts are
+            const limit = p.limitHeight();
+            if (limit == limit && limit < YGNodeLayoutGetHeight(p.node))
+            {
+                YGNodeStyleSetMaxHeight(p.node, limit < roomHeight ? limit : roomHeight);
+                YGNodeCalculateLayout(p.node, float.nan, float.nan, YGDirectionLTR);
+            }
             p.place(ax, ay, aw, ah);
             if (p._window)
             {

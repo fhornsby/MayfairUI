@@ -67,6 +67,7 @@ void main(string[] args)
     tests.popups.menus();
     tests.popups.menuBars();
     tests.popups.comboBoxes();
+    tests.popups.longMenus();
     tests.popups.dialogs();
     tests.popups.tooltips();
     tests.popups.visibility();
