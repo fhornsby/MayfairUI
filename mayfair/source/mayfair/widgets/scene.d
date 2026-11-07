@@ -348,7 +348,9 @@ public:
         _root.cellX = m;
         _root.cellY = m + top;
         YGNodeCalculateLayout(_root.node, w, h - top > 0 ? h - top : 0, YGDirectionLTR);
-        // Each popup as big as it asks, but inside the window, with a margin if there's room for one
+        // Each popup as big as it asks, but inside the window, with a margin if there's room for
+        // one. One in a window of its own goes by the screen instead, where it knows where that is,
+        // and otherwise by this window, as near as it can tell, as far as it fits in it.
         foreach (p; popups)
         {
             float room(float window, float own)
@@ -356,10 +358,34 @@ public:
                 const inside = window > 4 * Theme.popup_margin ? window - 2 * Theme.popup_margin : window;
                 return own == own && own < inside ? own : inside;
             }
-            YGNodeStyleSetMaxWidth(p.node, room(w, p.maxWidth));
-            YGNodeStyleSetMaxHeight(p.node, room(h, p.maxHeight));
+            float ax = m, ay = m, aw = w, ah = h; // where it's placed
+            float rw = w, rh = h;                 // and how big it can be
+            if (p._window)
+            {
+                popupWindows.screenSize(rw, rh);
+                if (!popupWindows.screenArea(ax, ay, aw, ah))
+                {
+                    ax = m;
+                    ay = m;
+                    aw = w;
+                    ah = h;
+                }
+            }
+            YGNodeStyleSetMaxWidth(p.node, room(rw, p.maxWidth));
+            YGNodeStyleSetMaxHeight(p.node, room(rh, p.maxHeight));
             YGNodeCalculateLayout(p.node, float.nan, float.nan, YGDirectionLTR);
-            p.place(m, m, w, h);
+            p.place(ax, ay, aw, ah);
+            if (p._window)
+            {
+                // Its window round it, with room for its shadow; then wherever the window went
+                const e = popupWindowMargin;
+                p._window.place(p.cellX - e, p.cellY - e, YGNodeLayoutGetWidth(p.node) + 2 * e,
+                                YGNodeLayoutGetHeight(p.node) + 2 * e);
+                float ox, oy;
+                p._window.origin(ox, oy);
+                p.cellX = ox + e;
+                p.cellY = oy + e;
+            }
         }
         popupsMoved = false;
     }
@@ -399,6 +425,17 @@ public:
                 tvg_shape_reset(p._scrim);
                 tvg_shape_append_rect(p._scrim, m, m, w, h, r, r, true);
                 tvg_paint_set_opacity(p._scrim, cast(ubyte)(p._shownAmount * 255));
+            }
+            if (p._window)
+            {
+                // Its own canvas has no scene scaling it to device pixels, and starts at its window
+                import std.math : round;
+                float ox, oy;
+                p._window.origin(ox, oy);
+                auto t = Tvg_Matrix(paintScale, 0, -round(ox * paintScale),
+                                    0, paintScale, -round(oy * paintScale),
+                                    0, 0, 1);
+                tvg_paint_set_transform(p._layer, &t);
             }
             p.paintTree(0, 0, 0, 0, p._shownAmount);
         }
@@ -872,12 +909,45 @@ package(mayfair):
         if (_titleBar)
             gather(_titleBar);
         foreach (p; popups)
-            if (p._shownAmount > 0)
+            if (p._shownAmount > 0 && !p._window)
                 gather(p);
         return n;
     }
 
     WindowControls windowControls; // what the title bar's buttons ask the window to do, from the App
+    PopupWindows popupWindows;     // where menus get windows of their own, from the App: see PopupWindows
+
+    /// How far a popup's window reaches past it on each side, for its shadow, in points.
+    static float popupWindowMargin() nothrow @nogc
+    {
+        import std.math : ceil;
+        return ceil(2 * Theme.popup_shadow_blur + Theme.popup_shadow_offset);
+    }
+
+    /// A popup's window moved, the window system keeping it on the screen: it's placed again.
+    void popupWindowMoved() nothrow @nogc
+    {
+        popupsMoved = true;
+        paintRequested = true;
+    }
+
+    /// The popup showing in `w`, if one is.
+    Popup popupIn(const PopupWindow w) nothrow @nogc
+    {
+        foreach (p; popups)
+            if (p._window is w)
+                return p;
+        return null;
+    }
+
+    /// Hides the popups in windows of their own: the window went behind another app's, which is
+    /// as good as a press outside them.
+    void hideWindowedPopups()
+    {
+        foreach_reverse (p; popups.dup)
+            if (p._window && p._showingIn && p.autoHide)
+                hidePopup(p);
+    }
     void* nativeWindow;            // the SDL_Window it's in, from the App, for what the desktop shows over it
     bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
 
@@ -916,7 +986,13 @@ package(mayfair):
         tvg_scene_add_effect_drop_shadow(inner, s.r, s.g, s.b, s.a, 90, Theme.popup_shadow_offset,
                                          Theme.popup_shadow_blur, 50);
         tvg_scene_add(p._layer, inner);
-        tvg_scene_add(paints, p._layer);
+        // A menu in a window of its own, if it can have one, where nothing in this one cuts it off
+        if (popupWindows && p.autoHide && !p.modal)
+            p._window = popupWindows.take();
+        if (p._window)
+            tvg_canvas_add(p._window.canvas, p._layer);
+        else
+            tvg_scene_add(paints, p._layer);
         popups ~= p;
         p.mount(this, inner);
         markCssDirty(p, true);
@@ -947,7 +1023,14 @@ package(mayfair):
         const hadFocus = isWithin(focusOwner, p);
         forget(p);
         p.unmountTree();
-        tvg_scene_remove(paints, p._layer); // and everything in it
+        if (p._window)
+        {
+            tvg_canvas_remove(p._window.canvas, p._layer); // and everything in it
+            p._window.giveBack();
+            p._window = null;
+        }
+        else
+            tvg_scene_remove(paints, p._layer); // and everything in it
         p._layer = p._scrim = null;
         popups = popups[0 .. at] ~ popups[at + 1 .. $];
         p._showingIn = null;
@@ -1388,6 +1471,44 @@ private:
                 return true;
         return false;
     }
+}
+
+/*
+    Where a popup that hides on a press outside it -- a menu, a drop-down's list -- can be shown in
+    a window of its own, over the window its scene is in: the App's Window is one. The popup's still
+    the scene's, and works in the scene's points, as one drawn in the window does; only where it's
+    drawn is different, and the window hands the scene the input that arrives on it.
+*/
+interface PopupWindows
+{
+    /// A hidden window to show a popup in. Null if there can't be one: the popup's then drawn in
+    /// the scene's window.
+    PopupWindow take();
+
+    /// How much room a popup has: the screen's usable size, in the scene's points.
+    void screenSize(out float width, out float height) nothrow @nogc;
+
+    /// Where on the screen there's room for popups, in the scene's points from its window's top
+    /// left, if the window system says where the window is. Wayland's doesn't, and moves a popup
+    /// onto the screen itself.
+    bool screenArea(out float x, out float y, out float width, out float height) nothrow @nogc;
+}
+
+/// ditto
+interface PopupWindow
+{
+    /// Where a popup drawn in it goes.
+    Tvg_Canvas canvas() nothrow @nogc;
+
+    /// Shows it at `x`, `y`, `width` by `height` of the scene's points, or moves it there.
+    void place(float x, float y, float width, float height) nothrow @nogc;
+
+    /// Where it is, in the scene's points: where it was put, or where the window system moved it
+    /// to keep it on the screen.
+    void origin(out float x, out float y) nothrow @nogc;
+
+    /// Hides it, to be taken again for another popup.
+    void giveBack() nothrow @nogc;
 }
 
 /// What a window can be asked to do by the title bar Mayfair draws for it. The App is one.

@@ -15,6 +15,7 @@ import mayfair.accessibility;
 import mayfair.windowing.accessibility;
 import mayfair.windowing.app;
 import mayfair.windowing.backend;
+import mayfair.windowing.popupwindow;
 
 /*
     A window: a Scene, in a window of the desktop's, with a renderer of its own drawing it. The
@@ -283,6 +284,8 @@ package(mayfair):
     int textInputCursor;
 
     WindowBackend backend;     // what the desktop does for it that SDL doesn't: see mayfair.windowing.backend
+    PopupSurface[] popupSurfaces; // windows for its menus, kept for the next once they're hidden
+    bool popupSurfacesFailed;  // one couldn't be made, so its menus are drawn in it
     bool _translucent;         // asked to be translucent, where the compositor blurs: see setTranslucent()
     bool translucentNow;       // and is, as the scene was last told
     bool drawsDecorations;     // Mayfair draws the title bar and edges, rather than the desktop
@@ -405,6 +408,7 @@ package(mayfair):
         }
         backend = desktop.newWindow();
         backend.open(sdl, drawsDecorations);
+        _scene.popupWindows = new Popups;
         if (drawsDecorations)
             applyFrame();
         _scene.nativeWindow = sdl;
@@ -432,9 +436,16 @@ package(mayfair):
             SDL_StopTextInput(sdl);
         textInputWidget = null;
         accessibility.close();
-        _scene.detach();
+        _scene.detach(); // which hides its popups, giving their windows back
+        foreach (s; popupSurfaces)
+            s.hideIfUnused();
         _scene.nativeWindow = null;
         _scene.windowControls = null;
+        _scene.popupWindows = null;
+        foreach (s; popupSurfaces)
+            s.destroy(); // before their parent goes, which SDL would take them with
+        popupSurfaces = null;
+        popupSurfacesFailed = false;
         renderer.release();
         renderer = null;
         backend.close();
@@ -506,6 +517,8 @@ package(mayfair):
         it's also for the widgets, for update() to hand on, is what it returns.
     */
     bool handleWindowEvent(ref const SDL_Event event) nothrow @nogc {
+        if (auto s = surfaceFor(event.window.windowID))
+            return handlePopupWindowEvent(s, event);
         switch (event.type) {
             case SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 needsLayout = true;
@@ -547,6 +560,108 @@ package(mayfair):
         }
     }
 
+    /// One of a popup window's own events: see handleWindowEvent.
+    bool handlePopupWindowEvent(PopupSurface s, ref const SDL_Event event) nothrow @nogc {
+        switch (event.type) {
+            case SDL_EventType.SDL_EVENT_WINDOW_EXPOSED:
+            case SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                s.needsPresent = true;
+                return false;
+            case SDL_EventType.SDL_EVENT_WINDOW_MOVED:
+                // Kept on the screen by the window system, somewhere it wasn't put: placed again,
+                // where it is, so what's in it is where the pointer finds it
+                if (s.inUse && s.moved())
+                    _scene.popupWindowMoved();
+                return false;
+            case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            case SDL_EventType.SDL_EVENT_WINDOW_CLOSE_REQUESTED: // the window system dismissed it
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// The popup window of its own SDL knows by `id`, if it's one.
+    PopupSurface surfaceFor(SDL_WindowID id) nothrow @nogc {
+        if (!id)
+            return null;
+        foreach (s; popupSurfaces)
+            if (s.sdl && SDL_GetWindowID(s.sdl) == id)
+                return s;
+        return null;
+    }
+
+    /// Whether SDL's window `id` is this one, or one of its popups'.
+    bool owns(SDL_WindowID id) nothrow @nogc {
+        return sdl && id && (SDL_GetWindowID(sdl) == id || surfaceFor(id));
+    }
+
+    /// A position on SDL's window `id` -- this one, or one of its popups' -- in the scene's points.
+    float pointsX(SDL_WindowID id, float x) nothrow @nogc {
+        if (auto s = surfaceFor(id))
+            return s.pointsX(x);
+        return toPoints(x);
+    }
+
+    /// ditto
+    float pointsY(SDL_WindowID id, float y) nothrow @nogc {
+        if (auto s = surfaceFor(id))
+            return s.pointsY(y);
+        return toPoints(y);
+    }
+
+    /// What its scene's menus are shown in: see PopupWindows.
+    final class Popups : PopupWindows {
+        PopupWindow take() {
+            if (popupSurfacesFailed)
+                return null;
+            // One its popup's just left first, still showing, so it's moved and not shown again
+            foreach (s; popupSurfaces)
+                if (!s.inUse && s.hidePending) {
+                    s.retake();
+                    return s;
+                }
+            foreach (s; popupSurfaces)
+                if (!s.inUse) {
+                    s.retake();
+                    return s;
+                }
+            auto made = PopupSurface.make(this.outer, App.current.renderersLikeFirst(true));
+            if (!made) {
+                popupSurfacesFailed = true; // and not tried again each time
+                logInfo("Menus are drawn in the window, as a window of their own couldn't be made");
+                return null;
+            }
+            made.inUse = true;
+            popupSurfaces ~= made;
+            return made;
+        }
+
+        void screenSize(out float width, out float height) nothrow @nogc {
+            SDL_Rect r;
+            if (!SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(sdl), &r) || r.w <= 0 || r.h <= 0) {
+                width = viewWidth / scale;
+                height = viewHeight / scale;
+                return;
+            }
+            width = toPoints(r.w);
+            height = toPoints(r.h);
+        }
+
+        bool screenArea(out float x, out float y, out float width, out float height) nothrow @nogc {
+            SDL_Rect r;
+            if (!backend.knowsPosition() || !SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(sdl), &r))
+                return false;
+            int wx, wy;
+            SDL_GetWindowPosition(sdl, &wx, &wy);
+            x = toPoints(r.x - wx);
+            y = toPoints(r.y - wy);
+            width = toPoints(r.w);
+            height = toPoints(r.h);
+            return true;
+        }
+    }
+
     /// 2. Update, before the input's handed on: the frame's shape, and what's under the pointer.
     void beforeInput() {
         if (frameChanged) {
@@ -575,14 +690,14 @@ package(mayfair):
                          (mods & SDL_Keymod.KMOD_ALT) != 0, (mods & SDL_Keymod.KMOD_GUI) != 0);
         switch (event.type) {
             case SDL_EventType.SDL_EVENT_MOUSE_MOTION:
-                _scene.mouseMoved(toPoints(event.motion.x), toPoints(event.motion.y));
+                _scene.mouseMoved(pointsX(event.motion.windowID, event.motion.x), pointsY(event.motion.windowID, event.motion.y));
                 break;
             case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
-                _scene.mousePressed(toPoints(event.button.x), toPoints(event.button.y),
+                _scene.mousePressed(pointsX(event.button.windowID, event.button.x), pointsY(event.button.windowID, event.button.y),
                                     mouseButton(event.button.button), event.button.clicks);
                 break;
             case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
-                _scene.mouseReleased(toPoints(event.button.x), toPoints(event.button.y),
+                _scene.mouseReleased(pointsX(event.button.windowID, event.button.x), pointsY(event.button.windowID, event.button.y),
                                      mouseButton(event.button.button), event.button.clicks);
                 break;
             case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
@@ -594,7 +709,7 @@ package(mayfair):
                     dy = 0;
                 }
                 // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
-                _scene.scrolled(toPoints(event.wheel.mouse_x), toPoints(event.wheel.mouse_y), -dx, dy, device,
+                _scene.scrolled(pointsX(event.wheel.windowID, event.wheel.mouse_x), pointsY(event.wheel.windowID, event.wheel.mouse_y), -dx, dy, device,
                                 event.wheel.timestamp / 1e9);
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
@@ -613,9 +728,18 @@ package(mayfair):
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_LOST:
                 _scene.windowFocus(false);
+                // Another app's window was clicked, or switched to: menus in windows of their own
+                // go, as nothing else would take them away. Unless the pointer's on one of them,
+                // where a window system can have the click that's for it take the focus.
+                if (!surfaceFor(SDL_GetWindowID(SDL_GetMouseFocus())))
+                    _scene.hideWindowedPopups();
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-                requestClose();
+                if (auto s = surfaceFor(event.window.windowID)) {
+                    if (auto p = _scene.popupIn(s))
+                        p.hide();
+                } else
+                    requestClose();
                 break;
             case SDL_EventType.SDL_EVENT_KEY_DOWN:
                 _scene.keyPressed(keyEvent(event.key, KeyEventType.pressed));
@@ -664,6 +788,8 @@ package(mayfair):
             needsPaint = true;
         if (_scene.layoutNeeded())
             needsLayout = true;
+        foreach (s; popupSurfaces)
+            s.hideIfUnused(); // menus' windows that nothing's been shown in again
     }
 
     /*
@@ -724,6 +850,9 @@ package(mayfair):
     void paint() nothrow @nogc {
         _scene.paint(viewWidth / scale, viewHeight / scale);
         needsPresent = true;
+        foreach (s; popupSurfaces)
+            if (s.shown)
+                s.needsPresent = true;
         repickPending = true; // scrolling moves things with no layout
     }
 
@@ -735,7 +864,10 @@ package(mayfair):
 
     /// Runs whichever of layout, paint and present are needed, in order. False if none were.
     bool render(out ulong layoutNs, out ulong paintNs, out ulong presentNs) nothrow @nogc {
-        if (!needsLayout && !needsPaint && !needsPresent)
+        bool popupsToPresent;
+        foreach (s; popupSurfaces)
+            popupsToPresent |= s.shown && s.needsPresent;
+        if (!needsLayout && !needsPaint && !needsPresent && !popupsToPresent)
             return false;
         const start = traceNow();
 
@@ -760,6 +892,9 @@ package(mayfair):
             needsPresent = false;
             present();
         }
+        foreach (s; popupSurfaces)
+            if (s.shown && s.needsPresent)
+                s.present();
         presentNs = traceNow() - afterPaint;
         return true;
     }

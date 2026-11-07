@@ -38,6 +38,11 @@ enum Side { below, above, right, left }
       had it. A tooltip doesn't.
     - pointerTransparent: the pointer passes through to what's underneath. A tooltip is.
 
+    One that hides on a press outside it, and isn't modal -- a menu, a drop-down's list -- is shown
+    in a window of its own, over the window it's for, so it isn't cut off at that window's edge:
+    a long menu in a small window, or a drop-down near its bottom. Where there can't be one, it's
+    drawn in the window as the others are.
+
     It takes its colours from what it's shown for: variables like --accent are looked up from
     there, so a popup opened from part of the window styled differently looks like that part.
 
@@ -130,6 +135,7 @@ package:
     Scene _showingIn;
     Tvg_Paint _layer, _scrim;  // the layer it's drawn in, and a modal one's dimming behind it
     Widget[] _reachable;       // outside it, but still the pointer's while it's showing: a menu's menu bar
+    PopupWindow _window;       // the window of its own it's showing in, if it has one: see PopupWindows
     Widget _focusBefore;       // what had focus when it took it
     bool _focusShownBefore;    // and whether that focus was shown
     double _shownAmount = 0;   // how far it's faded in

@@ -8,6 +8,7 @@ static import tests.buttons, tests.focus, tests.textinput, tests.textfield, test
     Runs every end-to-end test, one window at a time, and exits non-zero if any failed.
 
         cd tests && dub run
+        MAYFAIR_TESTS=popups dub run       only those whose names start with "popups"
 */
 void main(string[] args)
 {
@@ -69,6 +70,7 @@ void main(string[] args)
     tests.popups.dialogs();
     tests.popups.tooltips();
     tests.popups.visibility();
+    tests.popups.windowed();
     tests.files.fileChoosers();
     tests.lists.listViews();
     tests.lists.tableViews();

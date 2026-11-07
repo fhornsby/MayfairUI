@@ -432,3 +432,104 @@ void visibility()
         d.ui({ d.expect(c.boundsInScene.minY, cTop, "visible again: where it was"); });
     });
 }
+
+// The popup windows SDL has, shown: menus' windows of their own
+private SDL_Window*[] shownPopupWindows()
+{
+    SDL_Window*[] found;
+    int count;
+    auto windows = SDL_GetWindows(&count);
+    foreach (w; windows[0 .. count])
+    {
+        const flags = SDL_GetWindowFlags(w);
+        if ((flags & SDL_WindowFlags.SDL_WINDOW_POPUP_MENU) && !(flags & SDL_WindowFlags.SDL_WINDOW_HIDDEN))
+            found ~= w;
+    }
+    SDL_free(windows);
+    return found;
+}
+
+/// Menus in windows of their own: not cut off at the window's edge, taking the pointer's input
+/// from their own window, hidden when the window system dismisses them; a dialog stays in the window.
+void windowed()
+{
+    MenuButton button;
+    ContextMenu menu;
+    MenuItem last;
+    Button openDialog;
+    Dialog dialog;
+    string[] done;
+    run("popups: in windows of their own", {
+        menu = new ContextMenu();
+        foreach (i; 0 .. 39)
+            menu.add(new MenuItem(format!"Item %s"(i)));
+        last = new MenuItem("Last", { done ~= "last"; });
+        menu.add(last);
+        button = new MenuButton("Menu").menu(menu);
+        dialog = new Dialog("A dialog").addButton("Close");
+        openDialog = new Button("Dialog").onAction({ dialog.show(openDialog); });
+        return cast(Widget) new Column().padding(20).spacing(10).fillWidth(false).add(button).add(openDialog);
+    }, (Driver d) {
+        const mainID = d.windowID;
+        d.click(button);
+        d.settle();
+        SDL_Window* popup;
+        float originX, originY;
+        d.ui({
+            d.check(menu.showing, "the menu's showing");
+            const popups = shownPopupWindows();
+            d.expect(popups.length, 1, "in a window of its own");
+            if (popups.length)
+            {
+                popup = cast(SDL_Window*) popups[0];
+                int x, y;
+                SDL_GetWindowPosition(popup, &x, &y);
+                originX = x / d.pointsToWindow;
+                originY = y / d.pointsToWindow;
+            }
+            int w, h;
+            SDL_GetWindowSize(d.window, &w, &h);
+            d.check(menu.boundsInScene.height > h / d.pointsToWindow,
+                    format!"taller than the window it's for: %s in %s"(menu.boundsInScene.height, h / d.pointsToWindow));
+        });
+        if (!popup)
+            return;
+
+        // A click on an item, as its own window has it: from the window's top left
+        Bounds b;
+        d.ui({ last.scrollIntoView(); });
+        d.settle();
+        d.ui({ b = last.boundsInScene; d.windowID = SDL_GetWindowID(popup); });
+        d.click(b.centreX - originX, b.centreY - originY);
+        d.settle();
+        d.windowID = mainID;
+        d.ui({
+            d.expect(done, ["last"], "a click in the menu's window chooses the item under it");
+            d.check(!menu.showing, "and the menu goes");
+        });
+        d.settle();
+        d.ui({ d.expect(shownPopupWindows().length, 0, "its window hidden with it"); });
+
+        // The window system dismissing it, as a compositor does a popup it's done with
+        d.click(button);
+        d.settle();
+        d.ui({
+            d.check(menu.showing, "shown again, in the same window");
+            SDL_Event e;
+            e.type = SDL_EventType.SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+            e.window.windowID = SDL_GetWindowID(popup);
+            SDL_PushEvent(&e);
+        });
+        d.settle();
+        d.ui({ d.check(!menu.showing, "dismissed by the window system: hidden"); });
+
+        // A dialog is the window's: it dims it, and stays in it
+        d.click(openDialog);
+        d.settle();
+        d.ui({
+            d.check(dialog.showing, "the dialog's showing");
+            d.expect(shownPopupWindows().length, 0, "in the window, not one of its own");
+            dialog.hide();
+        });
+    });
+}

@@ -236,9 +236,11 @@ final class Driver
     /// The window input goes to: the test's own, or another one the script has opened.
     SDL_WindowID windowID;
 
+    /// SDL's window coordinates to the point, in the test's window.
+    float pointsToWindow = 1;
+
 private:
     shared bool appGone;
-    float pointsToWindow = 1;
     string[] kept;
     string savedClipboard, savedPrimary;
     bool restoreClipboard;
@@ -271,6 +273,11 @@ private:
 /// failed check fails.
 void run(string name, Widget delegate() build, void delegate(Driver) script)
 {
+    // MAYFAIR_TESTS=popups, say, runs only the tests whose names start with that
+    import std.process : environment;
+    import std.algorithm : startsWith;
+    if (!name.startsWith(environment.get("MAYFAIR_TESTS", "")))
+        return;
     auto d = new Driver;
     const before = failures.length;
 

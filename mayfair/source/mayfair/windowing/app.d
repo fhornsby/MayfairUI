@@ -82,12 +82,12 @@ size_t collections;        // druntime's count of collections, as of the loop's 
 size_t collectionsBetween; // how many of them collectGarbage() made
 size_t collectionsTraced, collectionsBetweenTraced; // both, as of the last frame traced
 
-/// The open window SDL knows by `id`, if it's one of ours.
+/// The open window SDL knows by `id` -- or whose menu's window it is -- if it's one of ours.
 Window windowFor(SDL_WindowID id) nothrow @nogc {
     if (!id)
         return null;
     foreach (w; _windows)
-        if (w.sdl && SDL_GetWindowID(w.sdl) == id)
+        if (w.owns(id))
             return w;
     return null;
 }
@@ -402,16 +402,16 @@ void render() nothrow @nogc {
 /*
     The renderers a window opened after the first tries: a new one of the kind the first
     started, software or not, as the first has already turned down what it was going to; then
-    the CPU's, which always can.
+    the CPU's, which always can. `unpaced` for a menu's window: see WebGpuRenderer.
 */
-Renderer[] renderersLikeFirst() nothrow {
+package(mayfair) Renderer[] renderersLikeFirst(bool unpaced = false) nothrow {
     version (Emscripten)
         return [cast(Renderer) new CpuRenderer];
     else {
     if (rendererName && strcmp(rendererName, "webgpu") == 0)
-        return [cast(Renderer) new WebGpuRenderer(true), new CpuRenderer];
+        return [cast(Renderer) new WebGpuRenderer(true, unpaced), new CpuRenderer];
     if (rendererName && strcmp(rendererName, "opengl") == 0)
-        return [cast(Renderer) new OpenGlRenderer(true), new CpuRenderer];
+        return [cast(Renderer) new OpenGlRenderer(true, unpaced), new CpuRenderer];
     return [cast(Renderer) new CpuRenderer];
     }
 }

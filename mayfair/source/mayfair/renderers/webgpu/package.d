@@ -41,12 +41,11 @@ class WebGpuRenderer : Renderer
 {
 @nogc nothrow:
 private:
-    WGPUInstance instance;
     WGPUSurface surface;
+    // The shared device's (see SharedGpu): borrowed, not released here
+    WGPUInstance instance;
     WGPUAdapter adapter;
     WGPUDevice device;
-    // Ours to release: wgpuDeviceGetQueue hands out a new reference each call, and each one keeps
-    // the device -- and every texture on it -- alive after release()
     WGPUQueue queue;
     Tvg_Canvas _canvas;
     uint width, height;
@@ -63,11 +62,19 @@ private:
     WGPUBindGroupLayout downsampleLayout;
     WGPUBindGroup downsampleBind;
     bool acceptSoftware;
+    bool unpaced;
+    bool onShared;   // counted among the shared device's users
+    bool surfaceConfigured; // and not unconfigured since, by suspend()
 
 public:
-    /// `acceptSoftware`: use a software Vulkan device rather than fail, when this renderer was asked for
-    this(bool acceptSoftware = false){
+    /*
+        `acceptSoftware`: use a software Vulkan device rather than fail, when this renderer was
+        asked for. `unpaced`: present without waiting for the display, for a menu's window (see
+        initialise).
+    */
+    this(bool acceptSoftware = false, bool unpaced = false){
         this.acceptSoftware = acceptSoftware;
+        this.unpaced = unpaced;
     }
 
     /// Vulkan draws to any window: wgpu makes its surface from the native handle
@@ -77,71 +84,36 @@ public:
 
     /// Sets up WebGPU and ThorVG for `window`. Prints the reason and returns false on failure.
     bool initialise(SDL_Window* window){
-        // Only the backend Mayfair draws with. By default wgpu looks at every one it has, and
-        // looking at OpenGL loads EGL and the GL driver -- tens of megabytes, and a dozen threads,
-        // for an adapter that's never used.
-        WGPUInstanceExtras extras;
-        extras.chain.sType = cast(WGPUSType) WGPUSType_InstanceExtras;
-        version (OSX)
-            extras.backends = WGPUInstanceBackend_Metal;
-        else
-            extras.backends = WGPUInstanceBackend_Vulkan;
-        WGPUInstanceDescriptor descriptor;
-        descriptor.nextInChain = &extras.chain;
-        instance = wgpuCreateInstance(&descriptor);
-        if (!instance) {
-            logWarning("wgpuCreateInstance failed");
-            return false;
-        }
-
-        surface = createSurface(instance, window);
-        if (!surface)
-            return false;
-
-        // wgpu-native answers adapter and device requests before returning, so no waiting is needed
-        WGPURequestAdapterOptions adapterOptions;
-        adapterOptions.compatibleSurface = surface;
-        WGPURequestAdapterCallbackInfo adapterCallback;
-        adapterCallback.mode = WGPUCallbackMode_AllowSpontaneous;
-        adapterCallback.callback = &mayfairWgpuAdapterReady;
-        adapterCallback.userdata1 = &adapter;
-        wgpuInstanceRequestAdapter(instance, &adapterOptions, adapterCallback);
-        if (!adapter)
-            return false;
-
-        /*
-            A CPU adapter is Mesa's lavapipe: Vulkan emulated in software, which is what a machine
-            with no Vulkan driver for its GPU is left with -- a VM on virgl, which passes through
-            OpenGL only, above all. ThorVG's WebGPU engine on it is many times slower than its own
-            CPU engine, so it's turned down, and the app falls back (see chooseRenderers).
-        */
-        WGPUAdapterInfo info;
-        if (wgpuAdapterGetInfo(adapter, &info) == WGPUStatus_Success) {
-            scope(exit) wgpuAdapterInfoFreeMembers(info);
-            trace("gpu   adapter %.*s, type %d", cast(int) info.device.length, info.device.data, cast(int) info.adapterType);
-            if (info.adapterType == WGPUAdapterType_CPU && !acceptSoftware) {
-                logInfo("Vulkan is only available in software here (%.*s)",
-                        cast(int) info.device.length, info.device.data);
+        // One device for every window, made with the first (see SharedGpu); a window after that
+        // only needs a surface of its own on it
+        if (!gpu.users) {
+            surface = gpu.open(window, acceptSoftware);
+            if (!surface)
                 return false;
-            }
+        } else {
+            if (gpu.software && !acceptSoftware)
+                return false;
+            surface = createSurface(gpu.instance, window);
+            if (!surface)
+                return false;
         }
-
-        WGPUDeviceDescriptor deviceDescriptor;
-        deviceDescriptor.uncapturedErrorCallbackInfo.callback = &mayfairWgpuError;
-        WGPURequestDeviceCallbackInfo deviceCallback;
-        deviceCallback.mode = WGPUCallbackMode_AllowSpontaneous;
-        deviceCallback.callback = &mayfairWgpuDeviceReady;
-        deviceCallback.userdata1 = &device;
-        wgpuAdapterRequestDevice(adapter, &deviceDescriptor, deviceCallback);
-        if (!device)
-            return false;
-        queue = wgpuDeviceGetQueue(device);
+        gpu.users++;
+        onShared = true;
+        instance = gpu.instance;
+        adapter = gpu.adapter;
+        device = gpu.device;
+        queue = gpu.queue;
 
         // Fifo: each frame waits for the display to be ready for it, which is what locks an
         // animation to the refresh; on a compositor with wp_fifo_v1, Mesa paces it with that.
         // Mailbox doesn't wait. It was used here once, for the frames it didn't spend waiting,
         // and was then paced by whenever the compositor happened to hand buffers back: frames
         // 12-22 ms apart, never on the refresh.
+        //
+        // Except for a menu's window, presented whenever its owner's is, which wants nothing held
+        // back: a Fifo frame waits in the compositor for the refresh, and if the window's hidden and
+        // shown again for another menu meanwhile, it's still there as SDL gives the surface its new
+        // role, which a surface with a buffer can't take. Mailbox or Immediate don't wait.
         presentMode = WGPUPresentMode_Fifo;
         // The surface's own preferred format. ThorVG used to need this to be BGRA8Unorm, since it
         // drew to the surface directly; now it draws to our offscreen texture and never touches
@@ -164,6 +136,12 @@ public:
             }
             if (!found && capabilities.formatCount > 0)
                 surfaceFormat = capabilities.formats[0];
+            if (unpaced)
+                foreach (wanted; [WGPUPresentMode_Mailbox, WGPUPresentMode_Immediate])
+                    if (presentMode == WGPUPresentMode_Fifo)
+                        foreach (i; 0 .. capabilities.presentModeCount)
+                            if (capabilities.presentModes[i] == wanted)
+                                presentMode = wanted;
             // A transparent window -- one drawing its own shadow round it -- is composited with the
             // alpha it's drawn with. ThorVG's colours are premultiplied, as compositors expect.
             if (SDL_GetWindowFlags(window) & SDL_WindowFlags.SDL_WINDOW_TRANSPARENT)
@@ -173,7 +151,8 @@ public:
             wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         }
         trace("gpu   surface format %d", cast(int) surfaceFormat);
-        trace("gpu   present mode %s", presentMode == WGPUPresentMode_Mailbox ? "Mailbox".ptr : "Fifo".ptr);
+        trace("gpu   present mode %s", presentMode == WGPUPresentMode_Mailbox ? "Mailbox".ptr
+                                     : presentMode == WGPUPresentMode_Immediate ? "Immediate".ptr : "Fifo".ptr);
 
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {
             logWarning("tvg_engine_init failed");
@@ -224,11 +203,10 @@ public:
             tvg_canvas_destroy(_canvas);
             tvg_engine_term();
         }
-        if (queue) wgpuQueueRelease(queue);
-        if (device) wgpuDeviceRelease(device);
-        if (adapter) wgpuAdapterRelease(adapter);
         if (surface) wgpuSurfaceRelease(surface);
-        if (instance) wgpuInstanceRelease(instance);
+        if (onShared && --gpu.users == 0)
+            gpu.close();
+        onShared = false;
         _canvas = null;
         queue = null;
         device = null;
@@ -244,8 +222,11 @@ public:
 
     /// Resizes the drawing surface, in pixels. Does nothing if the size hasn't changed.
     bool resize(uint w, uint h){
-        if (w == width && h == height)
+        if (w == width && h == height) {
+            if (!surfaceConfigured)
+                configureSurface(w, h); // after suspend()
             return true;
+        }
         const start = traceNow();
 
         const rw = cast(uint)(w * supersampleFactor + 0.5f);
@@ -299,15 +280,7 @@ public:
         offscreenView = nextView;
         const afterTarget = traceNow();
 
-        WGPUSurfaceConfiguration config;
-        config.device = device;
-        config.format = surfaceFormat;
-        config.usage = WGPUTextureUsage_RenderAttachment;
-        config.width = w;
-        config.height = h;
-        config.presentMode = presentMode;
-        config.alphaMode = alphaMode;
-        wgpuSurfaceConfigure(surface, &config);
+        configureSurface(w, h);
 
         if (!createDownsampleBindGroup())
             return false;
@@ -317,6 +290,22 @@ public:
         width = w;
         height = h;
         return true;
+    }
+
+    /*
+        Lets go of the surface's swapchain, whose presents Mesa commits from a thread of its own,
+        and so can land after the window's hidden. The next resize() configures it again, and
+        only it: ThorVG's target stays as it is. (Not by forgetting the size, either, which would
+        hand ThorVG a new target the same size as the old: it then makes its own textures for that
+        size again without letting go of the ones it has, and they keep the device from ever being
+        freed.)
+    */
+    void suspend(){
+        if (device)
+            wgpuDevicePoll(device, true, null); // what's on its way to the window, drawn
+        if (surface && surfaceConfigured)
+            wgpuSurfaceUnconfigure(surface);
+        surfaceConfigured = false;
     }
 
     const(char)* name(){
@@ -430,6 +419,19 @@ public:
     }
 
 private:
+    void configureSurface(uint w, uint h){
+        WGPUSurfaceConfiguration config;
+        config.device = device;
+        config.format = surfaceFormat;
+        config.usage = WGPUTextureUsage_RenderAttachment;
+        config.width = w;
+        config.height = h;
+        config.presentMode = presentMode;
+        config.alphaMode = alphaMode;
+        wgpuSurfaceConfigure(surface, &config);
+        surfaceConfigured = true;
+    }
+
     void releaseOffscreen(){
         if (downsampleBind) wgpuBindGroupRelease(downsampleBind);
         if (offscreenView) wgpuTextureViewRelease(offscreenView);
@@ -557,6 +559,116 @@ private:
         return true;
     }
 }
+
+/*
+    The WebGPU instance, adapter and device every window draws with: one for the app, made for its
+    first window, rather than one each. Another window's renderer -- a second window's, or a
+    menu's (see mayfair.windowing.popupwindow) -- then only needs a surface on it, and is ready in
+    a fraction of the time a device of its own takes, without the memory one holds. Everything's on
+    the UI thread, so it's the module's.
+*/
+private struct SharedGpu
+{
+@nogc nothrow:
+    WGPUInstance instance;
+    WGPUAdapter adapter;
+    WGPUDevice device;
+    // Ours to release: wgpuDeviceGetQueue hands out a new reference each call, and each one keeps
+    // the device -- and every texture on it -- alive after release()
+    WGPUQueue queue;
+    bool software;  // the adapter's Vulkan in software: see open()
+    int users;      // renderers drawing with it
+
+    /// Makes the device, with a surface for `window` to find an adapter that can draw to it, and
+    /// returns that surface; null if it can't, having let go of whatever it had made.
+    WGPUSurface open(SDL_Window* window, bool acceptSoftware)
+    {
+        WGPUSurface surface;
+        bool made;
+        scope (exit)
+            if (!made) {
+                if (surface) wgpuSurfaceRelease(surface);
+                close();
+            }
+
+        // Only the backend Mayfair draws with. By default wgpu looks at every one it has, and
+        // looking at OpenGL loads EGL and the GL driver -- tens of megabytes, and a dozen threads,
+        // for an adapter that's never used.
+        WGPUInstanceExtras extras;
+        extras.chain.sType = cast(WGPUSType) WGPUSType_InstanceExtras;
+        version (OSX)
+            extras.backends = WGPUInstanceBackend_Metal;
+        else
+            extras.backends = WGPUInstanceBackend_Vulkan;
+        WGPUInstanceDescriptor descriptor;
+        descriptor.nextInChain = &extras.chain;
+        instance = wgpuCreateInstance(&descriptor);
+        if (!instance) {
+            logWarning("wgpuCreateInstance failed");
+            return null;
+        }
+
+        surface = createSurface(instance, window);
+        if (!surface)
+            return null;
+
+        // wgpu-native answers adapter and device requests before returning, so no waiting is needed
+        WGPURequestAdapterOptions adapterOptions;
+        adapterOptions.compatibleSurface = surface;
+        WGPURequestAdapterCallbackInfo adapterCallback;
+        adapterCallback.mode = WGPUCallbackMode_AllowSpontaneous;
+        adapterCallback.callback = &mayfairWgpuAdapterReady;
+        adapterCallback.userdata1 = &adapter;
+        wgpuInstanceRequestAdapter(instance, &adapterOptions, adapterCallback);
+        if (!adapter)
+            return null;
+
+        /*
+            A CPU adapter is Mesa's lavapipe: Vulkan emulated in software, which is what a machine
+            with no Vulkan driver for its GPU is left with -- a VM on virgl, which passes through
+            OpenGL only, above all. ThorVG's WebGPU engine on it is many times slower than its own
+            CPU engine, so it's turned down, and the app falls back (see chooseRenderers).
+        */
+        WGPUAdapterInfo info;
+        if (wgpuAdapterGetInfo(adapter, &info) == WGPUStatus_Success) {
+            scope(exit) wgpuAdapterInfoFreeMembers(info);
+            trace("gpu   adapter %.*s, type %d", cast(int) info.device.length, info.device.data, cast(int) info.adapterType);
+            software = info.adapterType == WGPUAdapterType_CPU;
+            if (software && !acceptSoftware) {
+                logInfo("Vulkan is only available in software here (%.*s)",
+                        cast(int) info.device.length, info.device.data);
+                return null;
+            }
+        }
+
+        WGPUDeviceDescriptor deviceDescriptor;
+        deviceDescriptor.uncapturedErrorCallbackInfo.callback = &mayfairWgpuError;
+        WGPURequestDeviceCallbackInfo deviceCallback;
+        deviceCallback.mode = WGPUCallbackMode_AllowSpontaneous;
+        deviceCallback.callback = &mayfairWgpuDeviceReady;
+        deviceCallback.userdata1 = &device;
+        wgpuAdapterRequestDevice(adapter, &deviceDescriptor, deviceCallback);
+        if (!device)
+            return null;
+        queue = wgpuDeviceGetQueue(device);
+        made = true;
+        return surface;
+    }
+
+    /// Lets go of it all, once the last renderer has.
+    void close()
+    {
+        if (device)
+            trace("gpu   shared device released");
+        if (queue) wgpuQueueRelease(queue);
+        if (device) wgpuDeviceRelease(device);
+        if (adapter) wgpuAdapterRelease(adapter);
+        if (instance) wgpuInstanceRelease(instance);
+        this = SharedGpu.init;
+    }
+}
+
+private __gshared SharedGpu gpu;
 
 /// Wraps the SDL window's native handle (Wayland or X11) in a WebGPU surface.
 private WGPUSurface createSurface(WGPUInstance instance, SDL_Window* window) @nogc nothrow

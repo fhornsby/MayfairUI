@@ -38,11 +38,14 @@ private:
     uint width, height;
     bool vsync;
     bool acceptSoftware;
+    bool unpaced;
 
 public:
-    /// `acceptSoftware`: use a software GL driver rather than fail, when this renderer was asked for
-    this(bool acceptSoftware = false){
+    /// `acceptSoftware`: use a software GL driver rather than fail, when this renderer was asked
+    /// for. `unpaced`: swap without waiting for the display, for a menu's window, as WebGPU's does.
+    this(bool acceptSoftware = false, bool unpaced = false){
         this.acceptSoftware = acceptSoftware;
+        this.unpaced = unpaced;
     }
 
     SDL_WindowFlags windowFlags(){
@@ -82,7 +85,9 @@ public:
         }
 
         // Waits for the display, as the WebGPU renderer's Fifo does
-        vsync = SDL_GL_SetSwapInterval(1);
+        vsync = !unpaced && SDL_GL_SetSwapInterval(1);
+        if (unpaced)
+            SDL_GL_SetSwapInterval(0);
 
         if (tvg_engine_init(SDL_GetNumLogicalCPUCores()) != TVG_RESULT_SUCCESS) {
             logWarning("tvg_engine_init failed");
@@ -154,6 +159,10 @@ public:
 
     bool pacedByDisplay(){
         return vsync;
+    }
+
+    /// Nothing outlasts a swap: the driver's done with it as it returns
+    void suspend(){
     }
 
     const(char)* name(){

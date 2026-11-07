@@ -102,6 +102,8 @@ nothrow @nogc:
         watchTiling(); // still the window's xdg_toplevel?
     }
 
+    bool knowsPosition() { return false; }
+
     bool tiled()
     {
         watchTiling();

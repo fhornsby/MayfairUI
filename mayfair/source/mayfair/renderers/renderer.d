@@ -27,6 +27,13 @@ interface Renderer
     /// Draws the canvas's current scene and shows it in the window.
     void present();
 
+    /*
+        The window's about to be hidden: nothing's to reach it until it's shown again and the next
+        resize() sets up afresh. A Wayland surface hidden with a frame still on its way to it can't
+        be shown again, as SDL gives it its role anew then, and a surface with a buffer can't take one.
+    */
+    void suspend();
+
     /// Name for logs, e.g. "cpu" or "webgpu".
     const(char)* name();
 

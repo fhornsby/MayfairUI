@@ -29,6 +29,7 @@ private:
     uint* pixels;
     uint stride; // in pixels, not bytes
     uint width, height;
+    uint targetWidth, targetHeight; // what ThorVG was last told the buffer's size is
 
     /*
         Points ThorVG at the window's current buffer. SDL hands out a new one when the window is
@@ -66,11 +67,16 @@ private:
                 return false;
         }
 
-        // Only tell ThorVG when something actually changed; it resets the canvas each time
-        if (pixels is cast(uint*) surface.pixels && stride == surface.pitch / 4)
+        // Only tell ThorVG when something actually changed; it resets the canvas each time. The
+        // size too: a new buffer can be at the old one's address, with the same stride -- a menu's
+        // window, made shorter for the next menu -- and drawing the old height into it overruns it.
+        if (pixels is cast(uint*) surface.pixels && stride == surface.pitch / 4
+            && targetWidth == width && targetHeight == height)
             return true;
         pixels = cast(uint*) surface.pixels;
         stride = surface.pitch / 4;
+        targetWidth = width;
+        targetHeight = height;
         if (tvg_swcanvas_set_target(_canvas, pixels, stride, width, height, colourSpace) != TVG_RESULT_SUCCESS) {
             logWarning("tvg_swcanvas_set_target failed for %ux%u", width, height);
             return false;
@@ -147,6 +153,10 @@ public:
     /// SDL_UpdateWindowSurface hands the frame over at once: the loop's timer paces it.
     bool pacedByDisplay(){
         return false;
+    }
+
+    /// Nothing outlasts a present to the window: SDL's done with it as it returns
+    void suspend(){
     }
 
     const(char)* name(){

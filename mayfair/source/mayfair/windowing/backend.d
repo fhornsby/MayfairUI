@@ -74,6 +74,10 @@ nothrow @nogc:
     /// arrives other than through SDL.
     void dispatch();
 
+    /// Whether SDL knows where on the screen the window is, for popups to be kept on it. Wayland's
+    /// compositors don't say, and keep popups on the screen themselves.
+    bool knowsPosition();
+
     /// Whether the window's tiled: snapped to a side, or against another window, where its
     /// frame wants to be flat as a maximised one's is.
     bool tiled();
@@ -137,6 +141,7 @@ nothrow @nogc:
     void close() {}
     void hiding() {}
     void dispatch() {}
+    bool knowsPosition() { return true; }
     bool tiled() { return false; }
     bool movesByDrag() { return false; }
     bool beginMove() { return false; }
