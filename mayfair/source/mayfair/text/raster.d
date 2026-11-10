@@ -47,12 +47,9 @@ import mayfair.theme : Colour, Theme;
     On a display of ordinary density a pixel is too coarse for a letter's stems: one a pixel and a
     half wide comes out as a dark column and a grey one. But a pixel is three lights side by side,
     red, green and blue, and lit one at a time they're three times the detail across, as Windows'
-    ClearType and older Linux desktops draw text, and Chrome and Zed still do. FreeType gives a
-    coverage for each as ClearType and Skia make them: the glyph rendered at three times the
-    detail across (or down, for a display whose lights are in a column), and blurred a little that
-    way by FreeType's default filter, so each letter's edges are tinted alike wherever it falls on
-    the grid. FreeType's rendering is red, green, blue; it's put in the order the desktop says its
-    display has (mayfair.desktop's SubpixelOrder) as it's kept.
+    ClearType and older Linux desktops draw text, and Chrome and Zed still do. FreeType's Harmony
+    renderer gives a coverage for each, for the layout the desktop says its display has
+    (mayfair.desktop's SubpixelOrder).
 
     A coverage for each light means a different mix of the text's colour and what's behind it in
     each, which a picture with one alpha to a pixel can't hold -- unless it's known what's behind.
@@ -157,19 +154,25 @@ private __gshared TextAntialiasing antialiasing = TextAntialiasing.greyscale; //
 private __gshared SubpixelOrder order = SubpixelOrder.rgb;
 
 /*
-    Takes `o` as the order a pixel's lights are in, for subpixel glyphs rendered from now on, and
-    sets FreeType's LCD filter, the default one, as Skia and fontconfig's lcddefault have it.
-    Glyphs rendered before keep the order they were rendered in, so this is said before any are,
-    and once.
+    Tells FreeType where each light is in a pixel, for its Harmony renderer: in 64ths of a pixel
+    from the middle, red's, green's and blue's, y going up. A third of a pixel apart, in a row or
+    a column. Glyphs rendered before keep the order they were rendered in, so this is said before
+    any are, and once.
 */
 private void useSubpixelOrder(SubpixelOrder o)
 {
-    renderOrder = o == SubpixelOrder.unset ? SubpixelOrder.rgb : o;
+    FT_Vector[3] at;
+    final switch (o)
+    {
+        case SubpixelOrder.unset:
+        case SubpixelOrder.rgb: at = [FT_Vector(-21, 0), FT_Vector(0, 0), FT_Vector(21, 0)]; break;
+        case SubpixelOrder.bgr: at = [FT_Vector(21, 0), FT_Vector(0, 0), FT_Vector(-21, 0)]; break;
+        case SubpixelOrder.vrgb: at = [FT_Vector(0, 21), FT_Vector(0, 0), FT_Vector(0, -21)]; break;
+        case SubpixelOrder.vbgr: at = [FT_Vector(0, -21), FT_Vector(0, 0), FT_Vector(0, 21)]; break;
+    }
     if (auto lib = ftLibrary())
-        FT_Library_SetLcdFilter(lib, FT_LcdFilter.FT_LCD_FILTER_DEFAULT);
+        FT_Library_SetLcdGeometry(lib, at.ptr);
 }
-
-private __gshared SubpixelOrder renderOrder = SubpixelOrder.rgb; // what GlyphCache.render puts lights in
 
 /*
     A block of text as a picture: what a widget draws its text with. `paint` goes in the widget's
@@ -787,52 +790,28 @@ private:
         // down, so moving it across after doesn't undo any of it
         if (phase)
             FT_Outline_Translate(&slot.outline, (phase * 64 + phases / 2) / phases, 0);
-        // In subpixel coverage, three to a pixel, red's, green's and blue's: across for lights in
-        // a row, and down -- three rows to a pixel's one -- for lights in a column
-        const vertical = renderOrder == SubpixelOrder.vrgb || renderOrder == SubpixelOrder.vbgr;
-        const reversed = renderOrder == SubpixelOrder.bgr || renderOrder == SubpixelOrder.vbgr;
-        const mode = !subpixel ? FT_Render_Mode.FT_RENDER_MODE_LIGHT
-                   : vertical ? FT_Render_Mode.FT_RENDER_MODE_LCD_V : FT_Render_Mode.FT_RENDER_MODE_LCD;
+        // In subpixel coverage, three bytes to a pixel, red's, green's and blue's: Harmony aligns
+        // them, so they're a pixel's three lights whichever way the display has them
+        const mode = subpixel ? FT_Render_Mode.FT_RENDER_MODE_LCD : FT_Render_Mode.FT_RENDER_MODE_LIGHT;
         if (FT_Render_Glyph(slot, mode) != 0)
             return b;
         const bm = &slot.bitmap;
-        const want = !subpixel ? FT_Pixel_Mode.FT_PIXEL_MODE_GRAY
-                   : vertical ? FT_Pixel_Mode.FT_PIXEL_MODE_LCD_V : FT_Pixel_Mode.FT_PIXEL_MODE_LCD;
+        const want = subpixel ? FT_Pixel_Mode.FT_PIXEL_MODE_LCD : FT_Pixel_Mode.FT_PIXEL_MODE_GRAY;
         // FreeType's renderers write rows downwards; a negative pitch, upwards, isn't theirs
         if (bm.pixel_mode != want || !bm.width || !bm.rows || bm.pitch < 0)
             return b;
+        const bytes = bm.width; // a row's, which is three to a pixel in subpixel coverage
         b.left = slot.bitmap_left;
         b.top = slot.bitmap_top;
-        b.width = subpixel && !vertical ? bm.width / 3 : bm.width;
-        b.height = subpixel && vertical ? bm.rows / 3 : bm.rows;
-        if (!b.width || !b.height)
-            return GlyphBitmap.init;
+        b.width = subpixel ? bm.width / 3 : bm.width;
+        b.height = bm.rows;
         b.subpixel = subpixel;
-        const bytes = subpixel ? b.width * 3 : b.width; // a row's
         b.coverage = cast(ubyte*) malloc(bytes * b.height);
         if (!b.coverage)
             return GlyphBitmap.init;
-        // A row at a time, as FreeType's rows can be padded out beyond the glyph's width. Each
-        // pixel's lights red, green, blue, as the compositing takes them, whatever order they're
-        // in on the display: blue first is red's coverage where red is
+        // A row at a time, as FreeType's rows can be padded out beyond the glyph's width
         foreach (row; 0 .. b.height)
-        {
-            auto to = b.coverage + row * bytes;
-            if (!subpixel || (!vertical && !reversed))
-                to[0 .. bytes] = bm.buffer[row * bm.pitch .. row * bm.pitch + bytes];
-            else if (!vertical)
-                foreach (col; 0 .. b.width)
-                {
-                    const from = bm.buffer + row * bm.pitch + col * 3;
-                    to[col * 3] = from[2];
-                    to[col * 3 + 1] = from[1];
-                    to[col * 3 + 2] = from[0];
-                }
-            else
-                foreach (col; 0 .. b.width)
-                    foreach (light; 0 .. 3)
-                        to[col * 3 + light] = bm.buffer[(row * 3 + (reversed ? 2 - light : light)) * bm.pitch + col];
-        }
+            b.coverage[row * bytes .. (row + 1) * bytes] = bm.buffer[row * bm.pitch .. row * bm.pitch + bytes];
         return b;
     }
 }

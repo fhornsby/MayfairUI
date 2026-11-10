@@ -245,13 +245,15 @@ ninja -C build/yoga
 # <-> HarfBuzz dependency cycle -- it only sharpens autohinting for complex scripts, and HarfBuzz
 # below is built against this FreeType rather than the other way round.
 #
-# FT_CONFIG_OPTION_SUBPIXEL_RENDERING picks FreeType's ClearType-style LCD rendering, with its
-# filter, over Harmony, its default: Skia's and most desktops' (see mayfair.text.raster). It's a
-# define rather than an edit to ftoption.h, which leaves it commented out, so the submodule stays
-# as it is; a build made without it is configured again.
-if [ ! -f build/freetype/build.ninja ] || ! grep -q FT_CONFIG_OPTION_SUBPIXEL_RENDERING build/freetype/CMakeCache.txt; then
+# Its LCD rendering is Harmony, FreeType's default, not the ClearType-style one
+# FT_CONFIG_OPTION_SUBPIXEL_RENDERING picks, which Skia uses: side by side they can't be told
+# apart, and Harmony takes any layout of a pixel's lights as a description (see
+# mayfair.text.raster). A build made with that option, as one was for a while, is made again.
+if [ -f build/freetype/CMakeCache.txt ] && grep -q FT_CONFIG_OPTION_SUBPIXEL_RENDERING build/freetype/CMakeCache.txt; then
+    rm -rf build/freetype
+fi
+if [ ! -f build/freetype/build.ninja ]; then
     cmake -S freetype -B build/freetype -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_C_FLAGS=-DFT_CONFIG_OPTION_SUBPIXEL_RENDERING \
         -DBUILD_SHARED_LIBS=OFF \
         -DFT_DISABLE_ZLIB=TRUE -DFT_DISABLE_BZIP2=TRUE -DFT_DISABLE_PNG=TRUE \
         -DFT_DISABLE_HARFBUZZ=TRUE -DFT_DISABLE_BROTLI=TRUE
