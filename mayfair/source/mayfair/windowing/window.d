@@ -114,10 +114,10 @@ class Window
         as setSize's is: a frame's shadow margin is added on. 0 for no limit. Set before it's shown
         or while it is.
 
-        Until it's set, it's Theme.window_min_width by window_min_height -- small enough for a
-        phone-sized window, as GNOME's guidelines have it, big enough that a window can't be
-        dragged down to a sliver -- or the size the window opens at, if that's smaller: a small
-        dialog stays as small as it was made.
+        Until it's set, it's Theme.window_min_width by window_min_height, 600 by 400: room for a
+        sidebar and its page, and a title centred over both that stays clear of the sidebar, and
+        no window dragged down to a sliver -- or the size the window opens at, if that's smaller: a
+        small dialog stays as small as it was made.
     */
     Window setMinSize(int width, int height)
     {
