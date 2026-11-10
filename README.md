@@ -77,6 +77,8 @@ and adds the toolkit around them.
   selectable, copyable labels.
 - **Translation:** an app's strings in `strings.xml`, one entry per language.
 - **Accessibility:** screen readers are told about every widget, through AccessKit.
+- **Notifications:** desktop notifications, with buttons, through the freedesktop.org
+  notification service (or the desktop portal, in a Flatpak) on Linux and the BSDs.
 - **Rendering:** ThorVG on WebGPU (Vulkan or Metal underneath), falling back to OpenGL and then
   to the CPU where the GPU can't.
 - **Wayland first:** client-side decorations, fractional scaling, and frame pacing to the
@@ -159,6 +161,7 @@ What's still to be done, that I know of:
 **Platforms**
 - Test on FreeBSD, a primary target that's untested so far.
 - Fix the browser build, and give it more than the CPU renderer.
+- Notifications on macOS and Windows, which have none yet.
 
 **Building**
 - Try building with DMD, which is allowed but untested, and with D front ends older than 2.111

@@ -461,6 +461,9 @@ public:
     this(string title){
         this.title = title;
         _main = new Window(title);
+        // Which app notifications are from, for the desktop to say (see mayfair.notifications)
+        import mayfair.notifications : setNotifyingApp;
+        setNotifyingApp(title, null);
         services = newServices();
         // The App made last is the one views find their services in: one runs at a time
         currentApp = this;
@@ -538,6 +541,8 @@ public:
     */
     void setId(string id){
         _id = id;
+        import mayfair.notifications : setNotifyingApp;
+        setNotifyingApp(title, id);
     }
 
     private string _id;

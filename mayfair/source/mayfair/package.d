@@ -8,6 +8,7 @@ public import mayfair.autowire;
 public import mayfair.clipboard;
 public import mayfair.desktop : Desktop, DesktopSettings, DesktopSource, SubpixelOrder, TextAntialiasing;
 public import mayfair.filechooser;
+public import mayfair.notifications : Notification, NotificationBackend, NotificationContent, Urgency;
 public import mayfair.properties;
 public import mayfair.xml;
 public import mayfair.resources : resource;
