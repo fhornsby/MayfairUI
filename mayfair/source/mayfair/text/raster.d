@@ -1,6 +1,6 @@
 module mayfair.text.raster;
 
-import core.stdc.math : floorf, powf, roundf;
+import core.stdc.math : cbrtf, floorf, powf, roundf;
 import core.stdc.stdlib : free, malloc, realloc;
 import core.stdc.string : memcpy, memset;
 
@@ -63,6 +63,24 @@ import mayfair.theme : Colour, Theme;
     It's on where the desktop says, and where it doesn't, on a display of under 2 pixels to the
     point: at 2 and over the pixels are fine enough, and greyscale has no coloured edges, which is
     why macOS stopped drawing it so. Until an App's made -- in a unit test -- text is greyscale.
+
+    Text that's hard to see
+    -----------------------
+    A stem of an ordinary weight at an ordinary size is a pixel and a half wide, and it falls
+    across two pixels as often as not, so neither is ever the text's colour: each is part way to
+    it. Dark text on a light ground has contrast to spare and reads as solid anyway, but text with
+    less of it -- grey on light grey, white on a mid blue, a link's colour, anything at half its
+    alpha -- loses half of what it had, and looks faint and soft. macOS and DirectWrite thicken
+    text a little for the same reason, which is what grey text in a design meant for them expects.
+
+    So a glyph's stems are thickened, across only (its tops and bottoms stay where hinting put
+    them), by up to Theme.text_darkening pixels: by as much as its text is close to what's behind
+    it in lightness, the colour as it comes out -- its alpha mixed in -- against the colour behind
+    when that's known, and against its opposite when it isn't, and by as much as it's small in
+    pixels: big text, or text on a display of high density, has stems wide enough to hold their
+    own. It's worked out from colours, not from what the text is for, so whatever colours an app
+    picks get as much as they need: none for near-black on white, the most for text barely there
+    (see stemDarkening). It's in steps (darkeningStep), as each is a glyph rendered and kept.
 
     A block bigger than tileSize either way is shown as tiles, each a picture of its own: a GPU
     won't make a texture past a limit -- WebGPU's is 8192 pixels unless the device offers more --
@@ -243,8 +261,9 @@ public:
         const lcd = subpixel && behind.known;
         const thirds = roundf(x * scale * phases);
         const whole = floorf(thirds / phases);
+        const darkening = stemDarkening(colour, behind, (cast(Font) g.font).size * scale);
         glyphs[glyphCount++] = Placed(cast(void*) g.font, g.glyph, cast(int) whole, cast(int) roundf(y * scale), colour,
-                                      lcd, behind.colour, cast(ubyte)(thirds - whole * phases));
+                                      lcd, behind.colour, cast(ubyte)(thirds - whole * phases), darkening);
     }
 
     /// Puts it together and shows it. Nothing added shows nothing.
@@ -373,6 +392,7 @@ private:
         bool subpixel;       // drawn in subpixel colours, over `behind`
         Colour behind;
         ubyte phase;         // how many thirds of a pixel right of x it is
+        ubyte darkening;     // how much its stems are thickened, in 64ths of a pixel: see stemDarkening
     }
     Placed* glyphs;
     size_t glyphCount, glyphCapacity;
@@ -384,7 +404,7 @@ private:
 
     const(GlyphBitmap)* bitmapOf(ref const Placed p) nothrow @nogc
     {
-        return (cast(Font) p.font).glyphBitmap(p.glyph, scale, p.subpixel, p.phase);
+        return (cast(Font) p.font).glyphBitmap(p.glyph, scale, p.subpixel, p.phase, p.darkening);
     }
 
     bool reserve(size_t count) nothrow @nogc
@@ -473,6 +493,84 @@ private void coverageCurve(Colour colour, ref ubyte[256] table) nothrow @nogc
 }
 
 /*
+    How much to thicken the stems of text in `colour` over `behind` at `ppem` pixels to the em: in
+    64ths of a pixel, in steps of darkeningStep (see the top). By how close the two are in
+    lightness (CIE L*, where 0 is black and 100 white), as the text comes out with its alpha mixed
+    in: none at Theme.text_darkening_contrast apart or more, all of Theme.text_darkening at
+    Theme.text_darkening_full or less, eased between. And all of that up to text_darkening_ppem
+    pixels to the em, none at twice that, a straight line between. When what's behind isn't known,
+    it's taken to be the text's opposite in lightness, as Skia guesses: mid grey is the worst case
+    either way, and white or black text is left alone.
+*/
+package(mayfair) ubyte stemDarkening(Colour colour, Behind behind, float ppem) nothrow @nogc
+{
+    static float lightness(Colour c) nothrow @nogc
+    {
+        static float linear(ubyte v) nothrow @nogc
+        {
+            const f = v / 255.0f;
+            return f <= 0.04045f ? f / 12.92f : powf((f + 0.055f) / 1.055f, 2.4f);
+        }
+        const y = 0.2126f * linear(c.r) + 0.7152f * linear(c.g) + 0.0722f * linear(c.b);
+        return y > 216.0f / 24389 ? 116 * cbrtf(y) - 16 : y * 24389.0f / 27;
+    }
+    float text, ground;
+    if (behind.known)
+    {
+        // As the text comes out over it: mixed by its alpha in sRGB, as it's blended
+        const b = behind.colour;
+        static ubyte mix(ubyte over, ubyte under, uint a) pure nothrow @nogc { return cast(ubyte)((over * a + under * (255 - a) + 127) / 255); }
+        text = lightness(Colour(mix(colour.r, b.r, colour.a), mix(colour.g, b.g, colour.a), mix(colour.b, b.b, colour.a)));
+        ground = lightness(b);
+    }
+    else
+    {
+        const own = lightness(Colour(colour.r, colour.g, colour.b));
+        ground = 100 - own;
+        text = ground + (own - ground) * (colour.a / 255.0f);
+    }
+    const apart = text > ground ? text - ground : ground - text;
+    enum float none = Theme.text_darkening_contrast, full = Theme.text_darkening_full;
+    float byContrast = apart >= none ? 0 : apart <= full ? 1 : (none - apart) / (none - full);
+    byContrast = byContrast * byContrast * (3 - 2 * byContrast); // eased in and out
+    enum float small = Theme.text_darkening_ppem;
+    const bySize = ppem <= small ? 1 : ppem >= 2 * small ? 0 : (2 * small - ppem) / small;
+    const steps = roundf(Theme.text_darkening * 64 * byContrast * bySize / darkeningStep);
+    return cast(ubyte)(steps * darkeningStep);
+}
+
+/// How finely stemDarkening goes, in 64ths of a pixel: a sixteenth.
+enum darkeningStep = 4;
+
+unittest
+{
+    const light = Behind.solid(Colour(0xed, 0xed, 0xf0)), white = Behind.solid(Colour(255, 255, 255));
+    const dark = Behind.solid(Colour(0x1c, 0x1c, 0x1e));
+    // Near-black on light, and near-white on dark, have contrast to spare
+    assert(stemDarkening(Colour(0x1d, 0x1d, 0x1f), light, 14) == 0);
+    assert(stemDarkening(Colour(0xf0, 0xf0, 0xf0), dark, 14) == 0);
+    // Grey on light grey gets some, and more than on white, which it's further from
+    const grey = Colour(0x86, 0x86, 0x8b);
+    assert(stemDarkening(grey, light, 14) > 0);
+    assert(stemDarkening(grey, light, 14) >= stemDarkening(grey, white, 14));
+    // Light grey on dark, which has the same trouble the other way round
+    assert(stemDarkening(Colour(0x6e, 0x6e, 0x73), dark, 14) > 0);
+    // Black at a third of its alpha is grey, as it comes out
+    assert(stemDarkening(Colour(0, 0, 0, 85), white, 14) > 0);
+    // White on a mid blue, a button's: coloured grounds count too
+    assert(stemDarkening(Colour(255, 255, 255), Behind.solid(Colour(0x00, 0x7a, 0xff)), 14) > 0);
+    // Less as it's bigger in pixels, and none at all past twice text_darkening_ppem
+    assert(stemDarkening(grey, light, 26) < stemDarkening(grey, light, 14));
+    assert(stemDarkening(grey, light, 2 * Theme.text_darkening_ppem) == 0);
+    // Not known what's behind: black and white are left alone, grey isn't
+    assert(stemDarkening(Colour(0, 0, 0), Behind.init, 14) == 0);
+    assert(stemDarkening(grey, Behind.init, 14) > 0);
+    // Never more than text_darkening, in steps
+    assert(stemDarkening(Colour(0xec, 0xec, 0xef), light, 8) <= cast(int) roundf(Theme.text_darkening * 64));
+    assert(stemDarkening(grey, light, 14) % darkeningStep == 0);
+}
+
+/*
     A picture drawn in one colour -- a symbolic icon -- lifted as light text's coverage is (see
     coverageCurve above): its edges are blended into sRGB too, so light strokes on a dark ground
     look thinner and fainter than the same strokes dark on light. `pixels` are premultiplied
@@ -543,22 +641,24 @@ struct GlyphBitmap
 package(mayfair) struct GlyphCache
 {
     /// `glyph` at `scale` pixels to the point, in subpixel coverage or not, `phase` thirds of a
-    /// pixel right of where it'd be, if it's been rendered.
-    const(GlyphBitmap)* lookup(uint glyph, float scale, bool subpixel = false, ubyte phase = 0) nothrow @nogc
+    /// pixel right of where it'd be, its stems `darkening` 64ths of a pixel thicker, if it's been
+    /// rendered.
+    const(GlyphBitmap)* lookup(uint glyph, float scale, bool subpixel = false, ubyte phase = 0, ubyte darkening = 0) nothrow @nogc
     {
         if (!capacity)
             return null;
-        auto e = find(glyph, scale, subpixel, phase);
+        auto e = find(glyph, scale, subpixel, phase, darkening);
         return e.used ? &e.bitmap : null;
     }
 
     /// Renders `glyph` of `face`, which is sized for `scale`, and keeps it. An empty bitmap if
     /// FreeType couldn't, kept too, so it isn't tried again.
-    const(GlyphBitmap)* add(FT_Face face, uint glyph, float scale, bool subpixel = false, ubyte phase = 0) nothrow @nogc
+    const(GlyphBitmap)* add(FT_Face face, uint glyph, float scale, bool subpixel = false, ubyte phase = 0,
+                            ubyte darkening = 0) nothrow @nogc
     {
         if (count * 4 >= capacity * 3 && !grow())
             return null;
-        auto e = find(glyph, scale, subpixel, phase);
+        auto e = find(glyph, scale, subpixel, phase, darkening);
         if (!e.used)
         {
             e.used = true;
@@ -566,7 +666,8 @@ package(mayfair) struct GlyphCache
             e.scale = scale;
             e.subpixel = subpixel;
             e.phase = phase;
-            e.bitmap = render(face, glyph, subpixel, phase);
+            e.darkening = darkening;
+            e.bitmap = render(face, glyph, subpixel, phase, darkening);
             count++;
         }
         return &e.bitmap;
@@ -588,6 +689,7 @@ private:
         bool used;
         bool subpixel;
         ubyte phase;
+        ubyte darkening;
         uint glyph;
         float scale;
         GlyphBitmap bitmap;
@@ -595,19 +697,21 @@ private:
     Entry* entries;
     size_t capacity, count;
 
-    Entry* find(uint glyph, float scale, bool subpixel, ubyte phase) nothrow @nogc
+    Entry* find(uint glyph, float scale, bool subpixel, ubyte phase, ubyte darkening) nothrow @nogc
     {
-        auto at = hash(glyph, scale, subpixel, phase) & (capacity - 1);
+        auto at = hash(glyph, scale, subpixel, phase, darkening) & (capacity - 1);
         while (entries[at].used && (entries[at].glyph != glyph || entries[at].scale != scale
-                                    || entries[at].subpixel != subpixel || entries[at].phase != phase))
+                                    || entries[at].subpixel != subpixel || entries[at].phase != phase
+                                    || entries[at].darkening != darkening))
             at = (at + 1) & (capacity - 1);
         return &entries[at];
     }
 
-    static size_t hash(uint glyph, float scale, bool subpixel, ubyte phase) nothrow @nogc
+    static size_t hash(uint glyph, float scale, bool subpixel, ubyte phase, ubyte darkening) nothrow @nogc
     {
         const s = *cast(const(uint)*) &scale;
-        return (glyph * 2654435761u) ^ (s * 40503u) ^ (subpixel ? 0x9E3779B9u : 0) ^ (phase * 0x85EBCA6Bu);
+        return (glyph * 2654435761u) ^ (s * 40503u) ^ (subpixel ? 0x9E3779B9u : 0) ^ (phase * 0x85EBCA6Bu)
+             ^ (darkening * 0xC2B2AE35u);
     }
 
     bool grow() nothrow @nogc
@@ -623,7 +727,7 @@ private:
         capacity = more;
         foreach (ref e; old[0 .. oldCapacity])
             if (e.used)
-                *find(e.glyph, e.scale, e.subpixel, e.phase) = e;
+                *find(e.glyph, e.scale, e.subpixel, e.phase, e.darkening) = e;
         free(old);
         return true;
     }
@@ -632,7 +736,7 @@ private:
     enum FT_LOAD_NO_BITMAP_ = 1 << 3;
     enum FT_LOAD_TARGET_LIGHT_ = 1 << 16; // grid-fitted up and down only: see mayfair.text.outline
 
-    static GlyphBitmap render(FT_Face face, uint glyph, bool subpixel, ubyte phase) nothrow @nogc
+    static GlyphBitmap render(FT_Face face, uint glyph, bool subpixel, ubyte phase, ubyte darkening) nothrow @nogc
     {
         GlyphBitmap b;
         if (FT_Load_Glyph(face, glyph, FT_LOAD_TARGET_LIGHT_ | FT_LOAD_NO_BITMAP_) != 0)
@@ -640,6 +744,10 @@ private:
         auto slot = face.glyph;
         if (slot.format != FT_Glyph_Format.FT_GLYPH_FORMAT_OUTLINE)
             return b; // a colour or bitmap glyph
+        // Its stems thickened, across only: up and down is where hinting fitted it, and its tops
+        // and bottoms stay sharp (see the top)
+        if (darkening)
+            FT_Outline_EmboldenXY(&slot.outline, darkening, 0);
         // Moved right by its phase, in 64ths of a pixel. Light hinting only fits a glyph up and
         // down, so moving it across after doesn't undo any of it
         if (phase)
