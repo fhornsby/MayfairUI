@@ -77,7 +77,15 @@ import mayfair.theme : Colour, Theme;
     outline isn't touched, so it keeps its weight -- grey text thickened looks bolder than the
     black beside it, and its stems come out unevenly wide, as where each falls on the grid decides
     how many pixels it takes -- and the curve brings a pixel's three lights' coverages closer
-    together, so subpixel text's coloured edges are fainter too. It's worked out from colours, not
+    together, so subpixel text's coloured edges are fainter too.
+
+    And it's drawn less in subpixel colours, down to none (see subpixelShare). Subpixel text's
+    edges are tinted, a little differently as each glyph falls a third of a pixel further along:
+    beside the contrast of dark text on a light ground the tints are too faint to see, but text
+    with less contrast has as much tint and less to hide it behind, and comes out smudged, one
+    letter clean and the next one not. Greyscale's edges have no tint to show.
+
+    Both are worked out from colours, not
     from what the text is for: the text as it comes out, its alpha mixed in, against what's
     behind it when that's known, and against its opposite when it isn't. So whatever colours an
     app picks get as much as they need, near-black on white none. And less as text is bigger in
@@ -264,8 +272,9 @@ public:
         const thirds = roundf(x * scale * phases);
         const whole = floorf(thirds / phases);
         const ink = cast(ubyte) roundf(inkExponent(colour, behind, (cast(Font) g.font).size * scale) * 255);
+        const tint = lcd ? cast(ubyte) roundf(subpixelShare(colour, behind) * 255) : 0;
         glyphs[glyphCount++] = Placed(cast(void*) g.font, g.glyph, cast(int) whole, cast(int) roundf(y * scale), colour,
-                                      lcd, behind.colour, cast(ubyte)(thirds - whole * phases), ink);
+                                      lcd, behind.colour, cast(ubyte)(thirds - whole * phases), ink, tint);
     }
 
     /// Puts it together and shows it. Nothing added shows nothing.
@@ -317,9 +326,17 @@ public:
                     auto src = b.coverage + row * b.width * 3;
                     foreach (col; 0 .. b.width)
                     {
-                        const r = table[src[3 * col]], g = table[src[3 * col + 1]], bl = table[src[3 * col + 2]];
+                        int r = table[src[3 * col]], g = table[src[3 * col + 1]], bl = table[src[3 * col + 2]];
+                        if (p.tint != 255)
+                        {
+                            // Each light's coverage that much of the way from their mean
+                            const mean = (r + g + bl) / 3;
+                            r = mean + (r - mean) * p.tint / 255;
+                            g = mean + (g - mean) * p.tint / 255;
+                            bl = mean + (bl - mean) * p.tint / 255;
+                        }
                         if (r | g | bl)
-                            dst[col] = overSubpixel(dst[col], c, p.behind, r, g, bl);
+                            dst[col] = overSubpixel(dst[col], c, p.behind, cast(ubyte) r, cast(ubyte) g, cast(ubyte) bl);
                     }
                 }
             else
@@ -395,6 +412,7 @@ private:
         Colour behind;
         ubyte phase;         // how many thirds of a pixel right of x it is
         ubyte ink;           // inkExponent's, in 255ths: how its coverage is lifted
+        ubyte tint;          // subpixelShare's, in 255ths: how much of its subpixel colours it keeps
     }
     Placed* glyphs;
     size_t glyphCount, glyphCapacity;
@@ -493,6 +511,32 @@ package(mayfair) Tvg_Paint replacePicture(Tvg_Paint holder, Tvg_Paint old, const
 */
 package(mayfair) float inkExponent(Colour colour, Behind behind, float ppem) nothrow @nogc
 {
+    const byContrast = closeness(colour, behind);
+    enum float small = Theme.text_contrast_ppem;
+    const bySize = ppem <= small ? 1 : ppem >= 2 * small ? 0 : (2 * small - ppem) / small;
+    const forContrast = 1 - (1 - Theme.text_contrast_lift) * byContrast * bySize;
+    const forLight = lightLift(colour);
+    return forContrast < forLight ? forContrast : forLight;
+}
+
+/*
+    How much of its subpixel colours text in `colour` over `behind` keeps, 1 for all of them and
+    0 for greyscale: none of them as it's close to what's behind it (see the top). At any size, as
+    the tints show at any size.
+*/
+package(mayfair) float subpixelShare(Colour colour, Behind behind) nothrow @nogc
+{
+    return 1 - closeness(colour, behind);
+}
+
+/*
+    How close text in `colour` is to `behind`, as it comes out, its alpha mixed in: 0 at
+    Theme.text_contrast_none or more apart in lightness (CIE L*, where 0 is black and 100 white),
+    1 at text_contrast_full or less, eased between. What's behind is taken to be the text's
+    opposite in lightness when it isn't known, as Skia guesses.
+*/
+private float closeness(Colour colour, Behind behind) nothrow @nogc
+{
     float text, ground;
     if (behind.known)
     {
@@ -511,12 +555,7 @@ package(mayfair) float inkExponent(Colour colour, Behind behind, float ppem) not
     const apart = text > ground ? text - ground : ground - text;
     enum float none = Theme.text_contrast_none, full = Theme.text_contrast_full;
     float byContrast = apart >= none ? 0 : apart <= full ? 1 : (none - apart) / (none - full);
-    byContrast = byContrast * byContrast * (3 - 2 * byContrast); // eased in and out
-    enum float small = Theme.text_contrast_ppem;
-    const bySize = ppem <= small ? 1 : ppem >= 2 * small ? 0 : (2 * small - ppem) / small;
-    const forContrast = 1 - (1 - Theme.text_contrast_lift) * byContrast * bySize;
-    const forLight = lightLift(colour);
-    return forContrast < forLight ? forContrast : forLight;
+    return byContrast * byContrast * (3 - 2 * byContrast); // eased in and out
 }
 
 unittest
@@ -545,6 +584,10 @@ unittest
     const pale = Colour(0xf0, 0xf0, 0xf3);
     const floor = lightLift(pale) < Theme.text_contrast_lift ? lightLift(pale) : Theme.text_contrast_lift;
     assert(inkExponent(pale, light, 8) >= floor - 1e-4f);
+    // Subpixel colours: all of them for near-black on light, few for grey, at any size
+    assert(subpixelShare(Colour(0x1d, 0x1d, 0x1f), light) == 1);
+    assert(subpixelShare(grey, light) < 0.2f);
+    assert(subpixelShare(Colour(255, 255, 255), Behind.solid(Colour(0x00, 0x7a, 0xff))) < 0.5f);
 }
 
 /// Light text's lift, for blending in sRGB: 1 for black, 1 / text_gamma for white.
