@@ -32,6 +32,7 @@ Dock buildGallery(string start = null)
         Page("Tabs", "view-paged-symbolic", tabsPage(&report)),
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
         Page("Windows", "window-new-symbolic", windowsPage(&report)),
+        Page("Notifications", "preferences-system-notifications-symbolic", notificationsPage(&report)),
         Page("Lists & tables", "view-list-symbolic", listsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
@@ -777,6 +778,84 @@ class FileCell : ListCell!string
     {
         add(new Icon("text-x-generic-symbolic"));
     }
+}
+
+/*
+    Desktop notifications: shown by the desktop, outside the window, in a bubble and its list of
+    them. What's done with one -- clicked, a button pressed, dismissed -- comes back to the app, and
+    is reported along the bottom.
+*/
+Widget notificationsPage(Report report)
+{
+    int shown;
+
+    // One to try: its title and text, how much it matters, and buttons and an icon, or not
+    auto title = new TextField("Hello from Mayfair");
+    auto text = new TextField("This is a desktop notification.");
+    auto urgency = new ComboBox(["Low", "Normal", "Critical"]).selectedIndex(1);
+    auto withButtons = new CheckBox("With buttons").selected(true);
+    auto withIcon = new CheckBox("With an icon").selected(true);
+    auto show = new Button("Show").defaultButton(true).graphic(new Icon("preferences-system-notifications-symbolic"));
+    show.setOnAction({
+        const n = ++shown;
+        auto note = new Notification(title.text).text(text.text).urgency(cast(Urgency) urgency.selectedIndex)
+            .onClicked({ report(format!"Notification %s clicked"(n)); })
+            .onClosed({ report(format!"Notification %s closed"(n)); });
+        if (withButtons.selected)
+            note.action("Reply", { report(format!"Reply pressed on notification %s"(n)); })
+                .action("Mark as read", { report(format!"Mark as read pressed on notification %s"(n)); });
+        if (withIcon.selected)
+            note.icon("mail-unread");
+        note.show();
+        report(format!"Notification %s shown"(n));
+    });
+    auto form = new Grid().columnGap(12).rowGap(8).maxWidth(520);
+    form.add(new Label("Title"), 0, 0);
+    form.add(title, 1, 0);
+    form.add(new Label("Text"), 0, 1);
+    form.add(text, 1, 1);
+    form.add(new Label("Urgency"), 0, 2);
+    form.add(urgency, 1, 2);
+    form.column(1).grow(1);
+
+    // One that's updated where it is, as a copy's progress would be, then taken away by the app
+    Notification copying;
+    int done;
+    auto step = new Button("Start copying");
+    auto stop = new Button("Close it").disable(true);
+    step.setOnAction({
+        // A new one to start with, and once the last is done; otherwise the same one, further on
+        if (!copying || done >= 100)
+        {
+            copying = new Notification("Copying photos").icon("edit-copy").urgency(Urgency.low)
+                .onClosed({ report("The copying notification closed"); });
+            done = 0;
+        }
+        else
+            done += 25;
+        copying.text(done < 100 ? format!"%s%% done"(done) : "All done").show();
+        step.setText(done < 100 ? "Next step" : "Start again");
+        stop.setDisable(false);
+        report(done < 100 ? format!"Copying: %s%%"(done) : "Copying: done");
+    });
+    stop.setOnAction({
+        if (copying)
+            copying.close();
+        copying = null;
+        step.setText("Start copying");
+        stop.setDisable(true);
+    });
+
+    return page("Notifications", "Shown by the desktop, outside the window, even when you're looking at "
+                ~ "something else. On Linux and the BSDs they go to the desktop's notification service over "
+                ~ "D-Bus, or to the portal from a Flatpak; there are none on other platforms yet.")
+        .add(section("A notification", new Column().spacing(12)
+            .add(form)
+            .add(row(withButtons, withIcon))
+            .add(show)))
+        .add(section("Updated in place", new Column().spacing(8)
+            .add(new Label("Each step updates the same notification, rather than showing another.").wrapText(true))
+            .add(row(step, stop))));
 }
 
 Widget listsPage(Report report)
