@@ -78,9 +78,10 @@ if [ "$(cat $OUT/yoga/stamp 2>/dev/null)" != "$YOGA_STAMP" ]; then
     echo "$YOGA_STAMP" > $OUT/yoga/stamp
 fi
 
-# FreeType, as build.sh has it
-if [ ! -f $OUT/freetype/build.ninja ]; then
-    emcmake cmake -S freetype -B $OUT/freetype -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="$FLAGS" \
+# FreeType, as build.sh has it: ClearType-style LCD rendering included
+if [ ! -f $OUT/freetype/build.ninja ] || ! grep -q FT_CONFIG_OPTION_SUBPIXEL_RENDERING $OUT/freetype/CMakeCache.txt; then
+    emcmake cmake -S freetype -B $OUT/freetype -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_FLAGS="$FLAGS -DFT_CONFIG_OPTION_SUBPIXEL_RENDERING" \
         -DBUILD_SHARED_LIBS=OFF \
         -DFT_DISABLE_ZLIB=TRUE -DFT_DISABLE_BZIP2=TRUE -DFT_DISABLE_PNG=TRUE \
         -DFT_DISABLE_HARFBUZZ=TRUE -DFT_DISABLE_BROTLI=TRUE
