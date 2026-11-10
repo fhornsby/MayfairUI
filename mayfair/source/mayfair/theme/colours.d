@@ -52,6 +52,8 @@ struct Theme
     enum float popup_shadow_blur         = 10;   // points
     enum float popup_shadow_offset       = 3;    // points down
     enum float popup_margin              = 8;    // points a popup keeps from the window's edges, if it can
+    enum float window_min_width          = 360;  // points: the smallest a window can be made, unless it says (Window.setMinSize)
+    enum float window_min_height         = 294;  // as GNOME's guidelines ask a window to fit
     enum float window_margin             = 32;   // points round a window drawing its own frame, for its shadow
     enum float window_radius             = 12;   // points: its corners
     enum float window_resize_band        = 8;    // points outside its edge that take hold of it to size it

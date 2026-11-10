@@ -82,6 +82,7 @@ void main(string[] args)
     tests.titlebar.titleBars();
     tests.windows.secondWindow();
     tests.windows.modalWindow();
+    tests.windows.minimumSize();
     tests.gallery.navigation();
     tests.strings.translations();
     tests.subpixel.behindText();

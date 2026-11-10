@@ -156,3 +156,50 @@ void modalWindow()
         });
     });
 }
+
+/// The smallest a window can be made: Theme's default, or the size it opened at if that's
+/// smaller, until the app sets one, which can be none at all.
+void minimumSize()
+{
+    Window big, small, unlimited, chosen;
+    run("windows: a default minimum size, and one of its own", {
+        return cast(Widget) new Column();
+    }, (Driver d) {
+        Window open(string title, int w, int h)
+        {
+            auto win = new Window(title).setSize(w, h);
+            win.scene = new Scene(new Column());
+            win.show();
+            return win;
+        }
+        d.ui({
+            big = open("Big", 800, 500);
+            small = open("Small", 240, 120);
+            unlimited = open("Unlimited", 800, 500).setMinSize(0, 0);
+            chosen = open("Chosen", 800, 500).setMinSize(500, 400);
+        });
+        d.settle();
+        d.ui({
+            // What SDL's told, less the frame round the inside, which setSize doesn't count
+            int[2] minimum(Window win)
+            {
+                int w, h, mw, mh;
+                SDL_GetWindowSize(win.nativeWindow, &w, &h);
+                SDL_GetWindowMinimumSize(win.nativeWindow, &mw, &mh);
+                const frame = w - 800;
+                return mw ? [mw - frame, mh - frame] : [0, 0];
+            }
+            d.expect(minimum(big), [cast(int) Theme.window_min_width, cast(int) Theme.window_min_height],
+                     "the default, for a window bigger than it");
+            int sw, sh, smw, smh;
+            SDL_GetWindowSize(small.nativeWindow, &sw, &sh);
+            SDL_GetWindowMinimumSize(small.nativeWindow, &smw, &smh);
+            d.expect([smw, smh], [sw, sh], "no bigger than a small window opened at");
+            d.expect(minimum(unlimited), [0, 0], "none, when it's set to none");
+            d.expect(minimum(chosen), [500, 400], "and its own, when it's set");
+            foreach (win; [big, small, unlimited, chosen])
+                win.close();
+        });
+        d.settle();
+    });
+}

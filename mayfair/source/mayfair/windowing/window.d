@@ -111,8 +111,13 @@ class Window
     /*
         The smallest it can be made, as JavaFX's Stage.minWidth and minHeight: the size below
         which the layout stops working, as the desktop won't let it be dragged smaller. Its inside,
-        as setSize's is: a frame's shadow margin is added on. 0 for no limit, as it starts. Set
-        before it's shown or while it is.
+        as setSize's is: a frame's shadow margin is added on. 0 for no limit. Set before it's shown
+        or while it is.
+
+        Until it's set, it's Theme.window_min_width by window_min_height -- small enough for a
+        phone-sized window, as GNOME's guidelines have it, big enough that a window can't be
+        dragged down to a sliver -- or the size the window opens at, if that's smaller: a small
+        dialog stays as small as it was made.
     */
     Window setMinSize(int width, int height)
     {
@@ -291,7 +296,9 @@ package(mayfair):
     bool drawsDecorations;     // Mayfair draws the title bar and edges, rather than the desktop
     bool frameChanged;         // maximised, restored, fullscreen or resized: the frame and shape to see to
 
-    int _minWidth, _minHeight, _maxWidth, _maxHeight; // the window's inside; 0 for none
+    int _minWidth = -1, _minHeight = -1;             // the window's inside; 0 for none, -1 for the default
+    int _maxWidth, _maxHeight;                        // the same; 0 for none
+    int _openWidth, _openHeight;                      // the size it was made at, which caps the default minimum
     bool _startMaximised, _wasMaximised;              // see setMaximised and wasMaximised
     int _restoredWidth, _restoredHeight;              // see restoredWidth
     int _margin;                                      // its frame's, round the inside
@@ -354,6 +361,8 @@ package(mayfair):
                 if (sdl)
                     SDL_DestroyWindow(sdl);
                 madeFor = candidate.windowFlags();
+                _openWidth = width;
+                _openHeight = height;
                 desktop.beforeSdl(drawsDecorations);
                 sdl = SDL_CreateWindow(_title.toStringz(), width + 2 * margin, height + 2 * margin, flags | madeFor);
                 desktop.afterSdl(drawsDecorations);
@@ -1010,7 +1019,11 @@ package(mayfair):
         if (!sdl)
             return;
         int limit(int v) { return v > 0 ? v + 2 * _margin : 0; }
-        SDL_SetWindowMinimumSize(sdl, limit(_minWidth), limit(_minHeight));
+        // The default minimum, where none's been set: no bigger than it opened
+        static int orDefault(int set, int fallback, int opened) { return set >= 0 ? set : fallback < opened ? fallback : opened; }
+        const minWidth = orDefault(_minWidth, cast(int) Theme.window_min_width, _openWidth);
+        const minHeight = orDefault(_minHeight, cast(int) Theme.window_min_height, _openHeight);
+        SDL_SetWindowMinimumSize(sdl, limit(minWidth), limit(minHeight));
         SDL_SetWindowMaximumSize(sdl, limit(_maxWidth), limit(_maxHeight));
     }
 
