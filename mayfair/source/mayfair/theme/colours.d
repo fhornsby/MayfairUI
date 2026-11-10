@@ -12,11 +12,11 @@ struct Theme
     enum Colour text_colour       = Colour(226, 232, 240); // text, before it's styled
     enum float text_size = 14;     // points, for text not given a font of its own
     enum float text_gamma = 2.2;   // how much light text's edges are lifted: see mayfair.text.raster
-    // How much the stems of text that's hard to see are thickened: see mayfair.text.raster
-    enum float text_darkening = 0.375;         // pixels, at most
-    enum float text_darkening_contrast = 80;   // L* apart from what's behind it, from which none
-    enum float text_darkening_full = 35;       // and at which all of it
-    enum float text_darkening_ppem = 16;       // pixels to the em up to which all of it, none from twice it
+    // How much the edges of text that's hard to see are lifted: see mayfair.text.raster's inkExponent
+    enum float text_contrast_lift = 0.5;   // coverage to the power of this, at most
+    enum float text_contrast_none = 80;    // L* apart from what's behind it, from which none
+    enum float text_contrast_full = 35;    // and at which all of it
+    enum float text_contrast_ppem = 16;    // pixels to the em up to which all of it, none from twice it
 
     // Garbage collection, which the app's loop does between frames: see App.collectGarbage
     enum size_t gc_min_growth = 1 << 20;  // bytes allocated since the last collection before the next is worth it
