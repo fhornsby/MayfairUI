@@ -37,3 +37,15 @@ objcopy_tool() {
 strong_symbols() {
     nm -g --defined-only "$1" 2>/dev/null | awk 'NF == 3 && $2 ~ /^[TDBR]$/ { print $3 }' | LC_ALL=C sort -u
 }
+
+# Takes the debugging information out of static library $1, in place, keeping the symbols it links
+# by: GNU's or LLVM's strip, or macOS's, whose -S is the same
+strip_debug() {
+    if strip --version >/dev/null 2>&1; then
+        strip --strip-debug "$1"
+    elif command -v llvm-strip >/dev/null 2>&1; then
+        llvm-strip --strip-debug "$1"
+    else
+        strip -S "$1"
+    fi
+}

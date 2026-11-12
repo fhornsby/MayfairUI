@@ -1,0 +1,101 @@
+# Mayfair's native libraries, prebuilt: ThorVG, Yoga, FreeType, HarfBuzz, libunibreak, SheenBidi,
+# litehtml, wgpu-native and AccessKit, built by mayfair/vendor/build.sh and packed by
+# mayfair/vendor/package.sh into one archive per platform, so an app's build can download them
+# rather than build them.
+#
+# Every push that touches the native build builds them, to check it still does, and keeps the
+# archives for a week as the run's artifacts. A version tag (v0.2.0) builds them and attaches them
+# to that version's release, with SHA256SUMS listing every archive's checksum.
+name: Native libraries
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "mayfair/vendor/**"
+      - "mayfair/bindings/**"
+      - "mayfair/dub.json"
+      - ".github/workflows/native.yml"
+  pull_request:
+    paths:
+      - "mayfair/vendor/**"
+      - "mayfair/bindings/**"
+      - "mayfair/dub.json"
+      - ".github/workflows/native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # wgpu-native and AccessKit are downloaded prebuilt here
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          # and built from source with cargo here, as there are no prebuilt ones for ARM Linux
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential binutils patch pkg-config cmake meson ninja-build curl unzip xz-utils libclang-dev
+
+      - name: Install Rust, for the libraries built from source
+        if: matrix.platform != 'linux-x86_64'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: mayfair/vendor/build.sh
+
+      - name: Package
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::12}"; fi
+          mayfair/vendor/package.sh "$version" "$PWD/dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mayfair-native-${{ matrix.platform }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Attach to the release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: mayfair-native-*
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.tar.xz > SHA256SUMS && cat SHA256SUMS
+
+      - name: Attach to the release, making it if it isn't there
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Mayfair $TAG" \
+              --notes "Mayfair $TAG. The native libraries for each platform are attached, for an app's build to download."
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.tar.xz dist/SHA256SUMS

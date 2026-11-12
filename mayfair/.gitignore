@@ -22,3 +22,4 @@ mayfair-test-*
 /vendor/build-wasm/
 # The browser build's objects: see web/build.sh
 /web/build/
+/dist/
