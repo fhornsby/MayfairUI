@@ -11,7 +11,7 @@
 	"name": "mayfair",
 	"targetType": "library",
 	"preGenerateCommands": [
-		"$PACKAGE_DIR/vendor/build.sh"
+		"\"$DUB\" run --quiet --single \"$PACKAGE_DIR/vendor/native.d\" -- \"$PACKAGE_DIR/vendor\" \"$DUB_PACKAGE_VERSION\""
 	],
 	"importPaths": [
 		"source",

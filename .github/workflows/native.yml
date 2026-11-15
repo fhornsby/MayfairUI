@@ -51,7 +51,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential binutils patch pkg-config cmake meson ninja-build curl unzip xz-utils libclang-dev
+            build-essential binutils patch pkg-config cmake meson ninja-build curl unzip zip libclang-dev
 
       - name: Install Rust, for the libraries built from source
         if: matrix.platform != 'linux-x86_64'
@@ -88,7 +88,7 @@ jobs:
 
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.tar.xz > SHA256SUMS && cat SHA256SUMS
+        run: sha256sum *.zip > SHA256SUMS && cat SHA256SUMS
 
       - name: Attach to the release, making it if it isn't there
         env:
@@ -98,4 +98,4 @@ jobs:
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Mayfair $TAG" \
               --notes "Mayfair $TAG. The native libraries for each platform are attached, for an app's build to download."
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.tar.xz dist/SHA256SUMS
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*.zip dist/SHA256SUMS

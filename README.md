@@ -128,6 +128,21 @@ To use Mayfair in an app, depend on it by path in the app's `dub.json`:
 The first build compiles its C and C++ dependencies (`mayfair/vendor/build.sh`), which takes a
 few minutes; after that they're only rebuilt when they change.
 
+### Prebuilt native libraries
+
+Each released version of Mayfair (a `v` tag, such as `v0.2.0`) has its native libraries prebuilt
+by CI and attached to its GitHub release, for Linux on x86-64 and ARM64 so far. When dub builds a
+released version, it downloads the archive for its platform instead of building them, checks it
+against the release's `SHA256SUMS`, and unpacks it; then only LDC, dub and SDL3 are needed. A git
+checkout, like the one above, builds them from source as before, and so does a release whose
+download fails. To choose for yourself:
+
+| | |
+|---|---|
+| `MAYFAIR_NATIVE=build` | build them from source, whatever the version |
+| `MAYFAIR_NATIVE=path/to/archive.zip` | unpack an archive you've downloaded already, offline say |
+| `MAYFAIR_NATIVE_URL=https://...` | download from a mirror of the releases |
+
 ## Examples
 
 | | |

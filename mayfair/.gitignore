@@ -23,3 +23,6 @@ mayfair-test-*
 # The browser build's objects: see web/build.sh
 /web/build/
 /dist/
+# The program dub builds from vendor/native.d, beside it
+/vendor/mayfair-native
+/vendor/mayfair-native.exe

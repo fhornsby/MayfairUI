@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 #
 # Packs what vendor/build.sh built into one archive for this platform, for an app's build to
-# download rather than build: mayfair-native-VERSION-OS-ARCH.tar.xz, and its SHA-256 beside it.
+# download rather than build: mayfair-native-VERSION-OS-ARCH.zip, and its SHA-256 beside it. A zip,
+# as D's standard library unpacks one with nothing more installed, on any platform (see native.d).
 # CI makes one for each platform and attaches them to the release.
 #
 #   vendor/package.sh [VERSION] [OUT_DIR]     VERSION defaults to `git describe`, OUT_DIR to dist/
@@ -81,7 +82,7 @@ done
 
 # What it is, for whoever finds it unpacked
 cat > "$STAGE/MAYFAIR-NATIVE" <<EOF
-Mayfair's native libraries, prebuilt: unpack into mayfair/vendor/ in place of running build.sh.
+Mayfair's native libraries, prebuilt: unpacked into mayfair/vendor/ in place of running build.sh.
 version  $VERSION
 platform $OS-$ARCH
 built    $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -92,8 +93,9 @@ done
 
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
-tar -C "$STAGE" -cJf "$OUT/$NAME.tar.xz" .
-(cd "$OUT" && sha256 "$NAME.tar.xz" > "$NAME.tar.xz.sha256")
+rm -f "$OUT/$NAME.zip"
+(cd "$STAGE" && zip -q -r -9 -X "$OUT/$NAME.zip" .)
+(cd "$OUT" && sha256 "$NAME.zip" > "$NAME.zip.sha256")
 rm -rf build/package
-echo "$OUT/$NAME.tar.xz"
-echo "SHA-256 $(cat "$OUT/$NAME.tar.xz.sha256")"
+echo "$OUT/$NAME.zip"
+echo "SHA-256 $(cat "$OUT/$NAME.zip.sha256")"
