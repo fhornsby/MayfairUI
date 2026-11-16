@@ -33,6 +33,7 @@ Dock buildGallery(string start = null)
         Page("Popups", "view-more-symbolic", popupsPage(&report)),
         Page("Windows", "window-new-symbolic", windowsPage(&report)),
         Page("Notifications", "preferences-system-notifications-symbolic", notificationsPage(&report)),
+        Page("Drag & drop", "document-send-symbolic", dragDropPage(&report)),
         Page("Lists & tables", "view-list-symbolic", listsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),
@@ -856,6 +857,54 @@ Widget notificationsPage(Report report)
         .add(section("Updated in place", new Column().spacing(8)
             .add(new Label("Each step updates the same notification, rather than showing another.").wrapText(true))
             .add(row(step, stop))));
+}
+
+/*
+    Dropping files and text from other apps: a drop zone that lights up as something's dragged
+    over it, and lists what's dropped on it.
+*/
+Widget dragDropPage(Report report)
+{
+    auto sheet = stylesheet!(`
+        .drop-zone { background-colour: var(--field-border), var(--field); background-insets: 0, 1;
+                     background-radius: 12, 11; padding: 24; }
+        .drop-zone:drag-over { background-colour: var(--accent), var(--field); background-insets: 0, 2; }
+    `);
+
+    auto dropped = new Column().spacing(4);
+    auto hint = new Label("Drag files from your file manager, or text from another app, and drop them here");
+    auto zone = new Column().spacing(8).alignment(Pos.centre).prefSize(480, 140).styleClass("drop-zone")
+        .add(new Icon("document-send-symbolic").iconSize(32)).add(hint);
+    zone.onDragEntered((ref e) { hint.setText("Let go to drop it"); })
+        .onDragExited((ref e) {
+            hint.setText("Drag files from your file manager, or text from another app, and drop them here");
+        })
+        // What's dragged is only known as it's dropped, so the zone takes anything, as a copy
+        .onDragOver((ref e) {
+            e.acceptTransferModes(TransferMode.copy);
+            e.consume();
+        })
+        .onDragDropped((ref e) {
+            while (dropped.children.length)
+                dropped.remove(dropped.children[0]);
+            foreach (path; e.dragboard.files)
+                dropped.add(row(new Icon("text-x-generic-symbolic"), new Label(path).selectable(true)));
+            if (e.dragboard.hasText)
+                dropped.add(new Label(e.dragboard.text).wrapText(true).selectable(true));
+            report(e.dragboard.hasFiles ? format!"Dropped %s file%s"(e.dragboard.files.length,
+                                                                     e.dragboard.files.length == 1 ? "" : "s")
+                                        : "Dropped some text");
+            e.setDropCompleted(true);
+            e.consume();
+        });
+
+    auto result = page("Drag & drop", "Any widget can take what's dropped on it, as in JavaFX: onDragOver "
+                       ~ "accepts the drag, and onDragDropped is given the files or text. A drop target is "
+                       ~ ":drag-over to a stylesheet while something's dragged over it.")
+        .add(section("A drop zone", zone))
+        .add(section("Dropped", dropped));
+    result.stylesheets.add(sheet);
+    return result;
 }
 
 Widget listsPage(Report report)
