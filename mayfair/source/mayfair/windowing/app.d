@@ -69,12 +69,16 @@ Services services;
 //Input waiting for update() to hand to the scenes, in the order it came, whichever window it's for
 struct QueuedInput {
     SDL_Event event;
-    size_t textStart, textLength; // where a text event's text was copied to in inputText
+    size_t textStart, textLength; // where a text event's text was copied to in inputText, or a drop's to dropData
 }
 QueuedInput[64] inputEvents;
 size_t inputEventCount;
 char[4096] inputText;
 size_t inputTextUsed;
+// What's dropped -- a file's path, or text, which can be long -- copied as it arrives, as typed
+// text is to inputText; malloc'd, and grown as it's needed
+char* dropData;
+size_t dropDataUsed, dropDataCapacity;
 //Garbage collection: see collectGarbage()
 size_t liveAfterCollect;   // bytes in use after the last collection
 ulong lastCollectPause;    // how long it took, in nanoseconds, on traceNow()'s clock
@@ -104,6 +108,28 @@ void queueInputEvent(ref const SDL_Event event) nothrow @nogc {
         inputEvents[inputEventCount - 1].event = event;
         return;
     }
+    // The same for a drag moving over a window
+    if (event.type == SDL_EventType.SDL_EVENT_DROP_POSITION && inputEventCount > 0
+        && inputEvents[inputEventCount - 1].event.type == SDL_EventType.SDL_EVENT_DROP_POSITION
+        && inputEvents[inputEventCount - 1].event.drop.windowID == event.drop.windowID) {
+        inputEvents[inputEventCount - 1].event = event;
+        return;
+    }
+    // A drop sends an event a file, or a line of text, and can be hundreds of files: each is added
+    // to the one before, a \0 between paths and a line break between lines, so a whole drop takes
+    // one place in the queue (see Window.dispatchInputEvent)
+    if (isDropData(event.type) && event.drop.data && inputEventCount > 0) {
+        auto last = &inputEvents[inputEventCount - 1];
+        if (last.event.type == event.type && last.event.drop.windowID == event.drop.windowID
+            && last.textStart + last.textLength == dropDataUsed) {
+            const char[1] between = event.type == SDL_EventType.SDL_EVENT_DROP_FILE ? '\0' : '\n';
+            if (appendDropData(between[]) && appendDropData(event.drop.data[0 .. strlen(event.drop.data)]))
+                last.textLength = dropDataUsed - last.textStart;
+            last.event.drop.x = event.drop.x;
+            last.event.drop.y = event.drop.y;
+            return;
+        }
+    }
     if (inputEventCount == inputEvents.length) {
         trace("input dropped an event, queue full");
         return;
@@ -126,7 +152,40 @@ void queueInputEvent(ref const SDL_Event event) nothrow @nogc {
         queued.textLength = length;
         inputTextUsed += length;
     }
+    // A dropped file's path, or dropped text, is SDL's too, and freed at the next poll
+    if (isDropData(event.type) && event.drop.data) {
+        const start = dropDataUsed;
+        if (!appendDropData(event.drop.data[0 .. strlen(event.drop.data)]))
+            return;
+        queued.textStart = start;
+        queued.textLength = dropDataUsed - start;
+    }
     inputEvents[inputEventCount++] = queued;
+}
+
+/// Adds `s` to dropData, growing it as it needs; false if there's no memory for it.
+bool appendDropData(const(char)[] s) nothrow @nogc {
+    if (dropDataUsed + s.length > dropDataCapacity) {
+        import core.stdc.stdlib : realloc;
+        auto capacity = dropDataCapacity ? dropDataCapacity : 4096;
+        while (capacity < dropDataUsed + s.length)
+            capacity *= 2;
+        auto grown = cast(char*) realloc(dropData, capacity);
+        if (!grown) {
+            trace("input dropped a drop of %zu bytes, out of memory", s.length);
+            return false;
+        }
+        dropData = grown;
+        dropDataCapacity = capacity;
+    }
+    dropData[dropDataUsed .. dropDataUsed + s.length] = s[];
+    dropDataUsed += s.length;
+    return true;
+}
+
+/// Whether an SDL event carries something dropped: a file's path, or text.
+bool isDropData(uint type) nothrow @nogc {
+    return type == SDL_EventType.SDL_EVENT_DROP_FILE || type == SDL_EventType.SDL_EVENT_DROP_TEXT;
 }
 
 /// 1. Events: records what one SDL event changes. Anything the app's own code needs to hear about
@@ -180,6 +239,14 @@ void handleEvent(ref const SDL_Event event) nothrow @nogc {
             if (windowFor(event.wheel.windowID))
                 queueInputEvent(event);
             break;
+        case SDL_EventType.SDL_EVENT_DROP_BEGIN:
+        case SDL_EventType.SDL_EVENT_DROP_POSITION:
+        case SDL_EventType.SDL_EVENT_DROP_FILE:
+        case SDL_EventType.SDL_EVENT_DROP_TEXT:
+        case SDL_EventType.SDL_EVENT_DROP_COMPLETE:
+            if (windowFor(event.drop.windowID))
+                queueInputEvent(event);
+            break;
         default:
             // AccessKit's requests, posted from its own thread, and Platform.runLater()'s tasks.
             // They're for the widgets, so they wait for update() like the rest of the input, and
@@ -207,6 +274,12 @@ Window windowOf(ref const SDL_Event event) nothrow @nogc {
         case SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
             return windowFor(event.button.windowID);
         case SDL_EventType.SDL_EVENT_MOUSE_WHEEL: return windowFor(event.wheel.windowID);
+        case SDL_EventType.SDL_EVENT_DROP_BEGIN:
+        case SDL_EventType.SDL_EVENT_DROP_POSITION:
+        case SDL_EventType.SDL_EVENT_DROP_FILE:
+        case SDL_EventType.SDL_EVENT_DROP_TEXT:
+        case SDL_EventType.SDL_EVENT_DROP_COMPLETE:
+            return windowFor(event.drop.windowID);
         default:
             return event.type == accessibilityEventType ? windowFor(event.user.windowID) : null;
     }
@@ -234,7 +307,8 @@ void update() {
     // By index, and to the count as it stands now: a handler can show a window, which goes on the end
     for (size_t i = 0; i < inputEventCount; i++) {
         auto queued = inputEvents[i];
-        const text = inputText[queued.textStart .. queued.textStart + queued.textLength];
+        const text = isDropData(queued.event.type) ? dropData[queued.textStart .. queued.textStart + queued.textLength]
+                                                   : inputText[queued.textStart .. queued.textStart + queued.textLength];
         if (queued.event.type == laterEventType) {
             foreach (task; Platform.take()) {
                 // A task that throws is the app's bug, not a reason to stop the UI
@@ -250,6 +324,7 @@ void update() {
     }
     inputEventCount = 0;
     inputTextUsed = 0;
+    dropDataUsed = 0;
 
     lastUpdate = traceNow();
     pulseAnimations(MonoTime.currTime);

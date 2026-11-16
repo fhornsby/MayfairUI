@@ -546,6 +546,13 @@ package:
                 w._setHover(false);
             hovered = gone.parent;
         }
+        if (isWithin(dragHovered, gone))
+        {
+            // The same for a drag from another app: it's over the parent now
+            for (auto w = dragHovered; w !is gone.parent; w = w.parent)
+                w._setDraggedOver(false);
+            dragHovered = gone.parent;
+        }
     }
 
 package(mayfair):
@@ -752,6 +759,86 @@ package(mayfair):
         heldControl = control;
         heldAlt = alt;
         heldMeta = meta;
+    }
+
+    /*
+        Drag and drop from another app, as the window hears it: JavaFX's drag-and-drop handling in
+        miniature, as the mouse's is above. dragBegan as a drag comes into the window; dragMoved as
+        it moves over it; dragFile and dragText for each thing dropped, a file at a time; and
+        dragEnded once it's all been dropped, or the drag has left the window.
+
+        Whatever it's over hears entered and exited as that changes, as the mouse's hover does, and
+        over as it moves, bubbling. What's dragged is only known as it's dropped (see Dragboard),
+        so dropped goes out at dragEnded, with all of it, and only if a drag over where it was
+        dropped was accepted, as in JavaFX.
+    */
+    void dragBegan()
+    {
+        dropping = new Dragboard;
+    }
+
+    /// ditto
+    void dragMoved(float x, float y)
+    {
+        if (!dropping)
+            dragBegan(); // a platform that says nothing as a drag comes in
+        pointAt(x, y);
+        dragHoverOver(pickAt(x, y));
+        if (dragHovered)
+        {
+            auto event = dragEvent(DragEventType.over, dropping);
+            bubble(dragHovered, event);
+        }
+    }
+
+    /// ditto
+    void dragFile(float x, float y, string path)
+    {
+        if (!dropping)
+            dragBegan();
+        dropping._files ~= path;
+        pointAt(x, y);
+    }
+
+    /// ditto
+    void dragText(float x, float y, string text)
+    {
+        if (!dropping)
+            dragBegan();
+        // SDL sends text a line at a time, the line breaks gone: they're put back between them
+        dropping._text = dropping._text is null ? text : dropping._text ~ "\n" ~ text;
+        pointAt(x, y);
+    }
+
+    /// ditto
+    void dragEnded()
+    {
+        auto board = dropping;
+        dropping = null;
+        if (board && (board.hasFiles || board.hasText))
+        {
+            // Where it was dropped: there, a drag over has to be accepted for it to be dropped
+            dragHoverOver(pickAt(pointerX, pointerY));
+            if (dragHovered)
+            {
+                auto over = dragEvent(DragEventType.over, board);
+                bubble(dragHovered, over);
+                if (over.isAccepted)
+                {
+                    auto dropped = dragEvent(DragEventType.dropped, board);
+                    dropped.acceptedTransferMode = over.acceptedTransferMode;
+                    bubble(dragHovered, dropped);
+                }
+            }
+        }
+        dragHoverOver(null); // dropped, or gone: it's over nothing now
+    }
+
+    /// A drag that's ended without dropping anything here: it's over nothing, and nothing's dropped.
+    void dragAbandoned()
+    {
+        dropping = null;
+        dragHoverOver(null);
     }
 
     /// The pointer left the window, so it's over nothing.
@@ -1167,6 +1254,8 @@ private:
     bool heldShift, heldControl, heldAlt, heldMeta;
     bool pointerInside;  // whether the pointer is in the window, as far as the last event said
     Widget hovered;      // the deepest widget under the pointer
+    Widget dragHovered;  // the deepest widget a drag from another app is over
+    Dragboard dropping;  // what's being dropped, while a drag from another app is over the window
     Widget grabbed;      // the widget a button went down on, while any button is down
     uint buttonsDown;    // a bit per MouseButton
 
@@ -1364,6 +1453,59 @@ private:
     {
         const focused = w is focusOwner && windowFocused;
         w.setFocusState(focused, focused && focusShown);
+    }
+
+    /// Moves a drag's hover to `leaf` and its ancestors, telling whichever widgets it left and reached.
+    void dragHoverOver(Widget leaf)
+    {
+        if (leaf is dragHovered)
+            return;
+        // Exits first, deepest first; then entries, outermost first, as for the mouse
+        for (auto w = dragHovered; w; w = w.parent)
+        {
+            if (w.draggedOver && !isWithin(leaf, w))
+            {
+                w._setDraggedOver(false);
+                auto event = dragEvent(DragEventType.exited, dropping);
+                event.target = w;
+                w.deliver(event);
+            }
+        }
+        dragHovered = leaf;
+        dragEnter(leaf);
+    }
+
+    void dragEnter(Widget w)
+    {
+        if (!w || w.draggedOver)
+            return;
+        dragEnter(w.parent);
+        w._setDraggedOver(true);
+        auto event = dragEvent(DragEventType.entered, dropping);
+        event.target = w;
+        w.deliver(event);
+    }
+
+    DragEvent dragEvent(DragEventType type, Dragboard board)
+    {
+        DragEvent event;
+        event.type = type;
+        event.sceneX = pointerX;
+        event.sceneY = pointerY;
+        event.dragboard = board ? board : new Dragboard;
+        return event;
+    }
+
+    /// Delivers a drag event to `from`, then up the tree until something consumes it.
+    void bubble(Widget from, ref DragEvent event)
+    {
+        event.target = from;
+        for (auto w = from; w && !event.consumed;)
+        {
+            auto next = w.parent;
+            w.deliver(event);
+            w = next;
+        }
     }
 
     /// Moves the hover to `leaf` and its ancestors, telling whichever widgets it left and reached.

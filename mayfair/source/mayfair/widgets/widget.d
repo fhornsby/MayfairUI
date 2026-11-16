@@ -335,6 +335,21 @@ public:
     final This onMouseDragged(this This)(MouseHandler handler) { on(MouseEventType.dragged, handler); return cast(This) this; }
 
     /*
+        Drag and drop: something dragged in from another app -- files off the desktop, text from an
+        editor -- coming over this widget, and dropped on it. JavaFX's setOnDrag... handlers: see
+        DragEvent. To take a drop, accept it in onDragOver, then read what was dropped in
+        onDragDropped.
+    */
+    final void setOnDragEntered(DragHandler handler) nothrow @nogc { dragHandlers[DragEventType.entered] = handler; }
+    final This onDragEntered(this This)(DragHandler handler) { setOnDragEntered(handler); return cast(This) this; }
+    final void setOnDragExited(DragHandler handler) nothrow @nogc { dragHandlers[DragEventType.exited] = handler; }
+    final This onDragExited(this This)(DragHandler handler) { setOnDragExited(handler); return cast(This) this; }
+    final void setOnDragOver(DragHandler handler) nothrow @nogc { dragHandlers[DragEventType.over] = handler; }
+    final This onDragOver(this This)(DragHandler handler) { setOnDragOver(handler); return cast(This) this; }
+    final void setOnDragDropped(DragHandler handler) nothrow @nogc { dragHandlers[DragEventType.dropped] = handler; }
+    final This onDragDropped(this This)(DragHandler handler) { setOnDragDropped(handler); return cast(This) this; }
+
+    /*
         Appearance: JavaFX's Region background and border, and Node opacity and scale. Mostly set
         by the theme's stylesheet; see Background for what a layered one can do.
     */
@@ -383,6 +398,11 @@ public:
 
     /// Whether the pointer is over this widget, or over anything below it.
     mixin(declareReadOnlyProperty!(bool, "hover", "false", q{ pseudoClassChanged(this, pseudo!"hover", _hover); }, "package"));
+
+    /// Whether something dragged from another app is over this widget, or over anything below it,
+    /// as hover is for the pointer. Styled as :drag-over, for a drop target to show it'll take what's
+    /// dragged -- though whether it will is up to its onDragOver.
+    mixin(declareReadOnlyProperty!(bool, "draggedOver", "false", q{ pseudoClassChanged(this, pseudo!"drag-over", _draggedOver); }, "package"));
 
     /// Whether the primary button went down on this widget, or on anything below it, and is still down.
     mixin(declareReadOnlyProperty!(bool, "pressed", "false", q{ pseudoClassChanged(this, pseudo!"pressed", _pressed); }, "package"));
@@ -893,6 +913,9 @@ protected:
     /// with onMouse...(), unless that consumed the event. Consume what this uses, so it goes no further.
     void handleMouse(ref MouseEvent event) {}
 
+    /// The same for a drag and drop: a text field taking dropped text, say.
+    void handleDrag(ref DragEvent event) {}
+
     /// The same for the keyboard, while this widget or something below it has focus.
     void handleKey(ref KeyEvent event) {}
 
@@ -972,6 +995,7 @@ package(mayfair):
     }
 
 package:
+
     // Style: see mayfair.widgets.styling
     bool cssDirty = true, cssBelow, cssChildDirty; // to restyle: it, what's below it, something below it
     bool updateRequested;                          // see requestUpdate()
@@ -1231,6 +1255,19 @@ package:
     }
 
     /// Lets this widget hear `event`, unless it's disabled: the app's handler first, then its own.
+    final void deliver(ref DragEvent event)
+    {
+        if (disabled)
+            return;
+        event.x = event.sceneX - painted.x;
+        event.y = event.sceneY - painted.y;
+        if (auto handler = dragHandlers[event.type])
+            handler(event);
+        if (!event.consumed)
+            handleDrag(event);
+    }
+
+    /// Lets this widget hear `event`, unless it's disabled: the app's handler first, then its own.
     final void deliver(ref MouseEvent event)
     {
         if (disabled)
@@ -1409,6 +1446,7 @@ private:
     float _childOffsetX = 0, _childOffsetY = 0; // from scrollChildren()
     bool repaint;      // set by invalidate(), for changes the rectangle doesn't show
     MouseHandler[MouseEventType.max + 1] mouseHandlers;
+    DragHandler[DragEventType.max + 1] dragHandlers;
     KeyHandler[KeyEventType.max + 1] keyHandlers;
     InputMethodHandler inputMethodHandler;
     ScrollHandler scrollHandler;
@@ -1526,6 +1564,7 @@ private:
         layer = null;
         painted = drawn = Rect.init; // NaN again: nothing to hit, and painted in full if it comes back
         _setHover(false);
+        _setDraggedOver(false);
         _setPressed(false);
         _setFocused(false);
         _setFocusVisible(false);

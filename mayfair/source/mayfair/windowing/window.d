@@ -691,6 +691,9 @@ package(mayfair):
             if (event.type == SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN)
                 if (auto child = modalChild())
                     child.raise();
+            // A drag that came in before the modal one opened is over nothing now, and drops nothing
+            if (event.type == SDL_EventType.SDL_EVENT_DROP_COMPLETE)
+                _scene.dragAbandoned();
             return;
         }
         // Mouse events don't carry the modifiers in SDL, so they're read as each is handed on
@@ -723,6 +726,27 @@ package(mayfair):
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
                 _scene.mouseLeft();
+                break;
+            // Dragged in from another app: see Scene.dragBegan
+            case SDL_EventType.SDL_EVENT_DROP_BEGIN:
+                _scene.dragBegan();
+                break;
+            case SDL_EventType.SDL_EVENT_DROP_POSITION:
+                _scene.dragMoved(pointsX(event.drop.windowID, event.drop.x), pointsY(event.drop.windowID, event.drop.y));
+                break;
+            case SDL_EventType.SDL_EVENT_DROP_FILE:
+                // One or more paths, \0 between them: see queueInputEvent
+                import std.algorithm : splitter;
+                foreach (path; text.splitter('\0'))
+                    if (path.length)
+                        _scene.dragFile(pointsX(event.drop.windowID, event.drop.x), pointsY(event.drop.windowID, event.drop.y), path.idup);
+                break;
+            case SDL_EventType.SDL_EVENT_DROP_TEXT:
+                if (text.length)
+                    _scene.dragText(pointsX(event.drop.windowID, event.drop.x), pointsY(event.drop.windowID, event.drop.y), text.idup);
+                break;
+            case SDL_EventType.SDL_EVENT_DROP_COMPLETE:
+                _scene.dragEnded();
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_FOCUS_GAINED:
                 _scene.windowFocus(true);
@@ -1063,6 +1087,11 @@ bool isUserInput(uint type) nothrow @nogc
         case SDL_EventType.SDL_EVENT_KEY_UP:
         case SDL_EventType.SDL_EVENT_TEXT_INPUT:
         case SDL_EventType.SDL_EVENT_TEXT_EDITING:
+        case SDL_EventType.SDL_EVENT_DROP_BEGIN:
+        case SDL_EventType.SDL_EVENT_DROP_POSITION:
+        case SDL_EventType.SDL_EVENT_DROP_FILE:
+        case SDL_EventType.SDL_EVENT_DROP_TEXT:
+        case SDL_EventType.SDL_EVENT_DROP_COMPLETE:
             return true;
         default:
             return false;

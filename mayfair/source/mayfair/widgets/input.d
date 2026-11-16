@@ -80,6 +80,98 @@ enum ScrollDevice
 /// What a widget calls when it hears about a scroll.
 alias ScrollHandler = void delegate(ref ScrollEvent event);
 
+/// What a drag and drop is doing over a widget. JavaFX's DragEvent types.
+enum DragEventType
+{
+    entered,  /// A drag came over a widget. Doesn't bubble: each widget it's now over hears it.
+    exited,   /// A drag left a widget, or was dropped or abandoned. Doesn't bubble either.
+    over,     /// A drag is over a widget, which says whether it'd take a drop with acceptTransferModes()
+    dropped,  /// It was dropped on a widget that accepted it: the dragboard has what was dragged
+}
+
+/// What a drop would do with what's dragged. JavaFX's TransferMode.
+enum TransferMode
+{
+    none,
+    copy, /// Take a copy, leaving the original where it was: what a drop from another app does
+    move, /// Take it, and it goes from where it was
+    link, /// Refer to it where it is
+}
+
+/*
+    What's being dragged: JavaFX's Dragboard. Files, by their paths, and text.
+
+    Dragged from another app -- a file off the desktop -- what's dragged is only known once it's
+    dropped: until then the dragboard is empty, and a widget decides whether to accept a drag by
+    where it is, rather than what it is. (SDL, which Mayfair hears drags through, only says what's
+    dragged when it's dropped.)
+*/
+final class Dragboard
+{
+    /// The files dragged, by their paths: one or more, or none.
+    const(string)[] files() const nothrow @nogc { return _files; }
+    bool hasFiles() const nothrow @nogc { return _files.length > 0; } /// ditto
+
+    /// The text dragged, or null. Its lines are joined with \n, whatever it had; SDL leaves out
+    /// any empty lines.
+    string text() const nothrow @nogc { return _text; }
+    bool hasText() const nothrow @nogc { return _text !is null; } /// ditto
+
+package(mayfair):
+    string[] _files;
+    string _text;
+}
+
+/*
+    A drag and drop, as it comes over the widgets: JavaFX's DragEvent. Something dragged in from
+    another app -- files off the desktop, text from an editor -- comes over a widget (entered),
+    moves over it (over), and is dropped on it (dropped), or leaves it (exited).
+
+        dropZone.onDragOver((ref DragEvent e) {
+            e.acceptTransferModes(TransferMode.copy);   // this would take a drop here
+            e.consume();
+        });
+        dropZone.onDragDropped((ref DragEvent e) {
+            foreach (path; e.dragboard.files)
+                open(path);
+            e.setDropCompleted(true);
+            e.consume();
+        });
+
+    over and dropped bubble, as a mouse event does: the widget under the pointer hears first, then
+    its parent and so on up, until one consumes it. A drop goes only where a drag over that place
+    was accepted: a widget that never accepts hears entered, over and exited, but no drop.
+*/
+struct DragEvent
+{
+    DragEventType type;
+    float sceneX = 0, sceneY = 0; /// Where the pointer is, in points from the window's top left
+    float x = 0, y = 0;           /// The same, from the top left of the widget hearing the event
+    Widget target;                /// The widget under the pointer, which it bubbles up from
+    Dragboard dragboard;          /// What's dragged: see Dragboard for when it's known
+    TransferMode acceptedTransferMode; /// What an over handler accepted, or none
+    bool dropCompleted;           /// Whether a dropped handler said it took the drop
+    bool consumed;
+
+    /// For an over handler: this widget would take a drop here, in the first of `modes` it can.
+    void acceptTransferModes(TransferMode[] modes...) nothrow @nogc
+    {
+        acceptedTransferMode = modes.length ? modes[0] : TransferMode.none;
+    }
+
+    /// Whether a drop here was accepted.
+    bool isAccepted() const nothrow @nogc { return acceptedTransferMode != TransferMode.none; }
+
+    /// For a dropped handler: whether it took what was dropped.
+    void setDropCompleted(bool completed) nothrow @nogc { dropCompleted = completed; }
+
+    /// Stops the event going any further up the tree.
+    void consume() nothrow @nogc { consumed = true; }
+}
+
+/// What a widget calls when it hears about a drag and drop.
+alias DragHandler = void delegate(ref DragEvent event);
+
 /// What happened on the keyboard. JavaFX's KeyEvent types.
 enum KeyEventType
 {

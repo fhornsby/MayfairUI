@@ -76,6 +76,8 @@ and adds the toolkit around them.
 - **Text:** full Unicode: shaping (HarfBuzz), bidirectional text, line breaking, and
   selectable, copyable labels.
 - **Translation:** an app's strings in `strings.xml`, one entry per language.
+- **Drag and drop:** files and text dragged in from other apps, dropped on any widget, handled
+  as in JavaFX: `onDragOver` accepts a drag, and `onDragDropped` is given what was dropped.
 - **Accessibility:** screen readers are told about every widget, through AccessKit.
 - **Notifications:** desktop notifications, with buttons, through the freedesktop.org
   notification service (or the desktop portal, in a Flatpak) on Linux and the BSDs.
@@ -169,6 +171,13 @@ What's still to be done, that I know of:
 - Choose a default font. IBM Plex Sans is bundled for now, so Mayfair can be compared side by
   side with Zed.
 - Justified text: `TextAlignment.justify` lines text up on the left for now.
+
+**Drag and drop**
+- Dragging out of an app, to another app or the desktop, and from one widget to another within
+  it. Only dropping in from outside works so far.
+- Knowing what's dragged before it's dropped, so a widget can refuse it while it's dragged over:
+  SDL only gives the files or text once they're dropped, and can't tell the app it came from
+  whether the drop was taken.
 
 **Desktop**
 - A settings source for to replace GSettings, reducing dependency on GNOME.

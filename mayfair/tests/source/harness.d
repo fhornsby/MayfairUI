@@ -146,6 +146,45 @@ final class Driver
         settle();
     }
 
+    /// Something dragged from another app over the window, to `x`, `y` in points: SDL says only
+    /// where it is until it's dropped, not what it is.
+    void dragOver(float x, float y)
+    {
+        if (!dragging)
+            dropEvent(SDL_EventType.SDL_EVENT_DROP_BEGIN, x, y);
+        dragging = true;
+        dropEvent(SDL_EventType.SDL_EVENT_DROP_POSITION, x, y);
+        settle();
+    }
+
+    /// `files` dropped at `x`, `y`, dragged there first: an event for each, as SDL sends them.
+    void dropFiles(float x, float y, string[] files...)
+    {
+        dragOver(x, y);
+        foreach (f; files)
+            dropEvent(SDL_EventType.SDL_EVENT_DROP_FILE, x, y, f);
+        endDrag(x, y);
+    }
+
+    /// `text` dropped at `x`, `y`, dragged there first.
+    void dropText(float x, float y, string text)
+    {
+        import std.algorithm : splitter;
+        import std.array : empty;
+        dragOver(x, y);
+        // A line at a time, as SDL sends it, without its line breaks, or any empty lines
+        foreach (line; text.splitter!(c => c == '\n' || c == '\r'))
+            if (!line.empty)
+                dropEvent(SDL_EventType.SDL_EVENT_DROP_TEXT, x, y, line);
+        endDrag(x, y);
+    }
+
+    /// The drag left the window, or was let go of with nothing in it: the end, with no data.
+    void dragLeave()
+    {
+        endDrag(0, 0);
+    }
+
     /// The wheel or a touchpad, with the pointer at `x`, `y`, in SDL's amounts: notches of a
     /// wheel, or tenths of one for a touchpad. `dy` is positive away from the user, `dx` to the right.
     void scroll(float x, float y, float dy, float dx = 0)
@@ -244,6 +283,27 @@ private:
     string[] kept;
     string savedClipboard, savedPrimary;
     bool restoreClipboard;
+
+    bool dragging; // between a drag's first event over the window and its end
+
+    void dropEvent(SDL_EventType type, float x, float y, string data = null)
+    {
+        SDL_Event e;
+        e.type = type;
+        e.drop.windowID = windowID;
+        e.drop.reserved = harnessDevice;
+        e.drop.x = x * pointsToWindow;
+        e.drop.y = y * pointsToWindow;
+        e.drop.data = data is null ? null : keep(data);
+        SDL_PushEvent(&e);
+    }
+
+    void endDrag(float x, float y)
+    {
+        dropEvent(SDL_EventType.SDL_EVENT_DROP_COMPLETE, x, y);
+        dragging = false;
+        settle();
+    }
 
     void mouseButton(bool down, float x, float y, ubyte clicks, ubyte button)
     {
@@ -382,6 +442,12 @@ extern(C) bool onlyHarnessInput(void* userdata, SDL_Event* e) nothrow @nogc
         case SDL_EventType.SDL_EVENT_KEY_UP: return e.key.which == harnessDevice;
         case SDL_EventType.SDL_EVENT_TEXT_INPUT: return e.text.reserved == harnessDevice;
         case SDL_EventType.SDL_EVENT_TEXT_EDITING: return e.edit.reserved == harnessDevice;
+        // A drag from another app: the desktop's own, should one pass over the window, would upset the tests
+        case SDL_EventType.SDL_EVENT_DROP_BEGIN:
+        case SDL_EventType.SDL_EVENT_DROP_POSITION:
+        case SDL_EventType.SDL_EVENT_DROP_FILE:
+        case SDL_EventType.SDL_EVENT_DROP_TEXT:
+        case SDL_EventType.SDL_EVENT_DROP_COMPLETE: return e.drop.reserved == harnessDevice;
         // Where the real pointer is and which window has focus are the desktop's business; the
         // tests assume the pointer is where they put it and the window keeps focus
         case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_ENTER:
