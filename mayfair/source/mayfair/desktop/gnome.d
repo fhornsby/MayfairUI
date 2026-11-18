@@ -62,6 +62,7 @@ package(mayfair) DesktopSettings fromInterface(string listed, bool oriel) pure @
 
 private:
 
+version (Emscripten) {} else // a browser has no programs to run, and no std.process
 /// Runs each of `commands` at once, and what each printed, or null for one that couldn't be run.
 string[] runAll(string[] commands)
 {

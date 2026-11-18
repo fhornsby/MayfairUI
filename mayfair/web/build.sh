@@ -83,7 +83,8 @@ ldc2 -mtriple=wasm32-unknown-emscripten -O -c -oq -od="$objects" \
 emcc -O2 -c -I"$vendor/accesskit/include" -I"$mayfair/bindings" "$here/stubs.c" -o "$objects/stubs.o"
 
 # The app, linked with all of it. SDL is Emscripten's own; libc++ is for ThorVG and Yoga, which
-# are C++, built without exceptions.
+# are C++, built without exceptions. SDL's port draws to the canvas with Emscripten's Browser
+# library, which newer Emscriptens leave out unless it's asked for.
 echo "Linking"
 # shellcheck disable=SC2086
 ldc2 -mtriple=wasm32-unknown-emscripten -O -oq -od="$here/build/app" \
@@ -92,6 +93,7 @@ ldc2 -mtriple=wasm32-unknown-emscripten -O -oq -od="$here/build/app" \
     "$built/thorvg/src/libthorvg-1.a" "$built/yoga/libyogacore.a" "$built/harfbuzz/src/libharfbuzz.a" \
     "$built/freetype/libfreetype.a" "$built/libunibreak/libunibreak.a" "$built/sheenbidi/libsheenbidi.a" \
     -Xcc=-sUSE_SDL=3 -Xcc=-lc++ -Xcc=-lc++abi -Xcc=--shell-file -Xcc="$here/shell.html" $preloads \
-    -of="$out/index.html" 2>&1 | grep -v "ALLOW_MEMORY_GROWTH\|linker' input unused" || true
+    '-Xcc=-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$Browser' \
+    -of="$out/index.html" 2>&1 | grep -v "ALLOW_MEMORY_GROWTH\|linker' input unused\|ignored during compilation" || true
 test -f "$out/index.wasm"
 echo "Built $out/index.html"

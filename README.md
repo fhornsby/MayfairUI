@@ -100,8 +100,9 @@ I won't be supporting macOS or Windows directly, but I'm happy to take fixes tha
 running there. Some parts only work on Linux and the BSDs for now: screen readers are spoken to
 through AT-SPI, and the file chooser is the desktop portal's.
 
-An experimental browser build (WebAssembly, through Emscripten) is in [`mayfair/web`](mayfair/web),
-but it currently doesn't work, since desktop features were added.
+An experimental browser build (WebAssembly, through Emscripten) is in [`mayfair/web`](mayfair/web):
+[`hello-web`](examples/hello-web) runs in it. It draws on the CPU, and has no LiteWebView,
+accessibility, file dialogs, notifications or drag and drop.
 
 ## Building
 
@@ -184,7 +185,8 @@ What's still to be done, that I know of:
 
 **Platforms**
 - Test on FreeBSD, a primary target that's untested so far.
-- Fix the browser build, and give it more than the CPU renderer.
+- Give the browser build more than the CPU renderer, and build it in CI, so it can't break
+  unnoticed again.
 - Notifications on macOS and Windows, which have none yet.
 
 **Building**
