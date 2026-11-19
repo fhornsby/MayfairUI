@@ -1,0 +1,14 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A GpuView: a square drawn with WebGPU, turned by dragging it.",
+	"license": "MIT",
+	"name": "gpu-square",
+	"dependencies": {
+		"mayfair": {
+			"path": "../../mayfair"
+		}
+	}
+}

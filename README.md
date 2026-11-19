@@ -69,6 +69,9 @@ and adds the toolkit around them.
   progress bars, combo boxes, menus, dialogs, tabs, list, tree and table views (virtualised, so
   they scale to large data), a navigation sidebar, a scroll pane, a canvas, images, icons, Lottie
   animations, and LiteWebView for simple HTML.
+- **GPU views:** `GpuView` is drawn by the app itself, with WebGPU: a 3D view, a CAD model, a
+  game. It draws into a texture on the window's own GPU, which goes in the window in its place
+  among the other widgets, under what's laid over it, without being copied.
 - **Layout:** rows, columns, grids, docks and flexbox (Yoga).
 - **Styling:** CSS, with variables. The default theme follows the desktop's light or dark mode,
   its icon theme, where it puts the title-bar buttons, and how it smooths text.
@@ -154,6 +157,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
+| [`gpu-square`](examples/gpu-square) | A `GpuView`: a square drawn with WebGPU, turned by dragging it |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
 | [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |
 
@@ -172,6 +176,12 @@ What's still to be done, that I know of:
 - Choose a default font. IBM Plex Sans is bundled for now, so Mayfair can be compared side by
   side with Zed.
 - Justified text: `TextAlignment.justify` lines text up on the left for now.
+
+**GPU views**
+- Drawing on a thread of its own, so a heavy scene doesn't hold up the rest of the window.
+- In the browser, with its WebGPU, and on the OpenGL renderer without a copy through the CPU:
+  there, for now, what's drawn is read back and shown as an image.
+- Getting the device back after it's lost (a driver reset, say).
 
 **Drag and drop**
 - Dragging out of an app, to another app or the desktop, and from one widget to another within
