@@ -1044,6 +1044,8 @@ package(mayfair):
                 hidePopup(p);
     }
     void* nativeWindow;            // the SDL_Window it's in, from the App, for what the desktop shows over it
+    import mayfair.renderers.renderer : Renderer;
+    Renderer renderer;             // what draws the window, while it's open: for a GpuView, its device
     bool titleBarChosen;           // the app gave it its title bar, rather than the App a plain one
 
     /// The window was maximised or restored, for the title bar's button to say which it does.

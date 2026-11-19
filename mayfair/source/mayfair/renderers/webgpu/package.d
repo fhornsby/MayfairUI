@@ -670,6 +670,23 @@ private struct SharedGpu
 
 private __gshared SharedGpu gpu;
 
+/*
+    The device `r` draws with, if it's a WebGPU renderer, for a GpuView to draw with too: what it
+    draws into a texture on the same device is then drawn by ThorVG as a picture, without a copy.
+    False for any other renderer.
+*/
+package(mayfair) bool sharedDevice(Renderer r, out WGPUInstance instance, out WGPUAdapter adapter,
+                                   out WGPUDevice device, out WGPUQueue queue) @nogc nothrow
+{
+    if (!cast(WebGpuRenderer) r || !gpu.device)
+        return false;
+    instance = gpu.instance;
+    adapter = gpu.adapter;
+    device = gpu.device;
+    queue = gpu.queue;
+    return true;
+}
+
 /// Wraps the SDL window's native handle (Wayland or X11) in a WebGPU surface.
 private WGPUSurface createSurface(WGPUInstance instance, SDL_Window* window) @nogc nothrow
 {

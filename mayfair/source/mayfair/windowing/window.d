@@ -421,6 +421,7 @@ package(mayfair):
         if (drawsDecorations)
             applyFrame();
         _scene.nativeWindow = sdl;
+        _scene.renderer = renderer;
         _scene.attach(renderer.canvas);
         _scene.platformColourScheme = systemColourScheme();
         applyTranslucency(); // before it's styled, as the theme styles :translucent
@@ -449,6 +450,7 @@ package(mayfair):
         foreach (s; popupSurfaces)
             s.hideIfUnused();
         _scene.nativeWindow = null;
+        _scene.renderer = null;
         _scene.windowControls = null;
         _scene.popupWindows = null;
         foreach (s; popupSurfaces)

@@ -1,0 +1,247 @@
+A picture can be a GPU texture: tvg_picture_load_texture, for a WgCanvas.
+
+For Mayfair's GpuView, whose owner draws into a WGPUTexture on the canvas's own device with
+WebGPU of their own, to be drawn as a picture in the scene: in order with everything else, clipped,
+transformed and faded like any picture, and never copied. A RenderSurface carries the texture in
+place of pixels; the WebGPU engine's texture cache makes a view and a bind group for it, rather
+than uploading, and releases it rather than destroying it. Other engines can't draw one.
+
+--- a/inc/thorvg.h
+--- a/inc/thorvg.h
++++ b/inc/thorvg.h
+@@ -1704,6 +1704,23 @@
+     Result load(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs, bool copy = false) noexcept;
+ 
+     /**
++     * @brief Loads a GPU texture to draw as the picture: for a WgCanvas only, a WGPUTexture on its device.
++     *
++     * Nothing is copied: the texture is drawn as it is each time the canvas is drawn, so what's
++     * drawn into it after shows the next time. The picture holds a reference to it. Its colours are
++     * read as not premultiplied, as for ABGR8888S, whose format it must be in (RGBA8Unorm); and
++     * other canvases can't draw it.
++     *
++     * @param[in] texture The WGPUTexture.
++     * @param[in] w The width of the texture in pixels.
++     * @param[in] h The height of the texture in pixels.
++     * @param[in] cs ColorSpace::ABGR8888S.
++     *
++     * @note Experimental API: Mayfair's
++     */
++    Result load(void* texture, uint32_t w, uint32_t h, ColorSpace cs) noexcept;
++
++    /**
+      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
+      *
+      * This callback is invoked when an external asset reference (such as an image source or file path)
+--- a/src/bindings/capi/thorvg_capi.h
++++ b/src/bindings/capi/thorvg_capi.h
+@@ -1928,6 +1928,16 @@
+  */
+ TVG_API Tvg_Result tvg_picture_load_raw(Tvg_Paint picture, const uint32_t *data, uint32_t w, uint32_t h, Tvg_Colorspace cs, bool copy);
+ 
++
++/*!
++* @brief Loads a GPU texture to draw as the picture: for a WgCanvas only, a WGPUTexture on its device,
++* in RGBA8Unorm, read as not premultiplied (TVG_COLORSPACE_ABGR8888S). Nothing's copied: whatever's
++* drawn into the texture shows the next time the canvas is drawn.
++*
++* @note Experimental API: Mayfair's
++*/
++TVG_API Tvg_Result tvg_picture_load_texture(Tvg_Paint picture, void* texture, uint32_t w, uint32_t h, Tvg_Colorspace cs);
++
+ /**
+  * @brief Loads a picture data from a memory block of a given size.
+  *
+--- a/src/bindings/capi/tvgCapi.cpp
++++ b/src/bindings/capi/tvgCapi.cpp
+@@ -625,6 +625,13 @@
+ }
+ 
+ 
++TVG_API Tvg_Result tvg_picture_load_texture(Tvg_Paint picture, void* texture, uint32_t w, uint32_t h, Tvg_Colorspace cs)
++{
++    if (picture) return (Tvg_Result) reinterpret_cast<Picture*>(picture)->load(texture, w, h, static_cast<ColorSpace>(cs));
++    return TVG_RESULT_INVALID_ARGUMENT;
++}
++
++
+ TVG_API Tvg_Result tvg_picture_load_raw(Tvg_Paint picture, const uint32_t *data, uint32_t w, uint32_t h, Tvg_Colorspace cs, bool copy)
+ {
+     if (picture) return (Tvg_Result) reinterpret_cast<Picture*>(picture)->load(data, w, h, static_cast<ColorSpace>(cs), copy);
+--- a/src/loaders/raw/tvgRawLoader.cpp
++++ b/src/loaders/raw/tvgRawLoader.cpp
+@@ -63,6 +63,29 @@
+ }
+ 
+ 
++bool RawLoader::open(void* texture, uint32_t w, uint32_t h, ColorSpace cs)
++{
++    if (!Loader::read()) return true;
++
++    if (!texture || w == 0 || h == 0) return false;
++
++    this->w = (float)w;
++    this->h = (float)h;
++    this->copy = false;
++
++    //no pixels: the engine draws the texture, which its owner keeps drawing into
++    surface.texture = texture;
++    surface.stride = w;
++    surface.w = w;
++    surface.h = h;
++    surface.cs = cs;
++    surface.channelSize = sizeof(uint32_t);
++    surface.premultiplied = false;
++
++    return true;
++}
++
++
+ bool RawLoader::read()
+ {
+     Loader::read();
+--- a/src/loaders/raw/tvgRawLoader.h
++++ b/src/loaders/raw/tvgRawLoader.h
+@@ -33,6 +33,7 @@
+ 
+     using Loader::open;
+     bool open(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs, bool copy);
++    bool open(void* texture, uint32_t w, uint32_t h, ColorSpace cs);
+     bool read() override;
+ };
+ 
+--- a/src/renderer/gpu_engine/wg/tvgWgTextureMgr.cpp
++++ b/src/renderer/gpu_engine/wg/tvgWgTextureMgr.cpp
+@@ -59,6 +59,20 @@
+ 
+ void WgTextureMgr::upload(WgContext& context, WgTextureEntry& entry, const RenderSurface* surface, FilterMethod filter)
+ {
++    //a texture of the owner's: nothing to upload, only a view of it to make, once
++    if (surface->texture) {
++        auto texture = static_cast<WGPUTexture>(surface->texture);
++        if (entry.texture == texture) return;
++        releaseEntry(context, entry);
++        wgpuTextureAddRef(texture);
++        entry.texture = texture;
++        entry.external = true;
++        entry.textureView = context.createTextureView(entry.texture);
++        auto sampler = (filter == FilterMethod::Bilinear) ? context.samplerLinearClamp : context.samplerNearestClamp;
++        entry.bindGroup = context.layouts.createBindGroupTexSampled(sampler, entry.textureView);
++        return;
++    }
++
+     auto bytesPerRow = surface->stride * CHANNEL_SIZE(surface->cs);
+     auto dataSize = static_cast<uint64_t>(bytesPerRow) * surface->h;
+     auto texHandleChanged = context.allocateTexture(entry.texture, surface->w, surface->h, textureFormat(surface), surface->data, bytesPerRow, dataSize);
+@@ -76,7 +90,11 @@
+ {
+     context.layouts.releaseBindGroup(entry.bindGroup);
+     context.releaseTextureView(entry.textureView);
+-    context.releaseTexture(entry.texture);
++    if (entry.external) {
++        if (entry.texture) wgpuTextureRelease(entry.texture);
++        entry.texture = nullptr;
++        entry.external = false;
++    } else context.releaseTexture(entry.texture);
+     entry.refCnt = 0;
+ }
+ 
+--- a/src/renderer/gpu_engine/wg/tvgWgTextureMgr.h
++++ b/src/renderer/gpu_engine/wg/tvgWgTextureMgr.h
+@@ -33,6 +33,7 @@
+     WGPUTextureView textureView{};
+     WGPUBindGroup bindGroup{};
+     uint32_t refCnt = 0;
++    bool external = false;  //the picture's owner's (RenderSurface::texture): released, never destroyed
+ };
+ 
+ struct WgTextureMgr
+--- a/src/renderer/tvgLoader.h
++++ b/src/renderer/tvgLoader.h
+@@ -147,7 +147,7 @@
+ 
+     virtual RenderSurface* bitmap()
+     {
+-        if (surface.data) return &surface;
++        if (surface.data || surface.texture) return &surface;
+         return nullptr;
+     }
+ };
+--- a/src/renderer/tvgLoaderMgr.cpp
++++ b/src/renderer/tvgLoaderMgr.cpp
+@@ -386,6 +386,16 @@
+     return nullptr;
+ }
+ 
++
++// a GPU texture, drawn as it is whenever the canvas is drawn: never cached
++tvg::Loader* LoaderMgr::loader(void* texture, uint32_t w, uint32_t h, ColorSpace cs)
++{
++    auto loader = new RawLoader;
++    if (loader->open(texture, w, h, cs)) return loader;
++    delete (loader);
++    return nullptr;
++}
++
+ // loads fonts from memory - loader is cached (regardless of copy value) in order to access it while setting font
+ tvg::Loader* LoaderMgr::loader(const char* name, const char* data, uint32_t size, TVG_UNUSED const char* mimeType, const LoaderOps* ops, bool copy)
+ {
+--- a/src/renderer/tvgLoaderMgr.h
++++ b/src/renderer/tvgLoaderMgr.h
+@@ -35,6 +35,7 @@
+     static Loader* loader(const char* filename, const LoaderOps* ops, bool* invalid);
+     static Loader* loader(const char* data, uint32_t size, const char* mimeType, const LoaderOps* ops, bool copy);
+     static Loader* loader(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs, bool copy);
++    static Loader* loader(void* texture, uint32_t w, uint32_t h, ColorSpace cs);
+     static Loader* loader(const char* name, const char* data, uint32_t size, const char* mimeType, const LoaderOps* ops, bool copy);
+     static Loader* font(const char* name);
+     static Loader* anyfont();
+--- a/src/renderer/tvgPicture.cpp
++++ b/src/renderer/tvgPicture.cpp
+@@ -62,6 +62,12 @@
+ }
+ 
+ 
++Result Picture::load(void* texture, uint32_t w, uint32_t h, ColorSpace cs) noexcept
++{
++    return to<PictureImpl>(this)->load(texture, w, h, cs);
++}
++
++
+ Result Picture::resolver(std::function<bool(Paint* paint, const char* src, void* data)> func, void* data) noexcept
+ {
+     return to<PictureImpl>(this)->set(func, data);
+--- a/src/renderer/tvgPicture.h
++++ b/src/renderer/tvgPicture.h
+@@ -155,6 +155,13 @@
+         return load(LoaderMgr::loader(data, w, h, cs, copy));
+     }
+ 
++    Result load(void* texture, uint32_t w, uint32_t h, ColorSpace cs)
++    {
++        if (!texture || w <= 0 || h <= 0 || cs == ColorSpace::Unknown)  return Result::InvalidArguments;
++        if (vector || bitmap) return Result::InsufficientCondition;
++        return load(LoaderMgr::loader(texture, w, h, cs));
++    }
++
+     Result set(std::function<bool(Paint* paint, const char* src, void* data)> resolver, void* data)
+     {
+         if (loader) return Result::InsufficientCondition;
+--- a/src/renderer/tvgRender.h
++++ b/src/renderer/tvgRender.h
+@@ -61,6 +61,7 @@
+         uint32_t* buf32;            //for explicit 32bits channels
+         uint8_t*  buf8;             //for explicit 8bits grayscale
+     };
++    void* texture = nullptr;        //a GPU texture of the engine's own kind, in place of data: WgCanvas only
+     Key key;                        //a reserved lock for the thread safety
+     uint32_t stride = 0;
+     uint32_t w = 0, h = 0;
+@@ -75,6 +76,7 @@
+     RenderSurface(const RenderSurface* rhs)
+     {
+         data = rhs->data;
++        texture = rhs->texture;
+         stride = rhs->stride;
+         w = rhs->w;
+         h = rhs->h;
