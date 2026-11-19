@@ -3,9 +3,9 @@
 		"Freddie Hornsby"
 	],
 	"copyright": "Copyright © 2026, Freddie Hornsby",
-	"description": "A GpuView: a square drawn with WebGPU, turned by dragging it.",
+	"description": "A GpuView: a lit cube drawn with WebGPU, spinning, and turned by dragging it.",
 	"license": "MIT",
-	"name": "gpu-square",
+	"name": "gpu-cube",
 	"dependencies": {
 		"mayfair": {
 			"path": "../../mayfair"
