@@ -52,7 +52,9 @@ void dropping()
         d.dragOver(z.centreX + 5, z.centreY);
         d.dropFiles(z.centreX + 5, z.centreY, "/home/me/a.txt", "/home/me/b c.png");
         d.ui({
-            d.expect(happened, ["entered", "over", "over", "over", "dropped", "exited"], "dropped on");
+            // over as it's dragged there, again as dropFiles moves it there, and again as it's
+            // dropped, to see that it's still accepted
+            d.expect(happened, ["entered", "over", "over", "over", "over", "dropped", "exited"], "dropped on");
             d.expect(files, ["/home/me/a.txt", "/home/me/b c.png"], "both files, in one drop");
             d.check(text is null, "no text");
             d.check(!zone.draggedOver && !root.draggedOver, "over nothing after");
