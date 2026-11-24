@@ -1,0 +1,14 @@
+{
+	"name": "mayfair-pdfium-tests",
+	"description": "End-to-end tests for mayfair-pdf on PDFium: real PDFs, real windows",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-pdfium": {
+			"path": ".."
+		}
+	},
+	"sourceFiles": [
+		"../../mayfair/tests/source/harness.d"
+	]
+}

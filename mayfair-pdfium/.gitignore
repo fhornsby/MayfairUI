@@ -1,0 +1,14 @@
+.dub
+/libmayfair-pdfium.a
+/mayfair-pdfium-test-*
+/tests/mayfair-pdfium-tests
+/tests/libpdfium.so
+# PDFium, as fetch.d downloads it
+/pdfium/
+/pdfium-download.tgz
+/fetch
+/libpdfium.so
+/libpdfium.dylib
+/pdfium.dll
+/mayfair-pdfium-fetch
+/mayfair-pdfium-fetch.exe
