@@ -1,0 +1,19 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "PDFs for Mayfair: PdfDocument, PdfView and PdfThumbnails, read by an engine of the app's choosing",
+	"license": "MIT",
+	"name": "mayfair-pdf",
+	"targetType": "library",
+	"dependencies": {
+		"mayfair": {
+			"path": "../mayfair"
+		}
+	},
+	"toolchainRequirements": {
+		"frontend": ">=2.111.0",
+		"gdc": "no"
+	}
+}
