@@ -89,6 +89,14 @@ public:
         return Bounds(scrollX, scrollY, _view_[0], _view_[1]);
     }
 
+    /// Scrolls to `x`, `y` points from the content's top left, as far as it goes: as viewportBounds
+    /// has them, so `scrollTo(b.minX, b.minY)` puts back what `b` was.
+    final void scrollTo(float x, float y)
+    {
+        setHvalue(_max[0] > 0 ? clamp01(x / _max[0]) : 0);
+        setVvalue(_max[1] > 0 ? clamp01(y / _max[1]) : 0);
+    }
+
     /// What it shows and scrolls.
     mixin(declareProperty!(Widget, "content", "null", q{ _view.show(_content); }));
 
@@ -493,13 +501,6 @@ private:
     static float clampTo(float v, float max) nothrow @nogc
     {
         return v < 0 ? 0 : v > max ? max : v;
-    }
-
-    /// Scrolls to `x`, `y` points from the content's top left, as far as it goes.
-    void scrollTo(float x, float y)
-    {
-        setHvalue(_max[0] > 0 ? clamp01(x / _max[0]) : 0);
-        setVvalue(_max[1] > 0 ? clamp01(y / _max[1]) : 0);
     }
 
     void scrolled() nothrow @nogc
