@@ -46,6 +46,27 @@ where it looked. A download that fails doesn't fail the build.
 It declares the part of PDFium's C API it uses itself (`source/.../fpdf.d`).
 `tools/check-abi.sh` checks those declarations against the downloaded headers.
 
+## Editing
+
+Its documents can be changed and saved, with PDFium's own editing:
+
+- **Pages:** turned (`/Rotate`), deleted, moved, inserted blank, copied in from another PDF, and
+  cropped (`/CropBox`).
+- **Annotations, as other readers read them:** highlights, underlines, strike-throughs, notes,
+  rectangles and ovals are PDF's own kinds of annotation. Drawing and signatures are ink
+  annotations. PDFium draws all of these, and saves their appearance with them.
+- **Annotations PDFium doesn't draw itself:** text boxes, lines, arrows, stars, rounded rectangles
+  and speech bubbles are stamp annotations, drawn with path and text objects. Text boxes are in
+  Helvetica, which every reader has, so nothing's embedded; it has the Latin-1 characters only.
+- **Mayfair's own:** every annotation Mayfair makes carries `/MayfairData`, a description of
+  itself, which other readers ignore, so it can be changed later.
+- **Forms:** filled in with PDFium's form filling (AcroForm fields: text, check boxes, radio
+  buttons, lists), drawn as they're typed into. Neither JavaScript nor XFA, which this build of
+  PDFium leaves out.
+- **Saving:** a whole new file each time, not an incremental update, so a signed PDF's signature
+  is invalidated by saving it. It's saved encrypted as it was, or with its encryption taken off.
+  PDFium can't encrypt one (the viewer example uses qpdf for that).
+
 ## Licences
 
 This package is MIT. PDFium, and what's built into it, are under their own licences, which all
@@ -87,12 +108,19 @@ else yet.
 | Display | X11 (Xvfb) |
 | Mayfair's renderer | WebGPU on lavapipe (Mesa's software Vulkan), and the CPU renderer |
 
+Editing was tested in the same place: every kind of annotation written, read back, drawn, changed
+and removed; pages edited; forms filled in through the view; files saved and read back, by PDFium,
+and checked by qpdf.
+
 Not tested yet:
 
 - macOS and Windows, and Linux on ARM64, whose PDFium builds are pinned but haven't been run;
 - Wayland, a real GPU, and the OpenGL renderer;
 - a system's own PDFium;
-- PDFs from other producers: scanned, with forms, right-to-left text, or damaged.
+- PDFs from other producers: scanned, right-to-left text, damaged, or with forms made by other
+  apps (the tests' form is ReportLab's);
+- annotations made by other apps, other than being listed, moved and deleted;
+- saving very large PDFs (each edit keeps a copy in memory to undo to).
 
 ## Tests
 
@@ -104,6 +132,12 @@ Not tested yet:
   copying, following links, and rotation.
 - **The sidebar:** thumbnails and the outline.
 - **Closing:** while a document's opening, and over and over.
+- **Editing:** pages turned, deleted, moved, inserted and cropped, undone, redone, saved and read
+  back; each kind of annotation added, read back, drawn, changed, removed, undone and saved; a
+  form filled in by typing and clicking in a view; marking up with the view's tools; pages moved
+  and deleted in the sidebar.
+
+`tests/assets/make-form.py` makes the form, with ReportLab.
 
 ```sh
 cd tests && dub run

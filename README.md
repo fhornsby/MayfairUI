@@ -96,7 +96,9 @@ In packages of their own:
   widgets. [`mayfair-gstreamer`](mayfair-gstreamer) plays them with the system's GStreamer, which
   is LGPL: see its README for what it needs and its licences.
 - **PDFs:** [`mayfair-pdf`](mayfair-pdf) has `PdfDocument`, and `PdfView` to read one in: zoom,
-  search, selecting and copying text, links, and a sidebar of thumbnails and contents.
+  search, selecting and copying text, links, and a sidebar of thumbnails and contents. Documents
+  can be edited and saved: pages rotated, moved, deleted, inserted and cropped; annotations made
+  with the view's markup tools; forms filled in; every change undoable.
   [`mayfair-pdfium`](mayfair-pdfium) reads them with PDFium (BSD), downloaded as it's built.
 - **A terminal:** [`mayfair-terminal`](mayfair-terminal), on alacritty_terminal.
 
@@ -166,7 +168,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
-| [`pdf-viewer`](examples/pdf-viewer) | A PDF reader: pages, thumbnails, contents, zoom, search and passwords |
+| [`pdf-viewer`](examples/pdf-viewer) | A PDF viewer and editor, modelled on macOS's Preview: markup, signatures, forms, page editing, export and printing |
 | [`gpu-cube`](examples/gpu-cube) | A `GpuView`: a lit cube drawn with WebGPU, spinning, and turned by dragging it |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
 | [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |
@@ -203,11 +205,12 @@ What's still to be done, that I know of:
 - Test network streams and their buffering, other formats, and macOS and Windows.
 
 **PDFs**
-- Printing, filling in forms, and adding annotations.
+- Redacting, and text boxes edited on the page, in fonts with more than Latin-1.
 - Search options: matching case and whole words.
-- Turning single pages, and saving it.
+- Printing on Windows, and a print preview.
+- Images on Mayfair's clipboard, to copy a region of a page as a picture.
 - Uploading tiles straight to the GPU, rather than through an image.
-- Test on macOS, Windows and ARM64, and with PDFs from more producers.
+- Test on macOS, Windows and ARM64, and with PDFs and annotations from more producers.
 
 **Drag and drop**
 - Dragging out of an app, to another app or the desktop, and from one widget to another within
