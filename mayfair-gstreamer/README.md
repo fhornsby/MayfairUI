@@ -79,6 +79,23 @@ What plays depends on which plugins are installed:
 Media whose format or codec has no plugin halts with `MediaErrorKind.unsupported`, and its error's
 `details` says which plugins might play it.
 
+### If it says there's no playbin
+
+`playbin` is in GStreamer's base plugins, which nearly every system with GStreamer has. If it's
+missing, check what GStreamer itself says, from the same terminal the app ran from:
+
+```sh
+gst-inspect-1.0 playbin
+```
+
+If that can't find it either, look at the environment: `env | grep -E '^GST_|^LD_'`.
+`GST_PLUGIN_SYSTEM_PATH` replaces the folder GStreamer looks for its plugins in, rather than
+adding to it. A program installed as a snap or a Flatpak (Alacritty's snap, for one) can leave it
+set, with `GST_PLUGIN_PATH`, `GST_PLUGIN_SCANNER` and `LD_LIBRARY_PATH`, for everything started
+from it, pointing GStreamer into the snap. Unset them, or start the app from another terminal,
+then clear GStreamer's plugin cache, which remembers what it found: `rm -rf ~/.cache/gstreamer-1.0`.
+The player's error names any of these it finds set.
+
 ## Licences
 
 This package is MIT. **That doesn't change GStreamer's terms**, or any plugin's: an app that uses

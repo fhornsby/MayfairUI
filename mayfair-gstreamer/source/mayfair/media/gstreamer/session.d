@@ -183,7 +183,7 @@ private:
         auto g = &gstreamer;
         pipeline = g.gst.element_factory_make("playbin", null);
         if (!pipeline)
-            return "GStreamer has no playbin: its base plugins (gst-plugins-base) aren't installed";
+            return noPlaybin();
 
         GError* error;
         auto videoSink = g.gst.parse_bin_from_description(
@@ -215,6 +215,36 @@ private:
         synchronized (lock)
             wakeBus = bus;
         return null;
+    }
+
+    /*
+        Why there's no playbin, as far as can be told. Its plugin is in GStreamer's base plugins,
+        which every system with GStreamer nearly always has: more often GStreamer's been told to
+        look for its plugins elsewhere, by the environment -- which a program installed as a snap
+        or a Flatpak can leave set for everything started from it, a terminal above all.
+    */
+    static string noPlaybin()
+    {
+        import std.process : environment;
+        string why = "GStreamer";
+        if (auto version_ = gstreamer.gst.version_string())
+        {
+            why = fromStringz(version_).idup;
+            gstreamer.glib.free(version_);
+        }
+        why ~= " has no playbin, which is in its base plugins (gst-plugins-base)";
+        string[] set;
+        foreach (name; ["GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SYSTEM_PATH_1_0", "GST_PLUGIN_PATH",
+                        "GST_PLUGIN_PATH_1_0", "GST_PLUGIN_SCANNER", "LD_LIBRARY_PATH"])
+            if (auto value = environment.get(name))
+                set ~= name ~ "=" ~ value;
+        if (!set.length)
+            return why ~ ", which may not be installed";
+        import std.array : join;
+        return why ~ ". It may be looking in the wrong place: the environment has " ~ set.join(", ")
+             ~ ". GST_PLUGIN_SYSTEM_PATH, above all, stops it looking in the system's own plugins. "
+             ~ "A terminal installed as a snap or Flatpak can set these for everything started from it: "
+             ~ "unset them, or start the app from another terminal";
     }
 
     /// Stops the pipeline and lets go of it: its threads have stopped by the time this returns.

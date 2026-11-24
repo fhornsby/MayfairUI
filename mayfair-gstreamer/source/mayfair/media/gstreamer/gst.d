@@ -142,6 +142,7 @@ extern (C) nothrow @nogc:
     uint function() resource_error_quark;
     uint function() stream_error_quark;
     uint function() core_error_quark;
+    char* function() version_string;
 }
 
 /// libgstapp-1.0's.
