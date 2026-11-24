@@ -15,6 +15,7 @@ module mayfair.pdf;
 */
 
 public import mayfair.pdf.types;
+public import mayfair.pdf.annotation;
 public import mayfair.pdf.engine;
 public import mayfair.pdf.thread : PdfPriority;
 public import mayfair.pdf.document;

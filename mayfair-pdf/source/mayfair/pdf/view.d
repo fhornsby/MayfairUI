@@ -4,7 +4,9 @@ import std.math : abs, ceil, floor, pow, round;
 import mayfair.clipboard : Clipboard;
 import mayfair.accessibility : AccessibleRole;
 import mayfair.layout;
+import mayfair.pdf.annotation;
 import mayfair.pdf.document;
+import mayfair.pdf.engine : PdfFormKey, PdfFormModifiers, PdfFormPointer;
 import mayfair.pdf.thread : PdfPriority;
 import mayfair.pdf.types;
 import mayfair.properties;
@@ -34,6 +36,15 @@ import mayfair.widgets;
     copySelection, from one page or many. find() searches every page, a page at a time on the PDF
     thread, highlighting what it finds; findNext and findPrevious go between them. Links go to
     their page, or -- for a web address -- to onExternalLink, for the app to open as it opens them.
+
+    Pages are marked up with `tool`: highlighting, underlining or striking through text as it's
+    selected; notes, text boxes, shapes, lines and arrows dragged out; drawing freehand; placing a
+    signature. Each is an annotation, added to the document (so it can be undone, and is saved
+    with it), in `markupStyle`. With the select tool, an annotation's selected by clicking it --
+    moved by dragging, stretched by its handles, deleted with Delete -- and its text edited by
+    double-clicking, which onEditAnnotation hears, for the app to show an editor. The region tool
+    drags out a rectangle, to crop to. Form fields are filled in, the keyboard going to the field
+    with focus.
 
     It's a ScrollPane: what's round the pages is its background, which can be styled.
 */
@@ -169,6 +180,109 @@ public:
     void selectAll() { pages.selectAll(); }
     void clearSelection() { pages.clearSelection(); } /// ditto
 
+    // Marking up
+
+    /// What the pointer does on a page.
+    mixin(declareProperty!(PdfTool, "tool", "PdfTool.select", q{ pages.toolChanged(); }));
+
+    /// How what's drawn next looks.
+    mixin(declareProperty!(PdfMarkupStyle, "markupStyle", "PdfMarkupStyle.init"));
+
+    /// The annotation selected, to move, change or delete: page -1 for none.
+    mixin(declareReadOnlyProperty!(PdfAnnotationRef, "selectedAnnotation", "PdfAnnotationRef.init"));
+
+    /// The rectangle dragged out with the region tool: page -1 for none.
+    mixin(declareReadOnlyProperty!(PdfRegion, "region", "PdfRegion.init"));
+
+    /// What the signature tool places: a signature annotation, its strokes in its rect.
+    void setSignature(PdfAnnotation signature) { pages.signature = signature.copy(); }
+
+    /// ditto
+    bool hasSignature() const { return pages.signature.strokes.length > 0; }
+
+    /// Hears that an annotation's text wants editing: a note or text box double-clicked, or just
+    /// made. The app shows an editor, and changes it with changeAnnotation.
+    PdfView onEditAnnotation(void delegate(int page, PdfAnnotation a) handler)
+    {
+        _onEditAnnotation = handler;
+        return this;
+    }
+
+    /// The selected annotation, as it was last read: null if none is selected.
+    PdfAnnotation* selectedAnnotationValue()
+    {
+        if (_selectedAnnotation.page < 0 || !_document)
+            return null;
+        if (auto list = _document.cachedAnnotations(_selectedAnnotation.page))
+            foreach (ref a; list.list)
+                if (a.index == _selectedAnnotation.index)
+                {
+                    auto copy = new PdfAnnotation;
+                    *copy = a.copy();
+                    return copy;
+                }
+        return null;
+    }
+
+    /// Changes annotation `index` of page `page` to `a`, keeping it selected if it was.
+    void changeAnnotation(int page, int index, PdfAnnotation a)
+    {
+        if (!_document)
+            return;
+        const wasSelected = _selectedAnnotation == PdfAnnotationRef(page, index);
+        _document.updateAnnotation(page, index, a, (int now) {
+            if (wasSelected && now >= 0)
+                _setSelectedAnnotation(PdfAnnotationRef(page, now));
+            pages.overlayChanged();
+        });
+    }
+
+    /// Restyles the selected annotation: `change` is handed it, to change.
+    void restyleSelected(void delegate(ref PdfAnnotation) change)
+    {
+        auto a = selectedAnnotationValue;
+        if (!a || !a.ours)
+            return;
+        auto changed = a.copy();
+        change(changed);
+        changeAnnotation(_selectedAnnotation.page, _selectedAnnotation.index, changed);
+    }
+
+    /// Deletes the selected annotation.
+    void deleteSelectedAnnotation()
+    {
+        if (_selectedAnnotation.page < 0 || !_document)
+            return;
+        _document.removeAnnotation(_selectedAnnotation.page, _selectedAnnotation.index);
+        selectAnnotation(PdfAnnotationRef.init);
+    }
+
+    /// Selects annotation `which`, or none for PdfAnnotationRef.init.
+    void selectAnnotation(PdfAnnotationRef which)
+    {
+        _setSelectedAnnotation(which);
+        pages.overlayChanged();
+    }
+
+    /// Marks the text selected with an annotation of `kind`: a highlight, an underline, a strike through.
+    void markSelectedText(PdfAnnotationKind kind) { pages.markSelection(kind); }
+
+    /// Forgets the region dragged out.
+    void clearRegion()
+    {
+        _setRegion(PdfRegion.init);
+        pages.overlayChanged();
+    }
+
+    /// Crops the page the region's on -- or `pages`, if given -- to it.
+    void cropToRegion(const int[] pagesToCrop = null)
+    {
+        if (_region.page < 0 || !_document)
+            return;
+        _document.cropPages(pagesToCrop.length ? pagesToCrop : [_region.page], _region.rect);
+        clearRegion();
+    }
+
 protected:
     override void handleScroll(ref ScrollEvent event)
     {
@@ -186,6 +300,35 @@ protected:
 
     override void handleKey(ref KeyEvent event)
     {
+        if (pages.ready && _document.formFocus >= 0 && formKey(event))
+        {
+            event.consume();
+            return;
+        }
+        if (event.type == KeyEventType.pressed && pages.ready && !(event.control || event.meta)
+            && _selectedAnnotation.page >= 0)
+        {
+            if (event.code == KeyCode.delete_ || event.code == KeyCode.backspace)
+            {
+                deleteSelectedAnnotation();
+                event.consume();
+                return;
+            }
+            if (event.code == KeyCode.escape)
+            {
+                selectAnnotation(PdfAnnotationRef.init);
+                event.consume();
+                return;
+            }
+        }
+        if (event.type == KeyEventType.pressed && pages.ready && event.code == KeyCode.escape
+            && (_tool != PdfTool.select || _region.page >= 0))
+        {
+            clearRegion();
+            setTool(PdfTool.select);
+            event.consume();
+            return;
+        }
         if (event.type == KeyEventType.pressed && pages.ready)
         {
             pages.atStart = false;
@@ -225,6 +368,73 @@ protected:
 private:
     PdfPages pages;
     void delegate(string) _onExternalLink;
+    void delegate(int, PdfAnnotation) _onEditAnnotation;
+
+    /// A key while a form field has focus: whether it was the field's.
+    bool formKey(ref KeyEvent event)
+    {
+        auto doc = _document;
+        const ctrl = event.control || event.meta;
+        if (event.type == KeyEventType.typed)
+        {
+            if (event.character.length)
+                doc.formText(event.character);
+            return true;
+        }
+        if (event.type != KeyEventType.pressed)
+            return false;
+        uint mods;
+        if (event.shift) mods |= PdfFormModifiers.shift;
+        if (ctrl) mods |= PdfFormModifiers.control;
+        if (event.alt) mods |= PdfFormModifiers.alt;
+        if (ctrl)
+        {
+            switch (event.code)
+            {
+                case KeyCode.a: doc.formSelectAll(); return true;
+                case KeyCode.c: doc.formSelectedText((string t) { if (t.length) Clipboard.text(t); }); return true;
+                case KeyCode.x:
+                    doc.formSelectedText((string t) { if (t.length) { Clipboard.text(t); doc.formText(""); } });
+                    return true;
+                case KeyCode.v:
+                    if (auto t = Clipboard.text)
+                        doc.formText(t);
+                    return true;
+                case KeyCode.z: doc.formUndo(event.shift); return true;
+                case KeyCode.y: doc.formUndo(true); return true;
+                default: return false; // the app's shortcuts
+            }
+        }
+        PdfFormKey key;
+        switch (event.code)
+        {
+            case KeyCode.backspace: key = PdfFormKey.backspace; break;
+            case KeyCode.tab: key = PdfFormKey.tab; break;
+            case KeyCode.enter, KeyCode.numpadEnter: key = PdfFormKey.enter; break;
+            case KeyCode.escape:
+                doc.formBlur();
+                return true;
+            case KeyCode.left: key = PdfFormKey.left; break;
+            case KeyCode.right: key = PdfFormKey.right; break;
+            case KeyCode.up: key = PdfFormKey.up; break;
+            case KeyCode.down: key = PdfFormKey.down; break;
+            case KeyCode.home: key = PdfFormKey.home; break;
+            case KeyCode.end: key = PdfFormKey.end; break;
+            case KeyCode.pageUp: key = PdfFormKey.pageUp; break;
+            case KeyCode.pageDown: key = PdfFormKey.pageDown; break;
+            case KeyCode.delete_: key = PdfFormKey.delete_; break;
+            default:
+                return false; // typed, as text, instead
+        }
+        doc.formKey(key, true, mods);
+        return true;
+    }
+
+    void editAnnotation(int page, PdfAnnotation a)
+    {
+        if (_onEditAnnotation)
+            _onEditAnnotation(page, a);
+    }
     PdfDocument watching;
     float anchorX = float.nan, anchorY = float.nan; // where zoomTo keeps still
     bool fitting;                                    // the zoom's being set by fit, not by hand
@@ -260,6 +470,20 @@ private:
 
     void documentChanged()
     {
+        if (watching)
+            watching.removeChangeListener(&pages.documentEdited);
+        if (_document)
+        {
+            _document.addChangeListener(&pages.documentEdited);
+            auto doc = _document;
+            doc.formFocusProperty.addListener((int was, int now) {
+                if (doc is watching)
+                    setAcceptsTextInput(now >= 0);
+            });
+        }
+        setAcceptsTextInput(false);
+        _setSelectedAnnotation(PdfAnnotationRef.init);
+        _setRegion(PdfRegion.init);
         watching = _document;
         if (_document && _document.status == PdfStatus.loading)
         {
@@ -329,6 +553,53 @@ struct PdfViewStats
     int previews;      /// Pages with their preview drawn
 }
 
+/// What the pointer does on a PdfView's pages.
+enum PdfTool
+{
+    select,         /// Selects text, and annotations; follows links; fills in forms
+    region,         /// Drags out a rectangle: to crop to
+    highlight,      /// Highlights text as it's selected
+    underline,      /// Underlines text as it's selected
+    strikeOut,      /// Strikes text through as it's selected
+    note,           /// Puts a note where it's clicked
+    textBox,        /// Drags out a text box
+    rectangle,      /// Drags out a shape: ...
+    roundedRectangle,
+    oval,
+    line,
+    arrow,
+    star,
+    speechBubble,
+    draw,           /// Draws freehand
+    signature,      /// Puts the signature (see PdfView.setSignature) where it's clicked
+}
+
+/// How annotations a PdfView makes look.
+struct PdfMarkupStyle
+{
+    PdfColour colour = PdfColour(220, 38, 38);       /// Lines, shapes, drawing, underlines
+    PdfColour fill = PdfColour(0, 0, 0, 0);          /// Inside shapes and text boxes: none
+    float lineWidth = 3;
+    PdfColour textColour = PdfColour(0, 0, 0);       /// Text boxes'
+    float fontSize = 16;
+    PdfColour highlight = PdfColour(255, 214, 10);   /// Highlights'
+    PdfColour note = PdfColour(255, 204, 0);         /// Notes'
+}
+
+/// An annotation, by its page and its index among that page's.
+struct PdfAnnotationRef
+{
+    int page = -1;
+    int index = -1;
+}
+
+/// A rectangle on a page.
+struct PdfRegion
+{
+    int page = -1;
+    PdfRect rect;
+}
+
 /// How a PdfView's zoom follows its size.
 enum PdfFit
 {
@@ -360,12 +631,25 @@ struct Match
     size_t from, to;
 }
 
+/// Something drawn over a page: an outline, or handles, in the page's points.
+struct OverlayItem
+{
+    int page = -1;
+    PdfPathOp[] ops;
+    PdfColour stroke, fill = PdfColour(0, 0, 0, 0);
+    float width = 1;
+    bool zoomed;        // its width in the page's points, so zoomed with it; else in the screen's
+    bool dashed;
+    PdfPoint[] handles; // little squares, a fixed size on the screen
+}
+
 /// What a tile is of: a part of a page, rendered at a scale, turned.
 struct TileKey
 {
     float scale;
     int turns;
     int column, row;
+    uint version_;   // the page's, as the document has it: an edit renders it again
 }
 
 final class Tile
@@ -383,7 +667,8 @@ final class Slot
     int page;
     Tvg_Paint scene, shadow, frame, previewHolder, preview, tiles, selection, matches, current;
     PdfBitmap previewBitmap;
-    PdfRequest previewRequest, textRequest, linksRequest;
+    uint previewVersion;
+    PdfRequest previewRequest, textRequest, linksRequest, annotationsRequest;
     Tile[] tileList;
     PdfRequest[TileKey] waiting;
     PdfRect[] selectionRects, matchRects, currentRects; // on the unturned page, in points
@@ -629,13 +914,17 @@ protected:
     override void mounted() nothrow
     {
         holder = addPaint(tvg_scene_new());
+        overlay = addPaint(tvg_scene_new()); // over every page
+        overlayShapes = null;
         requestUpdate();
     }
 
     override void unmounted()
     {
-        // The holder took every slot's paints with it
+        // The holder took every slot's paints with it, and the overlay its shapes
         holder = null;
+        overlay = null;
+        overlayShapes = null;
         foreach (s; slots)
             forget(s);
         slots = null;
@@ -706,6 +995,8 @@ protected:
             want(s, visible, vp);
         }
         trimTiles();
+        if (overlayDirty)
+            buildOverlay();
         invalidate();
     }
 
@@ -718,6 +1009,7 @@ protected:
             requestUpdate();
         foreach (s; slots)
             place(s);
+        placeOverlay();
     }
 
     override void handleMouse(ref MouseEvent event)
@@ -731,58 +1023,26 @@ protected:
                     return;
                 atStart = false;
                 view.requestFocus();
-                int page;
-                float px, py;
-                pointOn(event.x, event.y, page, px, py);
-                pressedLink = PdfLink.init;
-                pressedOnLink = false;
-                if (auto links = view._document.cachedLinks(page))
-                    if (auto l = links.at(px, py))
-                    {
-                        pressedLink = PdfLink(l.areas.dup, l.page, l.y, l.uri);
-                        pressedOnLink = true;
-                    }
-                dragging = true;
-                moved = false;
-                if (event.clickCount == 2)
-                    selectWord(page, px, py);
-                else
-                {
-                    anchor = focus = boundaryAt(page, px, py);
-                    view._setHasSelection(false);
-                    marksChanged();
-                }
+                pressed(event.x, event.y, event.clickCount, modifiers(event));
                 event.consume();
                 break;
             case MouseEventType.dragged:
-                if (!dragging)
+                if (gesture == Gesture.none)
                     return;
-                moved = true;
-                int page;
-                float px, py;
-                pointOn(event.x, event.y, page, px, py);
-                focus = boundaryAt(page, px, py);
-                view._setHasSelection(anchor != focus);
-                marksChanged();
+                dragged(event.x, event.y, event.shift);
                 event.consume();
                 break;
             case MouseEventType.released:
-                if (!dragging)
+                if (gesture == Gesture.none)
                     return;
-                dragging = false;
-                if (!moved && pressedOnLink && !view._hasSelection)
-                    follow(pressedLink);
+                released(event.x, event.y, modifiers(event));
                 event.consume();
                 break;
             case MouseEventType.moved:
                 int page;
                 float px, py;
                 pointOn(event.x, event.y, page, px, py);
-                auto doc = view._document;
-                auto links = doc.cachedLinks(page);
-                auto text = doc.cachedText(page);
-                setCursor(links && links.at(px, py) ? Cursor.hand : text && text.charUnder(px, py) >= 0 ? Cursor.text
-                          : Cursor.default_);
+                setCursor(cursorAt(page, px, py));
                 break;
             default:
                 break;
@@ -804,9 +1064,25 @@ private:
 
     // Selecting, and links
     Boundary anchor, focus;
-    bool dragging, moved, pressedOnLink;
+    bool pressedOnLink;
     PdfLink pressedLink;
     uint copyGeneration;
+
+    // Marking up: what's being done by dragging, and what's drawn over the pages meanwhile
+    enum Gesture { none, selectText, form, move, resize, shape, ink, region }
+    Gesture gesture;
+    int gesturePage;
+    float startX = 0, startY = 0;   // where it started, on gesturePage, in its points
+    bool moved;
+    PdfAnnotation original, changing; // the annotation as it was, and as it's being dragged to
+    int handle = -1;
+    PdfPoint[] inkPoints;
+    PdfRect regionRect;
+    PdfAnnotation signature;
+    Tvg_Paint overlay;
+    Tvg_Paint[] overlayShapes;
+    OverlayItem[] overlayItems;
+    bool overlayDirty;
 
     // Searching
     dstring query;
@@ -815,6 +1091,694 @@ private:
     int searched;
     uint generation;
     PdfRequest[] searchRequests;
+
+    // Marking up
+
+    static uint modifiers(ref MouseEvent event)
+    {
+        uint m;
+        if (event.shift) m |= PdfFormModifiers.shift;
+        if (event.control || event.meta) m |= PdfFormModifiers.control;
+        if (event.alt) m |= PdfFormModifiers.alt;
+        return m;
+    }
+
+    /// Where `x`, `y` in the content is on page `page`, in its points, kept on the page.
+    PdfPoint onPage(float x, float y, int page)
+    {
+        const z = view._zoom, s = view._document.pageSize(page);
+        float px, py;
+        unturn((x - lefts[page]) / z, (y - tops[page]) / z, view._rotation, s.width, s.height, px, py);
+        return PdfPoint(px < 0 ? 0 : px > s.width ? s.width : px, py < 0 ? 0 : py > s.height ? s.height : py);
+    }
+
+    /// A new annotation of `kind`, as the markup style has it.
+    PdfAnnotation fresh(PdfAnnotationKind kind)
+    {
+        import std.process : environment;
+        const st = view._markupStyle;
+        PdfAnnotation a;
+        a.kind = kind;
+        a.colour = st.colour;
+        a.fill = st.fill;
+        a.lineWidth = st.lineWidth;
+        a.fontSize = st.fontSize;
+        a.ours = true;
+        with (PdfAnnotationKind)
+        {
+            if (kind == highlight)
+                a.colour = st.highlight;
+            else if (kind == note)
+                a.colour = st.note;
+            else if (kind == textBox)
+                a.colour = st.textColour;
+        }
+        a.author = environment.get("USER", environment.get("USERNAME", null));
+        return a;
+    }
+
+    static PdfAnnotationKind kindFor(PdfTool tool)
+    {
+        with (PdfTool) switch (tool)
+        {
+            case highlight: return PdfAnnotationKind.highlight;
+            case underline: return PdfAnnotationKind.underline;
+            case strikeOut: return PdfAnnotationKind.strikeOut;
+            case note: return PdfAnnotationKind.note;
+            case textBox: return PdfAnnotationKind.textBox;
+            case rectangle: return PdfAnnotationKind.rectangle;
+            case roundedRectangle: return PdfAnnotationKind.roundedRectangle;
+            case oval: return PdfAnnotationKind.oval;
+            case line: return PdfAnnotationKind.line;
+            case arrow: return PdfAnnotationKind.arrow;
+            case star: return PdfAnnotationKind.star;
+            case speechBubble: return PdfAnnotationKind.speechBubble;
+            case draw: return PdfAnnotationKind.ink;
+            case signature: return PdfAnnotationKind.signature;
+            default: return PdfAnnotationKind.other;
+        }
+    }
+
+    /// The selected annotation, if it's on `page`.
+    PdfAnnotation* selectedOn(int page)
+    {
+        const sel = view._selectedAnnotation;
+        if (sel.page != page)
+            return null;
+        if (auto list = view._document.cachedAnnotations(page))
+            foreach (ref a; list.list)
+                if (a.index == sel.index)
+                    return &a;
+        return null;
+    }
+
+    /// Whether `a` can be stretched, and where its handles are: rectangles' corners and edges, a line's ends.
+    PdfPoint[] handlesOf(const ref PdfAnnotation a)
+    {
+        if (a.marksText || a.kind == PdfAnnotationKind.note || a.kind == PdfAnnotationKind.widget)
+            return null;
+        if ((a.kind == PdfAnnotationKind.line || a.kind == PdfAnnotationKind.arrow) && a.strokes.length
+            && a.strokes[0].length >= 2)
+            return [a.strokes[0][0], a.strokes[0][$ - 1]];
+        const r = a.rect;
+        const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+        return [PdfPoint(r.x, r.y), PdfPoint(cx, r.y), PdfPoint(r.right, r.y), PdfPoint(r.right, cy),
+                PdfPoint(r.right, r.bottom), PdfPoint(cx, r.bottom), PdfPoint(r.x, r.bottom), PdfPoint(r.x, cy)];
+    }
+
+    /// Which of `a`'s handles is at `px`, `py`, or -1.
+    int handleAt(const ref PdfAnnotation a, float px, float py)
+    {
+        const reach = 6 / view._zoom;
+        foreach (i, h; handlesOf(a))
+            if (px >= h.x - reach && px <= h.x + reach && py >= h.y - reach && py <= h.y + reach)
+                return cast(int) i;
+        return -1;
+    }
+
+    /// `a` with handle `h` dragged to `x`, `y`.
+    PdfAnnotation stretched(const ref PdfAnnotation a, int h, float x, float y)
+    {
+        if (a.kind == PdfAnnotationKind.line || a.kind == PdfAnnotationKind.arrow)
+        {
+            auto b = a.copy();
+            b.strokes[0][h == 0 ? 0 : $ - 1] = PdfPoint(x, y);
+            b.rect = b.bounds;
+            return b;
+        }
+        float l = a.rect.x, t = a.rect.y, r = a.rect.right, bt = a.rect.bottom;
+        switch (h)
+        {
+            case 0: l = x; t = y; break;
+            case 1: t = y; break;
+            case 2: r = x; t = y; break;
+            case 3: r = x; break;
+            case 4: r = x; bt = y; break;
+            case 5: bt = y; break;
+            case 6: l = x; bt = y; break;
+            default: l = x; break;
+        }
+        if (r < l) { const k = l; l = r; r = k; }
+        if (bt < t) { const k = t; t = bt; bt = k; }
+        if (r - l < 4) r = l + 4;
+        if (bt - t < 4) bt = t + 4;
+        return a.fittedTo(PdfRect(l, t, r - l, bt - t));
+    }
+
+    /// The rectangle from where the drag started to `p`: a square, or circle, with Shift.
+    PdfRect dragRect(PdfPoint p, bool square)
+    {
+        float w = p.x - startX, h = p.y - startY;
+        if (square)
+        {
+            import std.math : fabs;
+            const side = fabs(w) > fabs(h) ? fabs(w) : fabs(h);
+            w = w < 0 ? -side : side;
+            h = h < 0 ? -side : side;
+        }
+        const l = w < 0 ? startX + w : startX, t = h < 0 ? startY + h : startY;
+        return PdfRect(l, t, w < 0 ? -w : w, h < 0 ? -h : h);
+    }
+
+    void pressed(float x, float y, int clicks, uint mods)
+    {
+        auto doc = view._document;
+        int page;
+        float px, py;
+        pointOn(x, y, page, px, py);
+        gesturePage = page;
+        const p = onPage(x, y, page);
+        startX = p.x;
+        startY = p.y;
+        moved = false;
+        gesture = Gesture.none;
+        const tool = view._tool;
+        auto list = doc.cachedAnnotations(page);
+        with (PdfTool) switch (tool)
+        {
+            case select:
+            {
+                // A handle of what's selected, to stretch it
+                if (auto sel = selectedOn(page))
+                {
+                    const h = handleAt(*sel, px, py);
+                    if (h >= 0)
+                    {
+                        original = changing = sel.copy();
+                        handle = h;
+                        gesture = Gesture.resize;
+                        break;
+                    }
+                }
+                // An annotation, to select and move -- or, a note or text box clicked twice, to edit
+                if (list)
+                    if (auto a = list.at(px, py, (ref const PdfAnnotation x) => x.movable))
+                    {
+                        if (doc.formFocus >= 0)
+                            doc.formBlur();
+                        view._setSelectedAnnotation(PdfAnnotationRef(page, a.index));
+                        original = changing = a.copy();
+                        if (clicks == 2 && (a.kind == PdfAnnotationKind.note || a.kind == PdfAnnotationKind.textBox))
+                            view.editAnnotation(page, a.copy());
+                        else if (!a.marksText)
+                            gesture = Gesture.move;
+                        break;
+                    }
+                view._setSelectedAnnotation(PdfAnnotationRef.init);
+                // A form field, to fill in
+                if (list)
+                    if (list.at(px, py, (ref const PdfAnnotation x) => x.kind == PdfAnnotationKind.widget))
+                    {
+                        doc.formPointer(page, clicks == 2 ? PdfFormPointer.doubleClick : PdfFormPointer.press, px, py, mods);
+                        gesture = Gesture.form;
+                        break;
+                    }
+                if (doc.formFocus >= 0)
+                    doc.formBlur();
+                goto case highlight;
+            }
+            case highlight, underline, strikeOut:
+                // Text, to select
+                pressedLink = PdfLink.init;
+                pressedOnLink = false;
+                if (tool == select)
+                    if (auto links = doc.cachedLinks(page))
+                        if (auto l = links.at(px, py))
+                        {
+                            pressedLink = PdfLink(l.areas.dup, l.page, l.y, l.uri);
+                            pressedOnLink = true;
+                        }
+                gesture = Gesture.selectText;
+                if (clicks == 2)
+                    selectWord(page, px, py);
+                else
+                {
+                    anchor = focus = boundaryAt(page, px, py);
+                    view._setHasSelection(false);
+                    marksChanged();
+                }
+                break;
+            case region:
+                gesture = Gesture.region;
+                regionRect = PdfRect(p.x, p.y, 0, 0);
+                view._setRegion(PdfRegion.init);
+                break;
+            case draw:
+                gesture = Gesture.ink;
+                inkPoints = [p];
+                break;
+            case note:
+            {
+                auto a = fresh(PdfAnnotationKind.note);
+                a.rect = PdfRect(p.x - 10, p.y - 10, 20, 20);
+                place(page, a, true);
+                break;
+            }
+            case signature:
+            {
+                if (!this.signature.strokes.length)
+                    break;
+                const r = this.signature.rect;
+                const w = 160f, h = r.width > 0 ? r.height * w / r.width : 60;
+                auto a = this.signature.fittedTo(PdfRect(p.x - w / 2, p.y - h / 2, w, h));
+                a.kind = PdfAnnotationKind.signature;
+                a.ours = true;
+                place(page, a, false);
+                break;
+            }
+            default:
+                // A shape, a line, a text box: dragged out
+                gesture = Gesture.shape;
+                changing = fresh(kindFor(tool));
+                changing.rect = PdfRect(p.x, p.y, 0, 0);
+                if (changing.kind == PdfAnnotationKind.line || changing.kind == PdfAnnotationKind.arrow)
+                    changing.strokes = [[p, p]];
+                break;
+        }
+        overlayChanged();
+    }
+
+    void dragged(float x, float y, bool shift)
+    {
+        moved = true;
+        const p = onPage(x, y, gesturePage);
+        final switch (gesture)
+        {
+            case Gesture.none, Gesture.form:
+                break;
+            case Gesture.selectText:
+                int page;
+                float px, py;
+                pointOn(x, y, page, px, py);
+                focus = boundaryAt(page, px, py);
+                view._setHasSelection(anchor != focus);
+                marksChanged();
+                break;
+            case Gesture.move:
+                changing = original.movedBy(p.x - startX, p.y - startY);
+                break;
+            case Gesture.resize:
+                changing = stretched(original, handle, p.x, p.y);
+                break;
+            case Gesture.shape:
+                if (changing.kind == PdfAnnotationKind.line || changing.kind == PdfAnnotationKind.arrow)
+                {
+                    changing.strokes[0][1] = p;
+                    changing.rect = changing.bounds;
+                }
+                else
+                    changing.rect = dragRect(p, shift);
+                break;
+            case Gesture.ink:
+                if (distance(inkPoints[$ - 1], p) * view._zoom >= 1.5f)
+                    inkPoints ~= p;
+                break;
+            case Gesture.region:
+                regionRect = dragRect(p, false);
+                break;
+        }
+        overlayChanged();
+    }
+
+    void released(float x, float y, uint mods)
+    {
+        auto doc = view._document;
+        const page = gesturePage;
+        const g = gesture;
+        gesture = Gesture.none;
+        final switch (g)
+        {
+            case Gesture.none:
+                break;
+            case Gesture.form:
+            {
+                const p = onPage(x, y, page);
+                doc.formPointer(page, PdfFormPointer.release, p.x, p.y, mods);
+                break;
+            }
+            case Gesture.selectText:
+                const tool = view._tool;
+                if (tool == PdfTool.select)
+                {
+                    if (!moved && pressedOnLink && !view._hasSelection)
+                        follow(pressedLink);
+                }
+                else if (view._hasSelection)
+                    markSelection(kindFor(tool));
+                break;
+            case Gesture.move, Gesture.resize:
+                if (moved)
+                    view.changeAnnotation(page, original.index, changing);
+                break;
+            case Gesture.shape:
+            {
+                auto a = changing.copy();
+                const line = a.kind == PdfAnnotationKind.line || a.kind == PdfAnnotationKind.arrow;
+                // Clicked rather than dragged: a shape of a size to start with
+                if (line && distance(a.strokes[0][0], a.strokes[0][1]) < 4)
+                    a.strokes[0][1] = PdfPoint(a.strokes[0][0].x + 100, a.strokes[0][0].y);
+                else if (!line && (a.rect.width < 4 || a.rect.height < 4))
+                {
+                    const w = a.kind == PdfAnnotationKind.textBox ? 200f : 100f;
+                    const h = a.kind == PdfAnnotationKind.textBox ? 40f : 70f;
+                    a.rect = PdfRect(startX, startY, w, h);
+                }
+                a.rect = a.bounds;
+                place(page, a, a.kind == PdfAnnotationKind.textBox);
+                break;
+            }
+            case Gesture.ink:
+            {
+                auto a = fresh(PdfAnnotationKind.ink);
+                a.strokes = [inkPoints.dup];
+                a.rect = a.bounds;
+                inkPoints = null;
+                doc.addAnnotation(page, a);
+                break;
+            }
+            case Gesture.region:
+                if (regionRect.width >= 4 && regionRect.height >= 4)
+                    view._setRegion(PdfRegion(page, regionRect));
+                break;
+        }
+        overlayChanged();
+    }
+
+    /// Adds `a` to `page`, selects it, and -- if it's text -- asks for its text. The tool's done.
+    void place(int page, PdfAnnotation a, bool edit)
+    {
+        auto doc = view._document;
+        doc.addAnnotation(page, a, (int index) {
+            if (index < 0)
+                return;
+            view._setSelectedAnnotation(PdfAnnotationRef(page, index));
+            overlayChanged();
+            if (edit)
+            {
+                auto placed = a.copy();
+                placed.index = index;
+                view.editAnnotation(page, placed);
+            }
+        });
+        view.setTool(PdfTool.select);
+    }
+
+    /// The text selected, marked with annotations of `kind`: one a page.
+    void markSelection(PdfAnnotationKind kind)
+    {
+        if (!view._hasSelection || !ready)
+            return;
+        auto from = anchor < focus ? anchor : focus, to = anchor < focus ? focus : anchor;
+        foreach (p; from.page .. to.page + 1)
+        {
+            auto text = view._document.cachedText(p);
+            if (!text)
+                continue;
+            const a = p == from.page ? from.index : 0, b = p == to.page ? to.index : text.length;
+            auto mark = fresh(kind);
+            mark.lines = text.rects(a, b);
+            if (!mark.lines.length)
+                continue;
+            import std.conv : to;
+            import std.string : strip;
+            mark.text = text.between(a, b).to!string.strip;
+            mark.rect = mark.bounds;
+            view._document.addAnnotation(p, mark);
+        }
+        clearSelection();
+    }
+
+    void toolChanged()
+    {
+        gesture = Gesture.none;
+        inkPoints = null;
+        if (view._tool != PdfTool.select)
+            view._setSelectedAnnotation(PdfAnnotationRef.init);
+        if (view._tool != PdfTool.region)
+            view._setRegion(PdfRegion.init);
+        setCursor(view._tool == PdfTool.select ? Cursor.default_ : cursorAt(-1, 0, 0));
+        overlayChanged();
+    }
+
+    Cursor cursorAt(int page, float px, float py)
+    {
+        with (PdfTool) switch (view._tool)
+        {
+            case select:
+                break;
+            case highlight, underline, strikeOut:
+                return Cursor.text;
+            default:
+                return Cursor.crosshair;
+        }
+        if (page < 0)
+            return Cursor.default_;
+        auto doc = view._document;
+        if (auto sel = selectedOn(page))
+            if (handleAt(*sel, px, py) >= 0)
+                return Cursor.crosshair;
+        if (auto list = doc.cachedAnnotations(page))
+            if (auto a = list.at(px, py))
+            {
+                if (a.kind == PdfAnnotationKind.widget)
+                    return a.fieldType == 6 ? Cursor.text : Cursor.hand; // 6: a text field
+                if (!a.marksText)
+                    return Cursor.move;
+            }
+        auto links = doc.cachedLinks(page);
+        auto text = doc.cachedText(page);
+        return links && links.at(px, py) ? Cursor.hand : text && text.charUnder(px, py) >= 0 ? Cursor.text
+               : Cursor.default_;
+    }
+
+    /// The document changed: pages go where they went, and what's on them is drawn again.
+    void documentEdited(PdfChange change)
+    {
+        if (!ready)
+            return;
+        int newIndex(int old)
+        {
+            foreach (i, f; change.from)
+                if (f == old)
+                    return cast(int) i;
+            return -1;
+        }
+        Slot[] kept;
+        foreach (s; slots)
+        {
+            const j = newIndex(s.page);
+            if (j < 0)
+            {
+                if (holder)
+                    tvg_scene_remove(holder, s.scene);
+                forget(s);
+                continue;
+            }
+            s.page = j;
+            // Asked for again, of the page as it is now
+            if (s.annotationsRequest) { s.annotationsRequest.cancel(); s.annotationsRequest = null; }
+            if (s.previewRequest) { s.previewRequest.cancel(); s.previewRequest = null; }
+            if (s.textRequest) { s.textRequest.cancel(); s.textRequest = null; }
+            if (s.linksRequest) { s.linksRequest.cancel(); s.linksRequest = null; }
+            dropWaiting(s, null);
+            kept ~= s;
+        }
+        slots = kept;
+        const sel = view._selectedAnnotation;
+        if (sel.page >= 0)
+        {
+            const j = newIndex(sel.page);
+            view._setSelectedAnnotation(j < 0 ? PdfAnnotationRef.init : PdfAnnotationRef(j, sel.index));
+        }
+        if (view._region.page >= 0)
+            view._setRegion(PdfRegion.init);
+        anchor = focus = Boundary.init;
+        view._setHasSelection(false);
+        if (query.length)
+        {
+            import std.conv : to;
+            search(query.to!string, matchCase);
+        }
+        count = view._document.pageCount;
+        if (view._currentPage >= count)
+            view._setCurrentPage(count - 1);
+        applyFit();
+        relayout();
+        overlayChanged();
+        requestUpdate();
+    }
+
+    // What's drawn over the pages: what's being dragged out, what's selected
+
+    void overlayChanged()
+    {
+        overlayDirty = true;
+        requestUpdate();
+        invalidate();
+    }
+
+    void buildOverlay()
+    {
+        overlayDirty = false;
+        OverlayItem[] items;
+        enum PdfColour accent = PdfColour(53, 132, 228);
+        PdfPathOp mv(PdfPoint p) { return PdfPathOp(PdfPathOp.Kind.moveTo, [p, PdfPoint.init, PdfPoint.init]); }
+        PdfPathOp ln(PdfPoint p) { return PdfPathOp(PdfPathOp.Kind.lineTo, [p, PdfPoint.init, PdfPoint.init]); }
+        PdfPathOp[] box(PdfRect r)
+        {
+            return [mv(PdfPoint(r.x, r.y)), ln(PdfPoint(r.right, r.y)), ln(PdfPoint(r.right, r.bottom)),
+                    ln(PdfPoint(r.x, r.bottom)), PdfPathOp(PdfPathOp.Kind.close)];
+        }
+        void drawn(int page, const ref PdfAnnotation a)
+        {
+            // How it'll look: its outline, its strokes
+            if (isShape(a.kind))
+                foreach (sh; mayfair.pdf.annotation.shapePath(a))
+                    items ~= OverlayItem(page, sh.ops, a.colour,
+                                         sh.fillWithColour ? a.colour : sh.filled ? a.fill : PdfColour(0, 0, 0, 0),
+                                         a.lineWidth, true, false);
+            else if (a.stroked)
+                foreach (stroke; a.strokes)
+                {
+                    PdfPathOp[] ops;
+                    foreach (i, p; stroke)
+                        ops ~= i ? ln(p) : mv(p);
+                    items ~= OverlayItem(page, ops, a.colour, PdfColour(0, 0, 0, 0), a.lineWidth, true, false);
+                }
+        }
+        const page = gesturePage;
+        final switch (gesture)
+        {
+            case Gesture.none, Gesture.form, Gesture.selectText:
+                break;
+            case Gesture.move, Gesture.resize:
+                if (moved)
+                {
+                    drawn(page, changing);
+                    items ~= OverlayItem(page, box(changing.bounds), accent, PdfColour(0, 0, 0, 0), 1, false, true);
+                }
+                break;
+            case Gesture.shape:
+                if (changing.kind == PdfAnnotationKind.textBox)
+                    items ~= OverlayItem(page, box(changing.rect), changing.colour, PdfColour(0, 0, 0, 0), 1, false, true);
+                else
+                    drawn(page, changing);
+                break;
+            case Gesture.ink:
+            {
+                PdfPathOp[] ops;
+                foreach (i, p; inkPoints)
+                    ops ~= i ? ln(p) : mv(p);
+                const st = view._markupStyle;
+                items ~= OverlayItem(page, ops, st.colour, PdfColour(0, 0, 0, 0), st.lineWidth, true, false);
+                break;
+            }
+            case Gesture.region:
+                items ~= OverlayItem(page, box(regionRect), accent, PdfColour(53, 132, 228, 30), 1, false, true);
+                break;
+        }
+        // The region dragged out, once it is
+        const region = view._region;
+        if (gesture != Gesture.region && region.page >= 0)
+            items ~= OverlayItem(region.page, box(region.rect), accent, PdfColour(53, 132, 228, 30), 1, false, true);
+        // What's selected, if it's not being dragged: a frame, and its handles
+        const sel = view._selectedAnnotation;
+        if (sel.page >= 0 && !((gesture == Gesture.move || gesture == Gesture.resize) && moved))
+            if (auto a = selectedOn(sel.page))
+            {
+                auto r = a.bounds;
+                r = PdfRect(r.x - 2, r.y - 2, r.width + 4, r.height + 4);
+                items ~= OverlayItem(sel.page, box(r), accent, PdfColour(0, 0, 0, 0), 1, false, true);
+                auto handles = handlesOf(*a);
+                if (handles.length)
+                {
+                    OverlayItem h;
+                    h.page = sel.page;
+                    h.handles = handles;
+                    h.stroke = accent;
+                    h.fill = PdfColour(255, 255, 255);
+                    h.width = 1;
+                    items ~= h;
+                }
+            }
+        overlayItems = items;
+        if (overlay)
+            while (overlayShapes.length < items.length)
+            {
+                auto shape = tvg_shape_new();
+                tvg_scene_add(overlay, shape);
+                overlayShapes ~= shape;
+            }
+        invalidate();
+    }
+
+    /// Puts what's drawn over the pages where they are now.
+    void placeOverlay() nothrow @nogc
+    {
+        if (!overlay)
+            return;
+        const z = view._zoom, turns = view._rotation;
+        foreach (i, shape; overlayShapes)
+        {
+            tvg_shape_reset(shape);
+            if (i >= overlayItems.length || overlayItems[i].page < 0 || overlayItems[i].page >= count)
+            {
+                tvg_shape_set_stroke_width(shape, 0);
+                tvg_shape_set_fill_color(shape, 0, 0, 0, 0);
+                continue;
+            }
+            const item = &overlayItems[i];
+            const page = item.page;
+            const size = view._document.pageSize(page);
+            void at(PdfPoint p, out float sx, out float sy)
+            {
+                const t = turn(PdfRect(p.x, p.y, 0, 0), turns, size.width, size.height);
+                sx = originX + lefts[page] + t.x * z;
+                sy = originY + tops[page] + t.y * z;
+            }
+            foreach (ref op; item.ops)
+            {
+                float x1, y1, x2, y2, x3, y3;
+                final switch (op.kind)
+                {
+                    case PdfPathOp.Kind.moveTo:
+                        at(op.points[0], x1, y1);
+                        tvg_shape_move_to(shape, x1, y1);
+                        break;
+                    case PdfPathOp.Kind.lineTo:
+                        at(op.points[0], x1, y1);
+                        tvg_shape_line_to(shape, x1, y1);
+                        break;
+                    case PdfPathOp.Kind.cubicTo:
+                        at(op.points[0], x1, y1);
+                        at(op.points[1], x2, y2);
+                        at(op.points[2], x3, y3);
+                        tvg_shape_cubic_to(shape, x1, y1, x2, y2, x3, y3);
+                        break;
+                    case PdfPathOp.Kind.close:
+                        tvg_shape_close(shape);
+                        break;
+                }
+            }
+            foreach (h; item.handles)
+            {
+                float hx, hy;
+                at(h, hx, hy);
+                tvg_shape_append_rect(shape, hx - 4, hy - 4, 8, 8, 1, 1, true);
+            }
+            const f = item.fill, c = item.stroke;
+            tvg_shape_set_fill_color(shape, f.r, f.g, f.b, f.a);
+            tvg_shape_set_stroke_color(shape, c.r, c.g, c.b, c.a);
+            tvg_shape_set_stroke_width(shape, item.zoomed ? item.width * z : item.width);
+            tvg_shape_set_stroke_cap(shape, TVG_STROKE_CAP_ROUND);
+            tvg_shape_set_stroke_join(shape, TVG_STROKE_JOIN_ROUND);
+            static immutable float[2] dash = [4, 3];
+            if (item.dashed)
+                tvg_shape_set_stroke_dash(shape, dash.ptr, 2, 0);
+            else
+                tvg_shape_set_stroke_dash(shape, null, 0, 0);
+        }
+    }
 
     /// The document's top, in the middle across.
     void scrollToStart()
@@ -1008,14 +1972,18 @@ private:
     {
         auto doc = view._document;
         const page = s.page;
-        if (!s.previewBitmap && !s.previewRequest)
+        const version_ = doc.pageVersion(page);
+        if ((!s.previewBitmap || s.previewVersion != version_) && !s.previewRequest)
         {
+            // An old one stays until it's replaced
             if (auto b = doc.cachedPreview(page))
-                showPreview(s, b);
+                showPreview(s, b, version_);
             else
                 s.previewRequest = doc.preview(page, visible ? PdfPriority.visible : PdfPriority.near,
-                                               (PdfBitmap b) { showPreview(s, b); });
+                                               (PdfBitmap b) { showPreview(s, b, version_); });
         }
+        if (!doc.cachedAnnotations(page) && !s.annotationsRequest)
+            s.annotationsRequest = doc.annotations(page, PdfPriority.near, (PdfAnnotations a) { overlayChanged(); });
         if (!doc.cachedText(page) && !s.textRequest)
             s.textRequest = doc.text(page, PdfPriority.near, (PdfPageText t) { marksFor(s); invalidate(); });
         if (!doc.cachedLinks(page) && !s.linksRequest)
@@ -1026,11 +1994,15 @@ private:
             dropWaiting(s, null);
     }
 
-    void showPreview(Slot s, PdfBitmap b)
+    void showPreview(Slot s, PdfBitmap b, uint version_)
     {
+        s.previewRequest = null;
         if (!slotAlive(s))
             return;
+        if (s.preview)
+            tvg_scene_remove(s.previewHolder, s.preview);
         s.previewBitmap = b;
+        s.previewVersion = version_;
         s.preview = picture(b);
         tvg_scene_add(s.previewHolder, s.preview);
         invalidate();
@@ -1044,6 +2016,7 @@ private:
         const pixels = z * (view.scene ? view.scene.scale : 1);
         const scale = round(pixels * 64) / 64; // a little coarser, so a nudge to the zoom doesn't render it all again
         const turns = view._rotation;
+        const version_ = view._document.pageVersion(page);
         const size = turnedSize(page);
         const span = tileSize / scale; // a tile's side, in points
         // What's in view of the page, in its turned points
@@ -1058,7 +2031,7 @@ private:
         foreach (row; cast(int) floor(vy0 / span) .. cast(int) ceil(vy1 / span))
             foreach (column; cast(int) floor(vx0 / span) .. cast(int) ceil(vx1 / span))
             {
-                const key = TileKey(scale, turns, column, row);
+                const key = TileKey(scale, turns, column, row, version_);
                 wanted[key] = true;
                 bool have;
                 foreach (t; s.tileList)
@@ -1086,7 +2059,7 @@ private:
             Tile[] kept;
             foreach (t; s.tileList)
             {
-                if (t.key.scale == scale && t.key.turns == turns)
+                if (t.key.scale == scale && t.key.turns == turns && t.key.version_ == version_)
                     kept ~= t;
                 else
                     tvg_scene_remove(s.tiles, t.picture);
@@ -1179,6 +2152,7 @@ private:
         if (s.previewRequest) s.previewRequest.cancel();
         if (s.textRequest) s.textRequest.cancel();
         if (s.linksRequest) s.linksRequest.cancel();
+        if (s.annotationsRequest) s.annotationsRequest.cancel();
         dropWaiting(s, null);
     }
 

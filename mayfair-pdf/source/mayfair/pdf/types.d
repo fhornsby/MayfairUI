@@ -94,6 +94,15 @@ enum PdfErrorKind
     other,
 }
 
+/// What a document is, beyond what it says about itself.
+struct PdfDocumentInfo
+{
+    string pdfVersion;      /// "1.7", say; empty if it doesn't say
+    bool encrypted;         /// Whether it's protected by a password, or encrypted with none
+    bool hasForm;           /// Whether it has fields to fill in
+    bool editable;          /// Whether the engine can change it: rotate, delete, annotate, save
+}
+
 /// An entry in a document's outline -- its table of contents -- and those under it.
 struct PdfOutlineItem
 {
@@ -234,7 +243,9 @@ final class PdfPageText
         foreach (i; from .. to)
         {
             const b = boxes[i];
-            if (b.empty)
+            // A space's box is often a sliver at the baseline: the words either side cover it
+            import std.uni : isWhite;
+            if (b.empty || (i < chars.length && isWhite(chars[i])))
                 continue;
             if (!line.empty && sameLine(line, b))
                 line = line.union_(b);
