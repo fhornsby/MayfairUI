@@ -176,6 +176,37 @@ public:
         return st;
     }
 
+    /// How pages are laid out: one under another, or two side by side.
+    mixin(declareProperty!(PdfPageLayout, "pageLayout", "PdfPageLayout.continuous", q{ pages.turned(); }));
+
+    /// The search's matches, in page order.
+    PdfMatch[] matchList()
+    {
+        PdfMatch[] list;
+        foreach (m; pages.matches)
+            list ~= PdfMatch(m.page, m.from, m.to);
+        return list;
+    }
+
+    /// Makes match `index` the current one, and scrolls to it.
+    void showMatch(int index) { pages.goToMatch(index); }
+
+    /// Zooms so `rect` of page `page` fills the view, and scrolls to it.
+    void zoomToRect(int page, PdfRect rect)
+    {
+        if (!pages.ready || page < 0 || page >= pages.count || rect.empty)
+            return;
+        const vp = viewportBounds;
+        const s = _document.pageSize(page);
+        const t = turn(rect, _rotation, s.width, s.height);
+        const zx = (vp.width - 32) / t.width, zy = (vp.height - 32) / t.height;
+        setZoom(zx < zy ? zx : zy);
+        const z = _zoom;
+        pages.atStart = false;
+        pages.scrollWhenLaidOut(pages.lefts[page] + (t.x + t.width / 2) * z - vp.width / 2,
+                                pages.tops[page] + (t.y + t.height / 2) * z - vp.height / 2);
+    }
+
     /// Selects every page's text, or none.
     void selectAll() { pages.selectAll(); }
     void clearSelection() { pages.clearSelection(); } /// ditto
@@ -334,9 +365,9 @@ protected:
             pages.atStart = false;
             const ctrl = event.control || event.meta;
             const c = event.code;
-            if (ctrl && c == KeyCode.c)
+            if (ctrl && c == KeyCode.c && _hasSelection)
                 copySelection();
-            else if (ctrl && c == KeyCode.a)
+            else if (ctrl && c == KeyCode.a && !event.shift)
                 selectAll();
             else if (ctrl && (c == cast(KeyCode) '=' || c == cast(KeyCode) '+'))
                 zoomIn();
@@ -553,6 +584,20 @@ struct PdfViewStats
     int previews;      /// Pages with their preview drawn
 }
 
+/// How a PdfView lays out its pages.
+enum PdfPageLayout
+{
+    continuous, /// One under another
+    twoPages,   /// Two side by side, the first on the left: as a book's opened, but for its cover
+}
+
+/// A search's match: characters [from, to) of page `page`'s text.
+struct PdfMatch
+{
+    int page;
+    size_t from, to;
+}
+
 /// What the pointer does on a PdfView's pages.
 enum PdfTool
 {
@@ -694,6 +739,7 @@ final class PdfPages : Widget
 
     PdfView view;
     float[] tops, lefts, widths, heights; // each page, at the zoom, turned, in points of the content
+    float[] rowTops;                      // the top of the row each page's in: one page a row, or two
     int count;
     float contentWidth = 0, contentHeight = 0;
 
@@ -768,13 +814,16 @@ final class PdfPages : Widget
         if (fit == PdfFit.none)
             return;
         float widest = 0;
-        foreach (i; 0 .. count)
+        const two = view._pageLayout == PdfPageLayout.twoPages;
+        for (int i = 0; i < count; i += two ? 2 : 1)
         {
-            const s = turnedSize(i);
-            if (s.width > widest)
-                widest = s.width;
+            float w = turnedSize(i).width;
+            if (two && i + 1 < count)
+                w += turnedSize(i + 1).width;
+            if (w > widest)
+                widest = w;
         }
-        float zoom = (viewportWidth - 2 * margin) / widest;
+        float zoom = (viewportWidth - 2 * margin - (two ? gap : 0)) / widest;
         if (fit == PdfFit.page)
         {
             const s = turnedSize(view._currentPage < count ? view._currentPage : 0);
@@ -805,7 +854,7 @@ final class PdfPages : Widget
         while (hi - lo > 1)
         {
             const mid = (lo + hi) / 2;
-            if (tops[mid] - gap / 2 <= y)
+            if (rowTops[mid] - gap / 2 <= y)
                 lo = mid;
             else
                 hi = mid;
@@ -836,6 +885,15 @@ final class PdfPages : Widget
         const from = view._currentPage;
         foreach (k; 0 .. count)
             searchRequests ~= searchPage((from + k) % count, generation);
+    }
+
+    void goToMatch(int index)
+    {
+        if (index < 0 || index >= matches.length)
+            return;
+        view._setCurrentMatch(index);
+        marksChanged();
+        reveal(matches[index]);
     }
 
     void stepMatch(int by)
@@ -915,7 +973,7 @@ protected:
     {
         holder = addPaint(tvg_scene_new());
         overlay = addPaint(tvg_scene_new()); // over every page
-        overlayShapes = null;
+        solidShapes = dashedShapes = null;
         requestUpdate();
     }
 
@@ -924,7 +982,7 @@ protected:
         // The holder took every slot's paints with it, and the overlay its shapes
         holder = null;
         overlay = null;
-        overlayShapes = null;
+        solidShapes = dashedShapes = null;
         foreach (s; slots)
             forget(s);
         slots = null;
@@ -974,7 +1032,8 @@ protected:
             view._setCurrentPage(middle);
 
         // The pages near the view -- a screenful either side -- each with a slot
-        const first = pageAt(vp.minY - vp.height), last = pageAt(vp.maxY + vp.height);
+        const rowStart = view._pageLayout == PdfPageLayout.twoPages ? ~1 : ~0;
+        const first = pageAt(vp.minY - vp.height) & rowStart, last = pageAt(vp.maxY + vp.height);
         Slot[] kept;
         foreach (s; slots)
         {
@@ -1080,7 +1139,8 @@ private:
     PdfRect regionRect;
     PdfAnnotation signature;
     Tvg_Paint overlay;
-    Tvg_Paint[] overlayShapes;
+    // Dashed and solid shapes apart: a dash is set once, never cleared (see placeOverlay)
+    Tvg_Paint[] solidShapes, dashedShapes;
     OverlayItem[] overlayItems;
     bool overlayDirty;
 
@@ -1702,13 +1762,27 @@ private:
                 }
             }
         overlayItems = items;
+        size_t dashed;
+        foreach (item; items)
+            if (item.dashed)
+                dashed++;
         if (overlay)
-            while (overlayShapes.length < items.length)
+        {
+            while (solidShapes.length < items.length - dashed)
             {
                 auto shape = tvg_shape_new();
                 tvg_scene_add(overlay, shape);
-                overlayShapes ~= shape;
+                solidShapes ~= shape;
             }
+            while (dashedShapes.length < dashed)
+            {
+                auto shape = tvg_shape_new();
+                static immutable float[2] dash = [4, 3];
+                tvg_shape_set_stroke_dash(shape, dash.ptr, 2, 0);
+                tvg_scene_add(overlay, shape);
+                dashedShapes ~= shape;
+            }
+        }
         invalidate();
     }
 
@@ -1718,66 +1792,78 @@ private:
         if (!overlay)
             return;
         const z = view._zoom, turns = view._rotation;
-        foreach (i, shape; overlayShapes)
+        // Clearing a ThorVG shape's dash leaves it taken as dashed (until Mayfair's patch 0007 of it),
+        // so dashed items go on shapes that are always dashed, and solid ones on shapes never dashed
+        size_t solid, dashed;
+        foreach (ref item; overlayItems)
         {
-            tvg_shape_reset(shape);
-            if (i >= overlayItems.length || overlayItems[i].page < 0 || overlayItems[i].page >= count)
-            {
-                tvg_shape_set_stroke_width(shape, 0);
-                tvg_shape_set_fill_color(shape, 0, 0, 0, 0);
+            if (item.page < 0 || item.page >= count)
                 continue;
-            }
-            const item = &overlayItems[i];
-            const page = item.page;
-            const size = view._document.pageSize(page);
-            void at(PdfPoint p, out float sx, out float sy)
-            {
-                const t = turn(PdfRect(p.x, p.y, 0, 0), turns, size.width, size.height);
-                sx = originX + lefts[page] + t.x * z;
-                sy = originY + tops[page] + t.y * z;
-            }
-            foreach (ref op; item.ops)
-            {
-                float x1, y1, x2, y2, x3, y3;
-                final switch (op.kind)
-                {
-                    case PdfPathOp.Kind.moveTo:
-                        at(op.points[0], x1, y1);
-                        tvg_shape_move_to(shape, x1, y1);
-                        break;
-                    case PdfPathOp.Kind.lineTo:
-                        at(op.points[0], x1, y1);
-                        tvg_shape_line_to(shape, x1, y1);
-                        break;
-                    case PdfPathOp.Kind.cubicTo:
-                        at(op.points[0], x1, y1);
-                        at(op.points[1], x2, y2);
-                        at(op.points[2], x3, y3);
-                        tvg_shape_cubic_to(shape, x1, y1, x2, y2, x3, y3);
-                        break;
-                    case PdfPathOp.Kind.close:
-                        tvg_shape_close(shape);
-                        break;
-                }
-            }
-            foreach (h; item.handles)
-            {
-                float hx, hy;
-                at(h, hx, hy);
-                tvg_shape_append_rect(shape, hx - 4, hy - 4, 8, 8, 1, 1, true);
-            }
-            const f = item.fill, c = item.stroke;
-            tvg_shape_set_fill_color(shape, f.r, f.g, f.b, f.a);
-            tvg_shape_set_stroke_color(shape, c.r, c.g, c.b, c.a);
-            tvg_shape_set_stroke_width(shape, item.zoomed ? item.width * z : item.width);
-            tvg_shape_set_stroke_cap(shape, TVG_STROKE_CAP_ROUND);
-            tvg_shape_set_stroke_join(shape, TVG_STROKE_JOIN_ROUND);
-            static immutable float[2] dash = [4, 3];
-            if (item.dashed)
-                tvg_shape_set_stroke_dash(shape, dash.ptr, 2, 0);
-            else
-                tvg_shape_set_stroke_dash(shape, null, 0, 0);
+            auto pool = item.dashed ? dashedShapes : solidShapes;
+            auto at = item.dashed ? dashed++ : solid++;
+            if (at < pool.length)
+                drawItem(pool[at], item, z, turns);
         }
+        foreach (shape; solidShapes[solid < solidShapes.length ? solid : $ .. $])
+            hideShape(shape);
+        foreach (shape; dashedShapes[dashed < dashedShapes.length ? dashed : $ .. $])
+            hideShape(shape);
+    }
+
+    static void hideShape(Tvg_Paint shape) nothrow @nogc
+    {
+        tvg_shape_reset(shape);
+        tvg_shape_set_stroke_width(shape, 0);
+        tvg_shape_set_fill_color(shape, 0, 0, 0, 0);
+    }
+
+    void drawItem(Tvg_Paint shape, const ref OverlayItem item, float z, int turns) nothrow @nogc
+    {
+        tvg_shape_reset(shape);
+        const page = item.page;
+        const size = view._document.pageSize(page);
+        void at(PdfPoint p, out float sx, out float sy)
+        {
+            const t = turn(PdfRect(p.x, p.y, 0, 0), turns, size.width, size.height);
+            sx = originX + lefts[page] + t.x * z;
+            sy = originY + tops[page] + t.y * z;
+        }
+        foreach (ref op; item.ops)
+        {
+            float x1, y1, x2, y2, x3, y3;
+            final switch (op.kind)
+            {
+                case PdfPathOp.Kind.moveTo:
+                    at(op.points[0], x1, y1);
+                    tvg_shape_move_to(shape, x1, y1);
+                    break;
+                case PdfPathOp.Kind.lineTo:
+                    at(op.points[0], x1, y1);
+                    tvg_shape_line_to(shape, x1, y1);
+                    break;
+                case PdfPathOp.Kind.cubicTo:
+                    at(op.points[0], x1, y1);
+                    at(op.points[1], x2, y2);
+                    at(op.points[2], x3, y3);
+                    tvg_shape_cubic_to(shape, x1, y1, x2, y2, x3, y3);
+                    break;
+                case PdfPathOp.Kind.close:
+                    tvg_shape_close(shape);
+                    break;
+            }
+        }
+        foreach (h; item.handles)
+        {
+            float hx, hy;
+            at(h, hx, hy);
+            tvg_shape_append_rect(shape, hx - 4, hy - 4, 8, 8, 1, 1, true);
+        }
+        const f = item.fill, c = item.stroke;
+        tvg_shape_set_fill_color(shape, f.r, f.g, f.b, f.a);
+        tvg_shape_set_stroke_color(shape, c.r, c.g, c.b, c.a);
+        tvg_shape_set_stroke_width(shape, item.zoomed ? item.width * z : item.width);
+        tvg_shape_set_stroke_cap(shape, TVG_STROKE_CAP_ROUND);
+        tvg_shape_set_stroke_join(shape, TVG_STROKE_JOIN_ROUND);
     }
 
     /// The document's top, in the middle across.
@@ -1812,24 +1898,47 @@ private:
             return;
         }
         count = view._document.pageCount;
-        tops.length = lefts.length = widths.length = heights.length = count;
+        tops.length = lefts.length = widths.length = heights.length = rowTops.length = count;
+        const two = view._pageLayout == PdfPageLayout.twoPages;
+        const perRow = two ? 2 : 1;
         float y = margin, widest = 0;
-        foreach (i; 0 .. count)
+        float[] rowWidths;
+        for (int first = 0; first < count; first += perRow)
         {
-            const s = turnedSize(i);
-            widths[i] = s.width * zoom;
-            heights[i] = s.height * zoom;
-            tops[i] = y;
-            y += heights[i] + gap;
-            if (widths[i] > widest)
-                widest = widths[i];
+            const last = first + perRow > count ? count : first + perRow;
+            float rowWidth = 0, rowHeight = 0;
+            foreach (i; first .. last)
+            {
+                const s = turnedSize(i);
+                widths[i] = s.width * zoom;
+                heights[i] = s.height * zoom;
+                rowWidth += widths[i] + (i > first ? gap : 0);
+                if (heights[i] > rowHeight)
+                    rowHeight = heights[i];
+            }
+            foreach (i; first .. last)
+            {
+                rowTops[i] = y;
+                tops[i] = y + (rowHeight - heights[i]) / 2;
+            }
+            rowWidths ~= rowWidth;
+            y += rowHeight + gap;
+            if (rowWidth > widest)
+                widest = rowWidth;
         }
         contentHeight = count ? y - gap + margin : 0;
         contentWidth = widest + 2 * margin;
         if (contentWidth < viewportWidth)
             contentWidth = viewportWidth;
-        foreach (i; 0 .. count)
-            lefts[i] = (contentWidth - widths[i]) / 2;
+        foreach (r, rowWidth; rowWidths)
+        {
+            float x = (contentWidth - rowWidth) / 2;
+            foreach (i; cast(int) r * perRow .. (cast(int) r * perRow + perRow > count ? count : cast(int) r * perRow + perRow))
+            {
+                lefts[i] = x;
+                x += widths[i] + gap;
+            }
+        }
         YGNodeMarkDirty(node);
         invalidate();
     }
@@ -1838,6 +1947,9 @@ private:
     void pointOn(float x, float y, out int page, out float px, out float py)
     {
         page = pageAt(y);
+        // Two side by side: the left one, if that's nearer
+        if (view._pageLayout == PdfPageLayout.twoPages && page % 2 == 1 && x < lefts[page] - gap / 2)
+            page--;
         const z = view._zoom, s = view._document.pageSize(page);
         unturn((x - lefts[page]) / z, (y - tops[page]) / z, view._rotation, s.width, s.height, px, py);
     }

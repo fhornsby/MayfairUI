@@ -17,8 +17,13 @@ import mayfair.widgets;
         thumbnails.onPageChosen((page) { view.goToPage(page); });
         view.currentPageProperty.addListener((int was, int now) { thumbnails.setCurrentPage(now); });
 
-    Each is drawn from the document's preview of its page, asked for as it scrolls into view. The
-    current page is marked, and kept in view.
+    Each is drawn from the document's preview of its page, asked for as it scrolls into view, and
+    again when the page changes. The current page is marked, and kept in view.
+
+    Pages are selected by clicking them -- with Ctrl, one more or less; with Shift, all from the
+    last -- for the app to act on (selectedPages): to turn, delete or export. Dragged, they're moved
+    (onPagesMoved); Delete asks for them to be deleted (onDeletePages); a right click asks for a
+    menu (onMenu).
 */
 class PdfThumbnails : ScrollPane
 {
@@ -39,7 +44,7 @@ public:
     mixin(declareProperty!(PdfDocument, "document", "null", q{ rebuild(); }));
 
     /// The page marked as the one being read, from 0.
-    mixin(declareProperty!(int, "currentPage", "0", q{ markCurrent(); }));
+    mixin(declareProperty!(int, "currentPage", "0", q{ currentChanged(); }));
 
     /// How wide each page is, in points.
     mixin(declareProperty!(float, "thumbnailWidth", "110", q{ rebuild(); }));
@@ -47,7 +52,40 @@ public:
     /// Called when a page is clicked.
     PdfThumbnails onPageChosen(void delegate(int page) handler) { _onPageChosen = handler; return this; }
 
+    /// The pages selected, in order: at least the current one.
+    mixin(declareReadOnlyProperty!(int[], "selectedPages", "null"));
+
+    /// Selects `pages`.
+    void selectPages(int[] pages)
+    {
+        import std.algorithm : sort, uniq;
+        import std.array : array;
+        _setSelectedPages(pages.dup.sort.uniq.array);
+        markCurrent();
+    }
+
+    /// Called when pages are dragged to before page `before` (pageCount for the end).
+    PdfThumbnails onPagesMoved(void delegate(int[] pages, int before) handler) { _onPagesMoved = handler; return this; }
+
+    /// Called when Delete is pressed, with the pages selected.
+    PdfThumbnails onDeletePages(void delegate(int[] pages) handler) { _onDeletePages = handler; return this; }
+
+    /// Called when a page is right-clicked -- it's selected first -- with where, in the window.
+    PdfThumbnails onMenu(void delegate(int page, float sceneX, float sceneY) handler) { _onMenu = handler; return this; }
+
 protected:
+    override void handleKey(ref KeyEvent event)
+    {
+        if (event.type == KeyEventType.pressed && (event.code == KeyCode.delete_ || event.code == KeyCode.backspace)
+            && _selectedPages.length && _onDeletePages)
+        {
+            _onDeletePages(_selectedPages.dup);
+            event.consume();
+            return;
+        }
+        super.handleKey(event);
+    }
+
     override void update()
     {
         super.update();
@@ -77,10 +115,50 @@ private:
     Column list;
     Thumbnail[] items;
     void delegate(int) _onPageChosen;
+    void delegate(int[], int) _onPagesMoved;
+    void delegate(int[]) _onDeletePages;
+    void delegate(int, float, float) _onMenu;
     PdfDocument watching;
+    int rangeFrom = -1;     // where Shift selects from
+    int dragTarget = -1;    // where pages being dragged would go
+
+    /// The document changed: pages moved, or look different.
+    void edited(PdfChange change)
+    {
+        bool same = change.from.length == items.length;
+        foreach (i, f; change.from)
+            if (f != i)
+                same = false;
+        if (!same)
+        {
+            // Which page is which changed: the list again, what was selected where it went
+            int[] selected;
+            foreach (i, f; change.from)
+                foreach (old; _selectedPages)
+                    if (f == old && f >= 0)
+                        selected ~= cast(int) i;
+            const keep = vvalue;
+            rebuild();
+            _setSelectedPages(selected);
+            if (selected.length)
+                markCurrent();
+            else
+                currentChanged();
+            setVvalue(keep);
+            return;
+        }
+        foreach (i, r; change.redrawn)
+            if (r && i < items.length)
+                items[i].picture.refresh();
+        requestUpdate();
+    }
 
     void rebuild()
     {
+        if (watching && watching !is _document)
+            watching.removeChangeListener(&edited);
+        if (_document && watching !is _document)
+            _document.addChangeListener(&edited);
         foreach (item; items)
             item.picture.drop();
         while (list.children.length)
@@ -104,14 +182,24 @@ private:
             items ~= item;
             list.add(item);
         }
-        markCurrent();
+        currentChanged();
         requestUpdate();
+    }
+
+    /// The page being read changed: one page selected follows it; more stay as they were chosen.
+    void currentChanged()
+    {
+        if (_selectedPages.length <= 1 && _currentPage >= 0 && _currentPage < items.length)
+            _setSelectedPages([_currentPage]);
+        markCurrent();
     }
 
     void markCurrent()
     {
+        import std.algorithm : canFind;
         foreach (i, item; items)
-            item.setStyle(i == _currentPage ? "background-colour: var(--row-selected); background-radius: 6;" : "");
+            item.setStyle(_selectedPages.canFind(cast(int) i)
+                          ? "background-colour: var(--row-selected); background-radius: 6;" : "");
         if (_currentPage >= 0 && _currentPage < items.length)
         {
             // Into view, if it's out of it
@@ -128,6 +216,106 @@ private:
         setCurrentPage(page);
         if (_onPageChosen)
             _onPageChosen(page);
+    }
+
+    /// A thumbnail pressed: selected, with Ctrl or Shift as they say.
+    void pressedOn(int page, bool ctrl, bool shift, bool secondary)
+    {
+        import std.algorithm : canFind, remove;
+        requestFocus();
+        int[] selected = _selectedPages.dup;
+        if (secondary)
+        {
+            if (!selected.canFind(page))
+                selected = [page];
+        }
+        else if (shift && rangeFrom >= 0)
+        {
+            selected = null;
+            foreach (p; (rangeFrom < page ? rangeFrom : page) .. (rangeFrom < page ? page : rangeFrom) + 1)
+                selected ~= p;
+        }
+        else if (ctrl)
+        {
+            if (selected.canFind(page))
+            {
+                if (selected.length > 1)
+                    selected = selected.remove!(p => p == page);
+            }
+            else
+                selected ~= page;
+            rangeFrom = page;
+        }
+        else
+        {
+            if (!selected.canFind(page)) // a press on one of several selected keeps them, to drag
+                selected = [page];
+            rangeFrom = page;
+        }
+        selectPages(selected);
+    }
+
+    /// Released without dragging: just this one, unless Ctrl or Shift chose more.
+    void clickedOn(int page, bool ctrl, bool shift)
+    {
+        if (!ctrl && !shift)
+        {
+            _setSelectedPages([page]);
+            chose(page);
+        }
+        markCurrent();
+    }
+
+    /// Pages dragged, the pointer at `sceneY`: the gap they'd go into, marked.
+    void draggedTo(float sceneY)
+    {
+        int target = cast(int) items.length;
+        foreach (i, item; items)
+        {
+            const b = item.boundsInScene;
+            if (sceneY < b.minY + b.height / 2)
+            {
+                target = cast(int) i;
+                break;
+            }
+        }
+        if (target == dragTarget)
+            return;
+        dragTarget = target;
+        foreach (i, item; items)
+        {
+            item.marker(i == target ? 1 : i + 1 == target && target == items.length ? 2 : 0);
+        }
+        // Near the top or bottom: scrolled
+        const vp = boundsInScene;
+        if (sceneY < vp.minY + 24)
+            setVvalue(vvalue - 0.02f < 0 ? 0 : vvalue - 0.02f);
+        else if (sceneY > vp.maxY - 24)
+            setVvalue(vvalue + 0.02f > 1 ? 1 : vvalue + 0.02f);
+    }
+
+    void dropped()
+    {
+        foreach (item; items)
+            item.marker(0);
+        const target = dragTarget;
+        dragTarget = -1;
+        if (target < 0 || !_onPagesMoved || !_selectedPages.length)
+            return;
+        // Nowhere, if they'd go where they are
+        bool still = true;
+        foreach (k, p; _selectedPages)
+            if (p != _selectedPages[0] + k)
+                still = false;
+        if (still && target >= _selectedPages[0] && target <= _selectedPages[$ - 1] + 1)
+            return;
+        _onPagesMoved(_selectedPages.dup, target);
+    }
+
+    void menuAt(int page, float x, float y)
+    {
+        if (_onMenu)
+            _onMenu(page, x, y);
     }
 }
 
@@ -147,12 +335,62 @@ final class Thumbnail : Column
         setAlignment(Pos.topCentre);
         setFillWidth(false);
         picture = new ThumbnailPicture(owner, page);
-        add(picture).add(new Label((page + 1).to!string).style("font-size: 12px;"));
+        before = new Row().prefHeight(3).prefWidth(owner._thumbnailWidth);
+        after = new Row().prefHeight(3).prefWidth(owner._thumbnailWidth);
+        add(before).add(picture).add(new Label((page + 1).to!string).style("font-size: 12px;")).add(after);
         setAccessibleRole(AccessibleRole.button);
         setAccessibleText("Page " ~ (page + 1).to!string);
         setCursor(Cursor.hand);
-        setOnMouseClicked((ref e) { owner.chose(page); });
     }
+
+    /// Marks where dragged pages would go: 1 before it, 2 after it, 0 neither.
+    void marker(int where)
+    {
+        enum on = "background-colour: var(--accent); background-radius: 2;";
+        before.setStyle(where == 1 ? on : "");
+        after.setStyle(where == 2 ? on : "");
+    }
+
+protected:
+    override void handleMouse(ref MouseEvent event)
+    {
+        const ctrl = event.control || event.meta;
+        switch (event.type)
+        {
+            case MouseEventType.pressed:
+                pressedAt = event.sceneY;
+                dragging = false;
+                owner.pressedOn(page, ctrl, event.shift, event.button == MouseButton.secondary);
+                if (event.button == MouseButton.secondary)
+                    owner.menuAt(page, event.sceneX, event.sceneY);
+                event.consume();
+                break;
+            case MouseEventType.dragged:
+                if (event.button != MouseButton.primary && !dragging && (event.sceneY - pressedAt) * (event.sceneY - pressedAt) < 36)
+                    return;
+                dragging = true;
+                owner.draggedTo(event.sceneY);
+                event.consume();
+                break;
+            case MouseEventType.released:
+                if (event.button == MouseButton.secondary)
+                    return;
+                if (dragging)
+                    owner.dropped();
+                else
+                    owner.clickedOn(page, ctrl, event.shift);
+                dragging = false;
+                event.consume();
+                break;
+            default:
+                break;
+        }
+    }
+
+private:
+    Row before, after;
+    float pressedAt = 0;
+    bool dragging;
 }
 
 /// The page itself, small: white until its preview's been rendered.
@@ -168,18 +406,26 @@ final class ThumbnailPicture : Widget
         setPrefHeight(s.width > 0 ? w * s.height / s.width : w * 1.41f);
     }
 
-    /// Asks for the preview, if it hasn't been.
+    /// Asks for the preview, if it hasn't been, or the page has changed since.
     void want(PdfPriority priority)
     {
-        if (bitmap || request)
-            return;
         auto doc = owner._document;
+        const now = doc.pageVersion(page);
+        if ((bitmap && version_ == now) || request)
+            return;
         if (auto b = doc.cachedPreview(page))
         {
-            show(b);
+            show(b, now);
             return;
         }
-        request = doc.preview(page, priority, (PdfBitmap b) { request = null; show(b); });
+        request = doc.preview(page, priority, (PdfBitmap b) { request = null; show(b, now); });
+    }
+
+    /// The page changed: its preview's asked for again, the old one shown till it comes.
+    void refresh()
+    {
+        drop();
+        owner.requestUpdate();
     }
 
     /// Lets go of what's waiting.
@@ -238,12 +484,17 @@ private:
     PdfThumbnails owner;
     int page;
     PdfBitmap bitmap;
+    uint version_;
     PdfRequest request;
     Tvg_Paint holder, frame, picture;
 
-    void show(PdfBitmap b)
+    void show(PdfBitmap b, uint v)
     {
+        if (picture && holder)
+            tvg_scene_remove(holder, picture);
+        picture = null;
         bitmap = b;
+        version_ = v;
         if (holder)
             addPicture();
     }
