@@ -1,0 +1,20 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A PDF viewer: pages down the side, search, zoom, selection and links, read with PDFium.",
+	"license": "MIT",
+	"name": "pdf-viewer",
+	"dependencies": {
+		"mayfair": {
+			"path": "../../mayfair"
+		},
+		"mayfair-pdf": {
+			"path": "../../mayfair-pdf"
+		},
+		"mayfair-pdfium": {
+			"path": "../../mayfair-pdfium"
+		}
+	}
+}

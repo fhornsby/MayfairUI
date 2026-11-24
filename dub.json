@@ -1,11 +1,13 @@
 {
 	"name": "mayfairui",
-	"description": "Mayfair, a desktop UI toolkit. Depend on mayfairui:mayfair to fetch it from git, and on mayfairui:mayfair-media and mayfairui:mayfair-gstreamer for video",
+	"description": "Mayfair, a desktop UI toolkit. Depend on mayfairui:mayfair to fetch it from git, and on mayfairui:mayfair-media and mayfairui:mayfair-gstreamer for video, and mayfairui:mayfair-pdf and mayfairui:mayfair-pdfium for PDFs",
 	"license": "MIT",
 	"targetType": "none",
 	"subPackages": [
 		"mayfair",
 		"mayfair-media",
-		"mayfair-gstreamer"
+		"mayfair-gstreamer",
+		"mayfair-pdf",
+		"mayfair-pdfium"
 	]
 }

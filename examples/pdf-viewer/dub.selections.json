@@ -1,0 +1,9 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"mayfair": {"path":"../../mayfair"},
+		"mayfair-pdf": {"path":"../../mayfair-pdf"},
+		"mayfair-pdfium": {"path":"../../mayfair-pdfium"},
+		"sdl-d": "3.2.27"
+	}
+}

@@ -1,0 +1,24 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/pdf-viewer
+pdf-viewer.so
+pdf-viewer.dylib
+pdf-viewer.dll
+pdf-viewer.a
+pdf-viewer.lib
+pdf-viewer-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+# profiling output
+/trace*.txt
+/strace.log
+/perf.data
+# PDFium, copied here by mayfair-pdfium
+/libpdfium.so
+/libpdfium.dylib
+/pdfium.dll

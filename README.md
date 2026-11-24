@@ -95,6 +95,9 @@ In packages of their own:
   `MediaView`, as JavaFX has them, with the controls left to the app to build from Mayfair's
   widgets. [`mayfair-gstreamer`](mayfair-gstreamer) plays them with the system's GStreamer, which
   is LGPL: see its README for what it needs and its licences.
+- **PDFs:** [`mayfair-pdf`](mayfair-pdf) has `PdfDocument`, and `PdfView` to read one in: zoom,
+  search, selecting and copying text, links, and a sidebar of thumbnails and contents.
+  [`mayfair-pdfium`](mayfair-pdfium) reads them with PDFium (BSD), downloaded as it's built.
 - **A terminal:** [`mayfair-terminal`](mayfair-terminal), on alacritty_terminal.
 
 ## Platforms
@@ -163,6 +166,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
+| [`pdf-viewer`](examples/pdf-viewer) | A PDF reader: pages, thumbnails, contents, zoom, search and passwords |
 | [`gpu-cube`](examples/gpu-cube) | A `GpuView`: a lit cube drawn with WebGPU, spinning, and turned by dragging it |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
 | [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |
@@ -197,6 +201,13 @@ What's still to be done, that I know of:
 - Choosing audio and subtitle tracks, the playback rate, and subtitles drawn by Mayfair.
 - Loading ahead for a feed: players for the items just off screen, ready before they're scrolled to.
 - Test network streams and their buffering, other formats, and macOS and Windows.
+
+**PDFs**
+- Printing, filling in forms, and adding annotations.
+- Search options: matching case and whole words.
+- Turning single pages, and saving it.
+- Uploading tiles straight to the GPU, rather than through an image.
+- Test on macOS, Windows and ARM64, and with PDFs from more producers.
 
 **Drag and drop**
 - Dragging out of an app, to another app or the desktop, and from one widget to another within
