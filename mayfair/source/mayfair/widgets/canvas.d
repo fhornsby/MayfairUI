@@ -944,8 +944,9 @@ Colour unpremultiply(uint argb) pure nothrow @nogc @safe
     return Colour(channel(16), channel(8), channel(0), cast(ubyte) a);
 }
 
-/// A PNG file of premultiplied ARGB pixels: 8-bit RGBA, unfiltered, zlib-compressed by Phobos.
-ubyte[] encodePng(const uint[] pixels, uint w, uint h)
+/// A PNG file of premultiplied ARGB pixels -- `w` by `h` of them, a row after another, as ThorVG
+/// draws them -- as 8-bit RGBA, unfiltered, zlib-compressed by Phobos: for saving what's drawn.
+public ubyte[] encodePng(const uint[] pixels, uint w, uint h)
 {
     import std.bitmanip : nativeToBigEndian;
     import std.digest.crc : crc32Of;
