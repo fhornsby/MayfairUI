@@ -51,7 +51,7 @@ void showInfo(Widget owner, PdfDocument doc, PdfView view)
     line("Encrypted", info.encrypted ? "Yes" : "No");
     line("Form", info.hasForm ? "Has fields to fill in" : "");
     line("Edited", doc.edited ? "Yes, not saved yet" : "");
-    new Dialog("Document Info").extra(grid).addButton("Close", null, ButtonKind.default_).show(owner);
+    new Dialog("Document Info").extra(grid).addButton("Close", null, ButtonKind.cancel).show(owner);
 }
 
 private string bytes(ulong n)

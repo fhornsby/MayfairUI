@@ -2,7 +2,7 @@ import core.stdc.stdlib : exit;
 import core.thread : Thread;
 import core.time : Duration, MonoTime, msecs, seconds;
 import std.algorithm : canFind;
-import std.file : tempDir, write;
+import std.file : copy, exists, read, remove, tempDir, write;
 import std.format : format;
 import std.math : abs;
 import std.path : buildPath, dirName;
@@ -31,6 +31,11 @@ void main()
     viewRotation();
     sidebar();
     closing();
+    editingPages();
+    annotating();
+    fillingForms();
+    viewMarkup();
+    thumbnailEditing();
     writefln("%s passed, %s failed checks", passedCount, failedChecks);
     exit(failedChecks ? 1 : 0);
 }
@@ -483,5 +488,389 @@ void closing()
         });
         d.check(waitFor(d, () => view.stats.tiles > 0 && view.stats.tilesWaiting == 0), "the new one drawn");
         d.ui({ view.document.close(); });
+    });
+}
+
+/// A copy of sample `name` to change, in the temporary folder.
+string scratch(string name)
+{
+    const to = buildPath(tempDir, "mayfair-pdf-test-" ~ name);
+    copy(sample(name), to);
+    return to;
+}
+
+/// Pages turned, deleted, moved, inserted, cropped: each undone and redone, the listeners told
+/// which page is which, and saved.
+void editingPages()
+{
+    PdfDocument doc;
+    PdfChange[] heard;
+    const file = scratch("sample.pdf");
+    run("pdf editing: pages", {
+        doc = PdfDocument.open(file);
+        doc.addChangeListener((PdfChange c) { heard ~= c; });
+        return cast(Widget) new Label("PDF");
+    }, (Driver d) {
+        d.check(waitFor(d, () => doc.status == PdfStatus.ready), "ready");
+        d.ui({ d.check(doc.info.editable, "PDFium's can be edited"); d.check(!doc.edited && !doc.canUndo, "not edited yet"); });
+
+        d.ui({ doc.rotatePages([1], 1); });
+        d.check(waitFor(d, () => doc.canUndo), "turned");
+        d.ui({
+            const s = doc.pageSize(1);
+            d.check(near(s.width, 841.89) && near(s.height, 595.28), format!"page 2 on its side: %s"(s));
+            d.check(doc.edited, "edited");
+            d.expect(heard.length, 1);
+            d.expect(heard[0].from[1], -1, "a turned page is a new one, to what's kept");
+            d.expect(heard[0].from[0], 0, "and the others the same");
+        });
+
+        d.ui({ doc.deletePages([4]); });
+        d.check(waitFor(d, () => doc.pageCount == 4), "the last deleted");
+        d.ui({ d.expect(heard[$ - 1].from, [0, 1, 2, 3]); });
+
+        d.ui({ doc.movePages([3], 0); });
+        d.check(waitFor(d, () => heard.length == 3), "moved");
+        d.ui({
+            d.expect(heard[$ - 1].from, [3, 0, 1, 2], "the fourth first");
+            d.check(doc.pageSize(0).width > doc.pageSize(0).height, "the landscape page, first");
+        });
+
+        d.ui({ doc.insertBlankPage(1, PdfSize(200, 300)); });
+        d.check(waitFor(d, () => doc.pageCount == 5), "a blank page put in");
+        d.ui({ d.check(near(doc.pageSize(1).width, 200) && near(doc.pageSize(1).height, 300), "200 by 300"); });
+
+        d.ui({ doc.undo(); });
+        d.check(waitFor(d, () => doc.pageCount == 4), "undone");
+        d.ui({ d.check(doc.canRedo, "redoable"); d.expect(heard[$ - 1].from, [0, 2, 3, 4], "undoing an insert: each page from where it went"); });
+        d.ui({ doc.redo(); });
+        d.check(waitFor(d, () => doc.pageCount == 5), "redone");
+
+        d.ui({ doc.cropPages([0], PdfRect(100, 100, 300, 200)); });
+        d.check(waitFor(d, () => near(doc.pageSize(0).width, 300)), "cropped");
+        d.ui({ d.check(near(doc.pageSize(0).height, 200), format!"to 300 by 200: %s"(doc.pageSize(0))); });
+
+        bool saved;
+        PdfError error;
+        d.ui({ doc.save(file, PdfSaveOptions.init, (PdfError e) { error = e; saved = true; }); });
+        d.check(waitFor(d, () => saved), "saved");
+        d.ui({ d.check(!error, error.toString); d.check(!doc.edited, "not edited, once saved"); });
+        // And read back, by another document
+        PdfDocument again;
+        d.ui({ again = PdfDocument.open(file); });
+        d.check(waitFor(d, () => again.status == PdfStatus.ready), "opened again");
+        d.ui({
+            d.expect(again.pageCount, 5, "as it was saved");
+            d.check(near(again.pageSize(0).width, 300) && near(again.pageSize(1).width, 200), "crop and blank page kept");
+            again.close();
+            doc.close();
+        });
+    });
+}
+
+/// Annotations of every kind added, read back, changed, removed, undone, and saved.
+void annotating()
+{
+    PdfDocument doc;
+    const file = scratch("sample.pdf");
+    run("pdf editing: annotations", {
+        doc = PdfDocument.open(file);
+        return cast(Widget) new Label("PDF");
+    }, (Driver d) {
+        d.check(waitFor(d, () => doc.status == PdfStatus.ready), "ready");
+        PdfPageText text;
+        d.ui({ doc.text(0, PdfPriority.visible, (PdfPageText t) { text = t; }); });
+        d.check(waitFor(d, () => text !is null), "text read");
+        int added;
+        d.ui({
+            auto r = text.find("quick brown"d, false)[0];
+            PdfAnnotation h;
+            h.kind = PdfAnnotationKind.highlight;
+            h.colour = PdfColour(255, 214, 10);
+            h.lines = text.rects(r[0], r[1]);
+            h.text = "quick brown";
+            h.rect = h.bounds;
+            doc.addAnnotation(0, h, (int i) { added++; });
+            foreach (kind; [PdfAnnotationKind.rectangle, PdfAnnotationKind.oval, PdfAnnotationKind.arrow,
+                            PdfAnnotationKind.star, PdfAnnotationKind.textBox, PdfAnnotationKind.note,
+                            PdfAnnotationKind.ink])
+            {
+                PdfAnnotation a;
+                a.kind = kind;
+                a.colour = PdfColour(0, 0, 255);
+                a.lineWidth = 4;
+                a.rect = PdfRect(100, 500, 120, 80);
+                a.strokes = [[PdfPoint(100, 500), PdfPoint(220, 580)]];
+                if (kind == PdfAnnotationKind.textBox)
+                    a.text = "Some words";
+                if (kind == PdfAnnotationKind.arrow || kind == PdfAnnotationKind.ink)
+                    a.rect = a.bounds;
+                doc.addAnnotation(0, a, (int i) { if (i >= 0) added++; });
+            }
+        });
+        d.check(waitFor(d, () => added == 8), format!"eight added: %s"(added));
+        PdfAnnotations list;
+        d.ui({ doc.annotations(0, PdfPriority.visible, (PdfAnnotations a) { list = a; }); });
+        d.check(waitFor(d, () => list !is null), "read back");
+        PdfAnnotation arrow;
+        d.ui({
+            PdfAnnotationKind[] kinds;
+            foreach (a; list.list)
+                if (a.ours)
+                    kinds ~= a.kind;
+            with (PdfAnnotationKind)
+                d.expect(kinds, [highlight, rectangle, oval, arrow, star, textBox, note, ink], "each, ours, in order");
+            foreach (a; list.list)
+            {
+                if (a.kind == PdfAnnotationKind.highlight)
+                {
+                    d.expect(a.text, "quick brown", "the highlight's text");
+                    d.expect(a.lines.length, 1, "on a line");
+                }
+                if (a.kind == PdfAnnotationKind.arrow)
+                {
+                    arrow = a;
+                    d.check(a.strokes.length == 1 && near(a.strokes[0][1].x, 220) && near(a.strokes[0][1].y, 580),
+                            format!"the arrow where it was put: %s"(a.strokes));
+                    d.expect(a.colour, PdfColour(0, 0, 255), "blue");
+                }
+                if (a.kind == PdfAnnotationKind.textBox)
+                    d.expect(a.text, "Some words");
+            }
+        });
+        // Drawn: the rectangle's left edge is blue
+        PdfBitmap b;
+        d.ui({ doc.render(0, PdfRect(90, 490, 40, 40), 2, 0, PdfPriority.visible, (PdfBitmap x) { b = x; }); });
+        d.check(waitFor(d, () => b !is null), "rendered");
+        d.ui({ d.check(bluish(pixel(b, 101.5f, 520)), format!"the rectangle drawn: %06x"(pixel(b, 101.5f, 520))); });
+
+        // Changed: the arrow, red and moved; removed: the star
+        int changedTo = -1;
+        d.ui({
+            auto red = arrow.movedBy(0, 100);
+            red.colour = PdfColour(255, 0, 0);
+            doc.updateAnnotation(0, arrow.index, red, (int i) { changedTo = i; });
+        });
+        d.check(waitFor(d, () => changedTo >= 0), "the arrow changed");
+        list = null;
+        d.ui({ doc.annotations(0, PdfPriority.visible, (PdfAnnotations a) { list = a; }); });
+        d.check(waitFor(d, () => list !is null), "read again");
+        int star = -1;
+        d.ui({
+            foreach (a; list.list)
+            {
+                if (a.kind == PdfAnnotationKind.arrow)
+                {
+                    d.expect(a.colour, PdfColour(255, 0, 0), "red now");
+                    d.check(near(a.strokes[0][1].y, 680), "and lower");
+                }
+                if (a.kind == PdfAnnotationKind.star)
+                    star = a.index;
+            }
+            doc.removeAnnotation(0, star);
+        });
+        d.check(waitFor(d, () => doc.cachedAnnotations(0) is null || doc.cachedAnnotations(0).list.length == 7), "the star gone");
+        d.ui({ doc.undo(); });
+        list = null;
+        d.check(waitFor(d, () => !doc.busy), "undone");
+        d.ui({ doc.annotations(0, PdfPriority.visible, (PdfAnnotations a) { list = a; }); });
+        d.check(waitFor(d, () => list !is null), "read after undoing");
+        d.ui({ d.expect(list.list.length, 8, "the star back"); });
+
+        bool saved;
+        d.ui({ doc.save(file, PdfSaveOptions.init, (PdfError e) { saved = !e; }); });
+        d.check(waitFor(d, () => saved), "saved");
+        PdfDocument again;
+        list = null;
+        d.ui({ again = PdfDocument.open(file); });
+        d.check(waitFor(d, () => again.status == PdfStatus.ready), "opened again");
+        d.ui({ again.annotations(0, PdfPriority.visible, (PdfAnnotations a) { list = a; }); });
+        d.check(waitFor(d, () => list !is null), "its annotations read");
+        d.ui({
+            size_t ours;
+            foreach (a; list.list)
+                if (a.ours)
+                    ours++;
+            d.expect(ours, 8, "all eight saved, and still ours");
+            again.close();
+            doc.close();
+        });
+    });
+}
+
+/// A form filled in: a text field typed into, a box ticked, a choice made; undone; saved.
+void fillingForms()
+{
+    PdfView view;
+    const file = scratch("form.pdf");
+    run("pdf editing: forms", {
+        view = new PdfView(PdfDocument.open(file)).prefSize(700, 600);
+        return cast(Widget) view;
+    }, (Driver d) {
+        auto doc() { return view.document; }
+        d.check(waitFor(d, () => doc.status == PdfStatus.ready && doc.cachedAnnotations(0)), "ready, its fields read");
+        d.settle();
+        d.ui({ d.check(doc.info.hasForm, "it has a form"); });
+        Bounds name, box;
+        d.ui({
+            foreach (a; doc.cachedAnnotations(0).list)
+            {
+                d.expect(a.kind, PdfAnnotationKind.widget, "fields, as widgets");
+                if (a.fieldType == 6 && !name.width)
+                    name = view.pageRectInScene(0, a.rect);
+                if (a.fieldType == 2)
+                    box = view.pageRectInScene(0, a.rect);
+            }
+        });
+        d.click(name.centreX, name.centreY);
+        d.check(waitFor(d, () => doc.formFocus == 0), "the name field has focus");
+        d.type("Ada");
+        d.check(waitFor(d, () => doc.edited && !doc.busy), "typed into");
+        d.key(SDL_Keycode.SDLK_BACKSPACE);
+        d.type("a Lovelace");
+        d.check(waitFor(d, () => !doc.busy), "typed");
+        uint before;
+        d.ui({ before = doc.pageVersion(0); });
+        d.click(box.centreX, box.centreY);
+        d.check(waitFor(d, () => doc.pageVersion(0) != before && !doc.busy), "ticked: the page drawn again");
+        d.ui({ d.check(doc.canUndo, "undoably"); });
+        d.ui({ d.check(doc.formFocus == 0, "the box has focus now"); });
+        bool saved;
+        d.ui({ doc.save(file, PdfSaveOptions.init, (PdfError e) { saved = !e; }); });
+        d.check(waitFor(d, () => saved), "saved");
+        d.ui({
+            auto bytes = cast(const(char)[]) read(file);
+            d.check(bytes.canFind("(Ada Lovelace)"), "the name, in the file");
+            d.check(bytes.canFind("/V /Yes") || bytes.canFind("/V/Yes"), "the box, ticked in the file");
+            doc.close();
+        });
+    });
+}
+
+/// Marked up with the view's tools, by the pointer: a highlight, a rectangle selected, moved and
+/// deleted, undone; a region cropped to.
+void viewMarkup()
+{
+    PdfView view;
+    const file = scratch("sample.pdf");
+    run("pdf view: marking up", {
+        view = new PdfView(PdfDocument.open(file)).prefSize(700, 600);
+        return cast(Widget) view;
+    }, (Driver d) {
+        auto doc() { return view.document; }
+        d.check(waitFor(d, () => doc.status == PdfStatus.ready && doc.cachedText(0) && doc.cachedAnnotations(0)), "ready");
+        d.settle();
+        Bounds from, to;
+        d.ui({
+            auto t = doc.cachedText(0);
+            auto r = t.find("quick brown"d, false)[0];
+            from = view.pageRectInScene(0, t.boxes[r[0]]);
+            to = view.pageRectInScene(0, t.boxes[r[1] - 1]);
+            view.setTool(PdfTool.highlight);
+        });
+        d.press(from.minX + 1, from.centreY);
+        d.move(to.centreX, to.centreY);
+        d.move(to.maxX - 1, to.centreY);
+        d.release(to.maxX - 1, to.centreY);
+        d.check(waitFor(d, () => doc.cachedAnnotations(0) && doc.cachedAnnotations(0).list.length == 1), "highlighted");
+        d.ui({
+            auto a = doc.cachedAnnotations(0).list[0];
+            d.expect(a.kind, PdfAnnotationKind.highlight);
+            d.expect(a.text, "quick brown", "what was dragged across");
+            d.expect(view.tool, PdfTool.highlight, "the highlighter kept, for more");
+        });
+
+        // A rectangle, dragged out
+        Bounds page;
+        d.ui({ view.setTool(PdfTool.rectangle); page = view.pageRectInScene(0, PdfRect(100, 300, 200, 100)); });
+        d.press(page.minX, page.minY);
+        d.move(page.centreX, page.centreY);
+        d.move(page.maxX, page.maxY);
+        d.release(page.maxX, page.maxY);
+        d.check(waitFor(d, () => view.selectedAnnotation.page == 0 && doc.cachedAnnotations(0)
+                                 && doc.cachedAnnotations(0).list.length == 2), "drawn, and selected");
+        d.ui({
+            d.expect(view.tool, PdfTool.select, "the tool back to selecting");
+            auto r = view.selectedAnnotationValue;
+            d.check(r && r.kind == PdfAnnotationKind.rectangle, "a rectangle");
+            d.check(r && near(r.rect.x, 100, 3) && near(r.rect.y, 300, 3) && near(r.rect.width, 200, 3),
+                    format!"where it was dragged: %s"(r ? r.rect : PdfRect.init));
+        });
+
+        // Moved by dragging it
+        d.press(page.centreX, page.centreY);
+        d.move(page.centreX + 20, page.centreY + 20);
+        d.release(page.centreX + 40, page.centreY + 40);
+        d.check(waitFor(d, () => !doc.busy && view.selectedAnnotationValue && view.selectedAnnotationValue.rect.x > 110),
+                format!"moved: selected %s, %s, busy %s, undo '%s'"(view.selectedAnnotation,
+                       view.selectedAnnotationValue ? view.selectedAnnotationValue.rect : PdfRect.init, doc.busy, doc.undoName));
+        // Deleted, and back
+        d.key(SDL_Keycode.SDLK_DELETE);
+        d.check(waitFor(d, () => doc.cachedAnnotations(0) && doc.cachedAnnotations(0).list.length == 1), "deleted");
+        d.ui({ doc.undo(); });
+        d.check(waitFor(d, () => !doc.busy && doc.cachedAnnotations(0) && doc.cachedAnnotations(0).list.length == 2), "undone");
+
+        // A region, cropped to: once nothing's changing, as a change of the document forgets it
+        d.check(waitFor(d, () => !doc.busy), "settled");
+        d.settle();
+        Bounds region;
+        d.ui({ view.setTool(PdfTool.region); region = view.pageRectInScene(0, PdfRect(50, 50, 300, 250)); });
+        d.press(region.minX, region.minY);
+        d.move(region.centreX, region.centreY);
+        d.release(region.maxX, region.maxY);
+        d.check(waitFor(d, () => view.region.page == 0, 3.seconds), "a region");
+        d.ui({ view.cropToRegion(); });
+        d.check(waitFor(d, () => near(doc.pageSize(0).width, 300, 3)), format!"cropped: %s"(doc.pageSize(0)));
+        d.ui({ doc.close(); });
+    });
+}
+
+/// The sidebar's pages: selected, dragged to move them, and deleted with Delete.
+void thumbnailEditing()
+{
+    PdfThumbnails thumbnails;
+    PdfDocument doc;
+    int[][] moved;
+    int[] movedTo;
+    int[][] deleted;
+    run("pdf sidebar: moving and deleting pages", {
+        doc = PdfDocument.open(scratch("sample.pdf"));
+        thumbnails = new PdfThumbnails(doc).prefSize(180, 760).thumbnailWidth(60);
+        thumbnails.onPagesMoved((int[] pages, int before) { moved ~= pages; movedTo ~= before; doc.movePages(pages, before); });
+        thumbnails.onDeletePages((int[] pages) { deleted ~= pages; doc.deletePages(pages); });
+        return cast(Widget) thumbnails;
+    }, (Driver d) {
+        d.check(waitFor(d, () => doc.status == PdfStatus.ready), "ready");
+        d.settle();
+        Bounds first, third;
+        d.ui({
+            auto items = (cast(Column) thumbnails.content).children;
+            first = (cast(Widget) items[0]).boundsInScene;
+            third = (cast(Widget) items[2]).boundsInScene;
+        });
+        // The first dragged below the third: before the fourth
+        d.press(first.centreX, first.centreY);
+        foreach (k; 1 .. 8)
+            d.move(first.centreX, first.centreY + (third.maxY - 5 - first.centreY) * k / 7);
+        d.release(first.centreX, third.maxY - 5);
+        d.check(waitFor(d, () => movedTo.length == 1), "moved");
+        d.ui({ d.expect(moved[0], [0]); d.expect(movedTo[0], 3, "to before the fourth"); });
+        d.check(waitFor(d, () => !doc.busy), "and the document with it");
+        d.ui({ d.check(doc.pageSize(3).width > doc.pageSize(3).height, "the landscape page third now, as it was fourth"); });
+        // Ctrl clicks select two; Delete deletes them
+        Bounds a, b;
+        d.ui({
+            auto items = (cast(Column) thumbnails.content).children;
+            a = (cast(Widget) items[0]).boundsInScene;
+            b = (cast(Widget) items[1]).boundsInScene;
+        });
+        d.click(a.centreX, a.centreY);
+        d.hold(SDL_Keymod.KMOD_LCTRL);
+        d.click(b.centreX, b.centreY);
+        d.hold(SDL_Keymod.KMOD_NONE);
+        d.ui({ d.expect(thumbnails.selectedPages, [0, 1], "two selected"); });
+        d.key(SDL_Keycode.SDLK_DELETE);
+        d.check(waitFor(d, () => doc.pageCount == 3), "both deleted");
+        d.ui({ d.expect(deleted, [[0, 1]]); doc.close(); });
     });
 }

@@ -1462,6 +1462,14 @@ private:
 
     void released(float x, float y, uint mods)
     {
+        // Where it's let go of counts, wherever the last move was
+        if (gesture == Gesture.move || gesture == Gesture.resize || gesture == Gesture.shape
+            || gesture == Gesture.region || gesture == Gesture.ink)
+        {
+            const p = onPage(x, y, gesturePage);
+            if (p.x != startX || p.y != startY || moved)
+                dragged(x, y, false);
+        }
         auto doc = view._document;
         const page = gesturePage;
         const g = gesture;
