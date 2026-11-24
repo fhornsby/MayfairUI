@@ -1,0 +1,9 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"mayfair": {"path":"../../mayfair"},
+		"mayfair-gstreamer": {"path":"../"},
+		"mayfair-media": {"path":"../../mayfair-media"},
+		"sdl-d": "3.2.27"
+	}
+}

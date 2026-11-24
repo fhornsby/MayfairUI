@@ -1,0 +1,14 @@
+{
+	"name": "mayfair-gstreamer-tests",
+	"description": "End-to-end tests for the GStreamer backend: real media, real windows",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-gstreamer": {
+			"path": ".."
+		}
+	},
+	"sourceFiles": [
+		"../../mayfair/tests/source/harness.d"
+	]
+}
