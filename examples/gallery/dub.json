@@ -2,13 +2,19 @@
 	"authors": [
 		"Freddie Hornsby"
 	],
-	"copyright": "Copyright \u00a9 2026, Freddie Hornsby",
+	"copyright": "Copyright © 2026, Freddie Hornsby",
 	"description": "Every Mayfair widget, a page each.",
 	"license": "MIT",
 	"name": "gallery",
 	"dependencies": {
 		"mayfair": {
 			"path": "../../mayfair"
+		},
+		"mayfair-media": {
+			"path": "../../mayfair-media"
+		},
+		"mayfair-gstreamer": {
+			"path": "../../mayfair-gstreamer"
 		}
 	},
 	"stringImportPaths": [

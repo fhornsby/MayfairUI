@@ -2,6 +2,7 @@ module gallery;
 
 import std.format : format;
 import mayfair;
+import video : videoPage;
 
 /*
     Mayfair's gallery: every widget the kit has, on a page of its own, as other kits' demo apps
@@ -34,6 +35,7 @@ Dock buildGallery(string start = null)
         Page("Windows", "window-new-symbolic", windowsPage(&report)),
         Page("Notifications", "preferences-system-notifications-symbolic", notificationsPage(&report)),
         Page("Drag & drop", "document-send-symbolic", dragDropPage(&report)),
+        Page("Video", "video-x-generic-symbolic", videoPage(&report)),
         Page("Lists & tables", "view-list-symbolic", listsPage(&report)),
         Page("Styling", "applications-graphics-symbolic", stylingPage(&report)),
         Page("Properties", "emblem-system-symbolic", propertiesPage()),

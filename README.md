@@ -89,7 +89,13 @@ and adds the toolkit around them.
 - **Wayland first:** client-side decorations, fractional scaling, and frame pacing to the
   compositor.
 
-A terminal widget, on alacritty_terminal, is a separate package: [`mayfair-terminal`](mayfair-terminal).
+In packages of their own:
+
+- **Video and audio:** [`mayfair-media`](mayfair-media) has `Media`, `MediaPlayer` and
+  `MediaView`, as JavaFX has them, with the controls left to the app to build from Mayfair's
+  widgets. [`mayfair-gstreamer`](mayfair-gstreamer) plays them with the system's GStreamer, which
+  is LGPL: see its README for what it needs and its licences.
+- **A terminal:** [`mayfair-terminal`](mayfair-terminal), on alacritty_terminal.
 
 ## Platforms
 
@@ -182,6 +188,15 @@ What's still to be done, that I know of:
 - In the browser, with its WebGPU, and on the OpenGL renderer without a copy through the CPU:
   there, for now, what's drawn is read back and shown as an image.
 - Getting the device back after it's lost (a driver reset, say).
+
+**Video and audio**
+- Show frames from a GPU texture shared with the backend, rather than copying each one into an
+  image.
+- An FFmpeg backend, `mayfair-ffmpeg`, with SDL3 playing the sound.
+- Gapless looping, for short clips, with GStreamer's segment seeks.
+- Choosing audio and subtitle tracks, the playback rate, and subtitles drawn by Mayfair.
+- Loading ahead for a feed: players for the items just off screen, ready before they're scrolled to.
+- Test network streams and their buffering, other formats, and macOS and Windows.
 
 **Drag and drop**
 - Dragging out of an app, to another app or the desktop, and from one widget to another within

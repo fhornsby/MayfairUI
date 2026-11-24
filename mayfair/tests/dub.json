@@ -6,6 +6,12 @@
 	"dependencies": {
 		"mayfair": {
 			"path": ".."
+		},
+		"mayfair-media": {
+			"path": "../../mayfair-media"
+		},
+		"mayfair-gstreamer": {
+			"path": "../../mayfair-gstreamer"
 		}
 	},
 	"stringImportPaths": [
@@ -13,6 +19,7 @@
 		"../../examples/gallery/assets"
 	],
 	"sourceFiles": [
-		"../../examples/gallery/source/gallery.d"
+		"../../examples/gallery/source/gallery.d",
+		"../../examples/gallery/source/video.d"
 	]
 }
