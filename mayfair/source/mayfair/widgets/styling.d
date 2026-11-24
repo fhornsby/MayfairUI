@@ -948,8 +948,8 @@ void gather(Stylesheet sheet, StyleOrigin origin, uint sheetOrder, Widget w, Col
         foreach (ref e; entries)
         {
             const rule = &sheet.data.rules[e.rule];
-            if ((rule.media == Media.dark && scheme != ColourScheme.dark)
-                || (rule.media == Media.light && scheme != ColourScheme.light))
+            if ((rule.media == MediaQuery.dark && scheme != ColourScheme.dark)
+                || (rule.media == MediaQuery.light && scheme != ColourScheme.light))
                 continue;
             const selector = &rule.selectors[e.selector];
             if (!matches(*selector, e.pseudo, selector.parts.length - 1, w))

@@ -100,6 +100,22 @@ class Window
     }
 
     /*
+        Whether it fills the screen, with nothing of the desktop's round it: JavaFX's
+        Stage.setFullScreen. Before it's shown, it opens so; while it is, it goes, and the desktop
+        can take it out again (with Escape, or its own shortcut), which fullScreen() follows.
+    */
+    Window setFullScreen(bool fullScreen)
+    {
+        _fullScreen = fullScreen;
+        if (sdl)
+            SDL_SetWindowFullscreen(sdl, fullScreen);
+        return this;
+    }
+
+    /// ditto
+    bool fullScreen() const { return _fullScreen; }
+
+    /*
         The size it was last when it wasn't maximised, fullscreen or tiled -- its inside, as
         setSize takes -- and whether it was maximised: what an app keeps, to open as it was left.
         Kept up as it's resized, so they're still there once it's closed.
@@ -300,6 +316,7 @@ package(mayfair):
     int _maxWidth, _maxHeight;                        // the same; 0 for none
     int _openWidth, _openHeight;                      // the size it was made at, which caps the default minimum
     bool _startMaximised, _wasMaximised;              // see setMaximised and wasMaximised
+    bool _fullScreen;                                 // see setFullScreen
     int _restoredWidth, _restoredHeight;              // see restoredWidth
     int _margin;                                      // its frame's, round the inside
 
@@ -346,6 +363,8 @@ package(mayfair):
         _restoredHeight = height;
         if (_startMaximised)
             flags |= SDL_WindowFlags.SDL_WINDOW_MAXIMIZED;
+        if (_fullScreen)
+            flags |= SDL_WindowFlags.SDL_WINDOW_FULLSCREEN;
         if (drawsDecorations)
             flags |= SDL_WindowFlags.SDL_WINDOW_BORDERLESS | SDL_WindowFlags.SDL_WINDOW_TRANSPARENT;
         // One that's to be translucent needs its alpha from the start, though until the
@@ -564,6 +583,7 @@ package(mayfair):
                     || event.type == SDL_EventType.SDL_EVENT_WINDOW_RESTORED;
             case SDL_EventType.SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
             case SDL_EventType.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+                _fullScreen = event.type == SDL_EventType.SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
                 frameChanged = true;
                 return false;
             default:

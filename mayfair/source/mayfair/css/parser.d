@@ -30,10 +30,11 @@ struct Rule
 {
     Selector[] selectors;
     Declaration[] declarations;
-    Media media;          /// Which colour scheme it's for, if only one
+    MediaQuery media;          /// Which colour scheme it's for, if only one
 }
 
-enum Media : ubyte { all, dark, light }
+/// Which colour scheme a rule in an @media block is for: CSS's prefers-color-scheme.
+enum MediaQuery : ubyte { all, dark, light }
 
 struct Declaration
 {
@@ -75,7 +76,7 @@ StylesheetData parseStylesheet(string css) pure @safe
 {
     auto p = Parser(css);
     StylesheetData sheet;
-    p.rules(sheet.rules, Media.all, false);
+    p.rules(sheet.rules, MediaQuery.all, false);
     return sheet;
 }
 
@@ -141,7 +142,7 @@ struct Parser
     }
 
     // Rules until the end, or a closing brace if `nested`
-    void rules(ref Rule[] into, Media media, bool nested) pure @safe
+    void rules(ref Rule[] into, MediaQuery media, bool nested) pure @safe
     {
         while (true)
         {
@@ -191,11 +192,11 @@ struct Parser
         expect(':');
         skipSpace();
         const scheme = identifier();
-        Media media;
+        MediaQuery media;
         if (scheme == "dark")
-            media = Media.dark;
+            media = MediaQuery.dark;
         else if (scheme == "light")
-            media = Media.light;
+            media = MediaQuery.light;
         else
             fail("prefers-colour-scheme is dark or light, not " ~ scheme);
         expect(')');
@@ -742,7 +743,7 @@ unittest
     static assert(sheet.rules[2].selectors[0].combinators == [Combinator.descendant]);
     static assert(sheet.rules[2].declarations[0].value.spaced.length == 2);
     static assert(sheet.rules[2].declarations[1].value.layers[1].colour == Colour(255, 255, 255, 136));
-    static assert(sheet.rules[3].media == Media.dark && sheet.rules[3].declarations[0].value.number == 0.5f);
+    static assert(sheet.rules[3].media == MediaQuery.dark && sheet.rules[3].declarations[0].value.number == 0.5f);
 
     // derive() of a literal is worked out as it's parsed
     static assert(parseDeclarations("x: derive(#ececec, -30%)")[0].value.colour == Colour(0xa5, 0xa5, 0xa5));

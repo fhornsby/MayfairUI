@@ -15,6 +15,11 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--accessibility-app")
         return accessibilityApp(); // for accessibility/run.sh, which checks it from outside
 
+    // The window buttons the title bar tests expect, whatever this machine's desktop has: GNOME's
+    // own layout, read from gsettings where it's installed, has no maximise button
+    import std.process : environment;
+    environment["MAYFAIR_BUTTON_LAYOUT"] = ":minimize,maximize,close";
+
     tests.buttons.clicking();
     tests.focus.keyboardDisableRemove();
     tests.textinput.textAndDrawOrder();

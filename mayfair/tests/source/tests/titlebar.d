@@ -47,11 +47,15 @@ void titleBars()
             d.expect(title.text, "Documents");
             d.check(open.boundsInScene.minX < t.minX, "what's added at the start, before it");
             d.check(maximise !is null, "the window's buttons, as the desktop has them");
+            if (!maximise)
+                return;
             d.expect(root.boundsInScene.minY, b.maxY, "the root below the bar");
         });
 
         d.click(open);
         d.ui({ d.expect(opened, 1, "a button in it works"); });
+        if (!maximise)
+            return; // no window buttons to try
 
         d.click(maximise);
         Thread.sleep(600.msecs);
