@@ -1,0 +1,19 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "Video and audio for Mayfair: Media, MediaPlayer and MediaView, played by a backend of the app's choosing",
+	"license": "MIT",
+	"name": "mayfair-media",
+	"targetType": "library",
+	"dependencies": {
+		"mayfair": {
+			"path": "../mayfair"
+		}
+	},
+	"toolchainRequirements": {
+		"frontend": ">=2.111.0",
+		"gdc": "no"
+	}
+}

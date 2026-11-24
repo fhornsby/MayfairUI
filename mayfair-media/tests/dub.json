@@ -1,0 +1,14 @@
+{
+	"name": "mayfair-media-tests",
+	"description": "Tests for Media, MediaPlayer and MediaView, against a fake backend: real windows, no media library",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-media": {
+			"path": ".."
+		}
+	},
+	"sourceFiles": [
+		"../../mayfair/tests/source/harness.d"
+	]
+}
