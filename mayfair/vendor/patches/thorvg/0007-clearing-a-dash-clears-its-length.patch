@@ -1,0 +1,15 @@
+Clearing a shape's dash, with tvg_shape_set_stroke_dash(shape, NULL, 0, 0), left its
+length as it was: the stroke was then still taken as dashed (dash.length > threshold),
+with no pattern, and _genDashOutline divided by its count of 0 -- SIGFPE.
+
+--- a/src/renderer/tvgShape.h	2026-11-24 22:41:59.902876252 +0000
++++ b/src/renderer/tvgShape.h	2026-11-24 22:41:59.916876037 +0000
+@@ -285,6 +285,8 @@
+             tvg::free(dash.pattern);
+             dash.pattern = nullptr;
+         }
++        //No dash: no length either, or the stroke is still taken as dashed, with no pattern to divide by
++        if (cnt == 0) dash.length = 0.0f;
+         if (cnt > 0) {
+             if (!dash.pattern) dash.pattern = tvg::malloc<float>(sizeof(float) * cnt);
+             dash.length = 0.0f;
