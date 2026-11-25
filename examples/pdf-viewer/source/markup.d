@@ -32,8 +32,7 @@ final class MarkupBar : Row
         setSpacing(2);
         setPadding(Insets(4, 8));
         setAlignment(Pos.centreLeft);
-        styleClass.add("markup-bar");
-        setStyle("background-colour: var(--field); border-bottom: 1 solid var(--border);");
+        styleClass.add("markup-bar"); // styled by the viewer's stylesheet: a strip of the page
 
         tool(PdfTool.select, svgIcon(selectTextIcon), "Select text and annotations");
         tool(PdfTool.region, svgIcon(regionIcon), "Select a region, to crop to");

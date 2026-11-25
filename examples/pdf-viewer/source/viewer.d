@@ -23,6 +23,21 @@ static import store;
 /// The tour, beside this source: samples/tour.pdf.
 string tour() { return buildPath(dirName(__FILE_FULL_PATH__), "..", "samples", "tour.pdf"); }
 
+/*
+    The viewer's own look, over the Oriel theme (mayfair.theme.oriel): the sidebar's tabs small and
+    clear on its glass, the markup toolbar a strip of the page under the title bar, and the status line.
+*/
+enum viewerStyle = `
+    .sidebar .toggle-button { font-size: 12px; padding: 3 6; --base: transparent; --hover-base: var(--row-hover); }
+    .sidebar .toggle-button:selected { --face: var(--row-selected); }
+    .markup-bar { background-colour: var(--divider), var(--page); background-insets: 0, 0 0 1 0; }
+    .markup-bar .button, .markup-bar .toggle-button, .markup-bar .menu-button { --base: transparent; }
+    .status { font-size: 12px; colour: var(--secondary-text); padding: 4 10; }
+    .title-bar .button, .title-bar .toggle-button, .title-bar .menu-button {
+        --base: transparent; --hover-base: var(--row-hover); --pressed-base: var(--row-selected);
+    }
+`;
+
 /// The viewers open, a window each.
 Viewer[] viewers;
 
@@ -40,7 +55,13 @@ Viewer openWindow(string path, Window window = null)
         window.setSize(1180, 820);
     }
     auto v = new Viewer(window);
-    window.scene = new Scene(v.root).titleBar(v.titleBar);
+    auto scene = new Scene(v.root).titleBar(v.titleBar);
+    // The Oriel look, then the viewer's own: on the scene, so the title bar has them too
+    scene.stylesheets.add(orielStylesheet);
+    scene.stylesheets.add(stylesheet!viewerStyle);
+    window.scene = scene;
+    // Frosted glass in the sidebar where the compositor blurs what's behind the window; opaque elsewhere
+    window.setTranslucent(true);
     if (fresh)
         window.show();
     if (path.length)
@@ -78,10 +99,11 @@ final class Viewer
         documentArea.add(view);
         middle = new Stack().grow(1);
         middle.add(welcome);
-        status = new Label("").style("font-size: 12px; colour: var(--prompt-text); padding: 4 10;");
+        status = new Label("").styleClass("status");
 
         root = new ViewerRoot(this);
         auto centre = new Column().grow(1).add(middle).add(status);
+        centre.styleClass.add("page"); // opaque, beside the sidebar's glass
         root.setCentre(centre);
 
         // Dropped on the window, from a file manager: PDFs opened -- here, if nothing is
@@ -486,14 +508,14 @@ private:
                      Tab(SidebarShows.results, "Search"), Tab(SidebarShows.bookmarks, "Marks")])
         {
             auto which = t.which;
-            auto b = new ToggleButton(t.name).style("font-size: 12px; padding: 4 4;");
+            auto b = new ToggleButton(t.name);
             b.setOnAction(tabAction(which));
             sidebarTabs[which] = b;
             tabs.add(b);
         }
         sidebarStack = new Stack().grow(1);
         sidebar = new Column().prefWidth(240).minWidth(240).maxWidth(240);
-        sidebar.style("background-colour: var(--field);");
+        sidebar.styleClass.add("sidebar"); // glass, where the window's translucent
         sidebar.add(tabs).add(sidebarStack);
         sidebarShows(SidebarShows.pages);
     }
@@ -608,10 +630,11 @@ private:
         auto menu = new MenuButton().graphic(new Icon("open-menu-symbolic")).accessibleText("Menu").menu(buildMenu());
 
         titleBar = new TitleBar("PDF Viewer")
+            .sidebar(sidebar) // the sidebar's glass up to the top of the window, following it as it's hidden
             .addStart(sidebarButton)
             .addStart(new Row().spacing(6).alignment(Pos.centreLeft).add(pageField).add(pageCount))
             .addEnd(new Row().spacing(2).alignment(Pos.centreLeft).add(zoomOut).add(zoomButton).add(zoomIn))
-            .addEnd(new Row().spacing(2).add(turnLeft).add(turnRight))
+            .addEnd(new Row().spacing(2).alignment(Pos.centreLeft).add(turnLeft).add(turnRight))
             .addEnd(markupButton)
             .addEnd(new Row().spacing(4).alignment(Pos.centreLeft).add(matches).add(search).add(previous).add(next))
             .addEnd(menu);

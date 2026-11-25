@@ -86,6 +86,9 @@ and adds the toolkit around them.
   notification service (or the desktop portal, in a Flatpak) on Linux and the BSDs.
 - **Rendering:** ThorVG on WebGPU (Vulkan or Metal underneath), falling back to OpenGL and then
   to the CPU where the GPU can't.
+- **Themes:** Mayfair's own, and the Oriel desktop's (`mayfair.theme.oriel`): its palette, its
+  traffic lights, and frosted-glass sidebars that run up behind the app's own title bar, which
+  follows the sidebar as it's resized, hidden and shown (`TitleBar.sidebar`).
 - **Wayland first:** client-side decorations, fractional scaling, and frame pacing to the
   compositor.
 
@@ -168,7 +171,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
-| [`pdf-viewer`](examples/pdf-viewer) | A PDF viewer and editor, modelled on macOS's Preview: markup, signatures, forms, page editing, export and printing |
+| [`pdf-viewer`](examples/pdf-viewer) | A PDF viewer and editor, modelled on macOS's Preview, in the Oriel theme: markup, signatures, forms, page editing, export and printing |
 | [`gpu-cube`](examples/gpu-cube) | A `GpuView`: a lit cube drawn with WebGPU, spinning, and turned by dragging it |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
 | [`oriel-hello`](examples/oriel-hello) | An app for the Oriel desktop environment (currently unreleased), with a frosted-glass sidebar |

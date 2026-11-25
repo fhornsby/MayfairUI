@@ -11,6 +11,12 @@ dub run -- a.pdf b.pdf       # each in a window of its own
 
 Everything is in the menu at the end of the title bar, with its shortcuts.
 
+It's in the Oriel desktop's look (`mayfair.theme.oriel`). On Oriel, and on any Wayland desktop
+that blurs behind windows over `ext-background-effect-v1`, the sidebar is frosted glass, up
+behind the title bar, while the document beside it stays opaque. The title bar follows the
+sidebar: hidden with F9, or in a slideshow, the bar's the page's colour all the way across.
+Elsewhere (X11, or with translucency off) the window is opaque.
+
 ## What it does
 
 **Reading**
