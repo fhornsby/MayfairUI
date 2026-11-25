@@ -53,7 +53,9 @@ alias MouseHandler = void delegate(ref MouseEvent event);
     fingers, and the desktop's natural scrolling setting is already applied to both.
 
     Which of the two it was matters to how it's shown: a wheel's notch is eased into, and a
-    touchpad's movement carries on after the fingers lift (see ScrollPane). `time` is when it
+    touchpad's movement carries on after the fingers lift (see ScrollPane) -- unless
+    `systemMomentum` says the system does that itself, as macOS and Windows do, sending the
+    movement on after the fingers lift as more scroll events. `time` is when it
     happened, in seconds on a clock of its own, for working out how fast the fingers were going.
 */
 struct ScrollEvent
@@ -63,6 +65,7 @@ struct ScrollEvent
     float x = 0, y = 0;           /// The same, from the top left of the widget hearing the event
     Widget target;                /// The widget under the pointer, which it bubbles up from
     ScrollDevice device;          /// What it came from
+    bool systemMomentum;          /// A touchpad's, where the system carries it on after the fingers lift
     double time = 0;              /// When, in seconds: only the differences between events mean anything
     bool shift, control, alt, meta;
     bool consumed;

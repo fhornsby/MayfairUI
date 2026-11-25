@@ -52,10 +52,11 @@ void wheel()
             d.check(pane.vvalue > 0, "and vvalue follows");
         });
 
-        // A touchpad follows the fingers: SDL's 0.3 of a notch is 3 points
+        // A touchpad follows the fingers: SDL's 0.3125 of a notch -- 800 256ths of a pixel, over
+        // ten, as Wayland and SDL give it -- is 3 points and an eighth
         float before;
         d.ui({ before = items[0].boundsInScene.minY; });
-        d.scroll(p.centreX, p.centreY, -0.3f);
+        d.scroll(p.centreX, p.centreY, -0.3125f);
         d.ui({ d.check(abs(items[0].boundsInScene.minY - (before - 3)) <= 0.5, "a touchpad scrolls by its movement"); });
 
         // As far as it goes, and no further
@@ -196,11 +197,11 @@ void momentum()
         Thread.sleep(400.msecs);
         d.ui({ d.check(abs(scrolled - 160) < 0.5f, format!"three more notches: 160, got %s"(scrolled)); });
 
-        // A swipe: 6 movements of 13 points, 16 ms apart, then lifted
+        // A swipe: 6 movements of 13 points, 16 ms apart, then lifted (not on a wheel's 120ths)
         float lifted;
         d.ui({ pane.setVvalue(0); });
         d.settle();
-        d.swipe(p.centreX, p.centreY, -1.3f, 6);
+        d.swipe(p.centreX, p.centreY, -1.3125f, 6);
         d.ui({ lifted = scrolled; });
         Thread.sleep(600.msecs);
         float glided;
@@ -216,7 +217,7 @@ void momentum()
         // A press catches a glide on its way
         d.ui({ pane.setVvalue(0); });
         d.settle();
-        d.swipe(p.centreX, p.centreY, -1.3f, 6);
+        d.swipe(p.centreX, p.centreY, -1.3125f, 6);
         Thread.sleep(100.msecs);
         d.press(p.maxX - 30, p.centreY);
         d.release(p.maxX - 30, p.centreY);
@@ -225,5 +226,18 @@ void momentum()
         Thread.sleep(300.msecs);
         d.ui({ after = scrolled; });
         d.check(abs(after - caught) < 0.5f, format!"a press stops it where it is: %s, then %s"(caught, after));
+
+        // A high-resolution wheel, spun: 120ths of a notch, not whole eighths (KDE's scroll speed
+        // at 70% makes a notch 84). It's a wheel: 40 points a notch, and it stops when it does
+        d.ui({ pane.setVvalue(0); });
+        d.settle();
+        d.swipe(p.centreX, p.centreY, -0.7f, 6);
+        Thread.sleep(250.msecs);
+        float spun, still;
+        d.ui({ spun = scrolled; });
+        d.check(abs(spun - 6 * 0.7f * 40) < 0.5f, format!"a high-resolution wheel: 40 points a notch, %s of 168"(spun));
+        Thread.sleep(500.msecs);
+        d.ui({ still = scrolled; });
+        d.check(abs(still - spun) < 0.5f, format!"and no further once it's stopped: %s, then %s"(spun, still));
     });
 }

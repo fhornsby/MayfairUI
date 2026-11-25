@@ -42,7 +42,8 @@ enum ScrollBarPolicy
     Scrolling moves smoothly. A wheel's notch, or a page, is eased into rather than jumped to, and
     notches in quick succession add up to where it's heading. A touchpad follows the fingers
     exactly, and when they lift, carries on at the speed they were going and slows to a stop, as
-    GNOME's does. Any scroll, or a press anywhere in the pane, takes over from a glide on its way.
+    GNOME's does. On macOS and Windows the system does that itself, sending more scroll events
+    after the fingers lift, so there it's only followed. Any scroll, or a press anywhere in the pane, takes over from a glide on its way.
     SDL doesn't say when fingers lift, so a moment with no movement is taken to mean they have:
     fingers resting on the pad start a glide, and moving again stops it at once. Tab moving focus to something out of view scrolls it into view. To a screen reader it's
     a scroll view, with its position and the actions to change it, and everything in it can be
@@ -265,7 +266,7 @@ protected:
         if (dx == 0 && dy == 0)
             return;
         if (event.device == ScrollDevice.touchpad)
-            follow(event.time, dx, dy);
+            follow(event.time, dx, dy, !event.systemMomentum);
         else
             easeBy(dx, dy);
         showBars();
@@ -392,11 +393,18 @@ private:
         startMotion();
     }
 
-    /// A touchpad: straight there, remembering how fast, in case the fingers lift.
-    void follow(double time, float dx, float dy)
+    /// A touchpad: straight there, remembering how fast, in case the fingers lift -- unless the
+    /// system carries it on itself, when there's nothing to do once they have.
+    void follow(double time, float dx, float dy, bool glides)
     {
         _easing = _gliding = false;
         scrollTo(scrollX + dx, scrollY + dy);
+        if (!glides)
+        {
+            stopGlide();
+            _motion.stop();
+            return;
+        }
         if (_sampleCount == _samples.length)
         {
             foreach (i; 1 .. _samples.length)

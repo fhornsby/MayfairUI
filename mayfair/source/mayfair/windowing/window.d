@@ -314,6 +314,7 @@ package(mayfair):
 
     int _minWidth = -1, _minHeight = -1;             // the window's inside; 0 for none, -1 for the default
     int _maxWidth, _maxHeight;                        // the same; 0 for none
+    double _lastTouchpad = -1;                        // when a touchpad last scrolled it: see wheelDevice()
     int _openWidth, _openHeight;                      // the size it was made at, which caps the default minimum
     bool _startMaximised, _wasMaximised;              // see setMaximised and wasMaximised
     bool _fullScreen;                                 // see setFullScreen
@@ -735,8 +736,9 @@ package(mayfair):
                                      mouseButton(event.button.button), event.button.clicks);
                 break;
             case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
-                const device = fromWheel(event.wheel.x) && fromWheel(event.wheel.y) ? ScrollDevice.wheel : ScrollDevice.touchpad;
-                float dx = wheelPoints(event.wheel.x), dy = wheelPoints(event.wheel.y);
+                const time = event.wheel.timestamp / 1e9;
+                const device = wheelDevice(event.wheel.x, event.wheel.y, time, _lastTouchpad);
+                float dx = wheelPoints(event.wheel.x, device), dy = wheelPoints(event.wheel.y, device);
                 // Shift turns the wheel sideways, as it does everywhere else on the desktop
                 if ((mods & SDL_Keymod.KMOD_SHIFT) && dx == 0) {
                     dx = dy;
@@ -744,7 +746,7 @@ package(mayfair):
                 }
                 // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
                 _scene.scrolled(pointsX(event.wheel.windowID, event.wheel.mouse_x), pointsY(event.wheel.windowID, event.wheel.mouse_y), -dx, dy, device,
-                                event.wheel.timestamp / 1e9);
+                                time, device == ScrollDevice.touchpad && systemMomentum);
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
                 _scene.mouseLeft();
@@ -1121,27 +1123,60 @@ bool isUserInput(uint type) nothrow @nogc
 }
 
 /*
-    How many points one of SDL's wheel amounts is. SDL gives a wheel in notches, and a touchpad in
-    tenths of a notch's worth of finger movement -- SDL divides the pixels Wayland gives it by ten
-    -- and doesn't say which it's giving. The difference matters: a notch wants JavaFX's 40
-    points, where a touchpad should follow the fingers.
+    What a scroll came from, a wheel or a touchpad, and how many points it is. SDL doesn't say
+    which it was, so it's told from the amounts, which come differently on each system.
 
-    The amounts tell them apart. A wheel moves in whole notches, or a high-resolution one in
-    eighths of one, where a touchpad's movement comes in 256ths of a pixel and is almost never
-    exactly that. When it is, a touchpad's step is taken for a wheel's -- one in a few hundred,
-    and a fraction of a notch at most. If SDL ever says which it is, this is the place to use it.
+    - Linux and the BSDs: Wayland gives a wheel in 120ths of a notch, as libinput does on X11,
+      and a touchpad in 256ths of a pixel, which SDL divides by ten. A notch is
+      Theme.scroll_step points, and a touchpad's tenth of a notch is a pixel, followed exactly.
+      Its amounts land on the 120ths only by chance, about one in 64, so once a touchpad's
+      moving, everything until it's been still a moment is taken for it.
+    - macOS: SDL rounds a mouse wheel's movement to whole notches, and gives a trackpad's, or a
+      Magic Mouse's, exactly, in the tenths of a point macOS calls lines.
+    - Windows: a notch is 120 units. A high-resolution wheel, and a precision touchpad, send
+      fractions of one, and both are followed as they come, a notch to Theme.scroll_step points.
+
+    On macOS and Windows the system carries a touchpad's movement on after the fingers lift,
+    with more scroll events, slowing down, so a ScrollPane mustn't add a glide of its own:
+    `systemMomentum`. Taking a wheel for a touchpad does the most harm -- it's slow, and floats
+    on after the wheel stops -- so where it's unclear it's taken for a wheel.
 */
-float wheelPoints(float amount) nothrow @nogc {
-    if (fromWheel(amount))
-        return amount * Theme.scroll_step;
-    return amount * 10; // SDL's tenth of a notch was 10 pixels, which on a touchpad are points
+version (OSX)
+    enum bool systemMomentum = true;
+else version (Windows)
+    enum bool systemMomentum = true;
+else
+    enum bool systemMomentum = false;
+
+ScrollDevice wheelDevice(float x, float y, double time, ref double lastTouchpad) nothrow @nogc {
+    version (OSX) {
+        return onGrid(x, 1) && onGrid(y, 1) ? ScrollDevice.wheel : ScrollDevice.touchpad;
+    } else version (Windows) {
+        return onGrid(x, 1) && onGrid(y, 1) ? ScrollDevice.wheel : ScrollDevice.touchpad;
+    } else {
+        const touchpadMoving = lastTouchpad >= 0 && time >= lastTouchpad && time - lastTouchpad < 0.1;
+        if (!touchpadMoving && onGrid(x, 120) && onGrid(y, 120))
+            return ScrollDevice.wheel;
+        lastTouchpad = time;
+        return ScrollDevice.touchpad;
+    }
 }
 
-/// Whether one of SDL's amounts is a wheel's, as wheelPoints() tells: whole eighths of a notch.
-bool fromWheel(float amount) nothrow @nogc {
+/// How many points one of SDL's amounts is, from `device`: see wheelDevice().
+float wheelPoints(float amount, ScrollDevice device) nothrow @nogc {
+    if (device == ScrollDevice.wheel)
+        return amount * Theme.scroll_step;
+    version (Windows)
+        return amount * Theme.scroll_step; // a fraction of a notch, from a high-resolution wheel or a touchpad
+    else
+        return amount * 10; // SDL's tenth of a notch: a pixel on Linux, a point on macOS
+}
+
+/// Whether `amount` is a whole number of `1 / parts`.
+bool onGrid(float amount, int parts) nothrow @nogc {
     import std.math : abs, round;
-    const eighths = amount * 8;
-    return abs(eighths - round(eighths)) < 1e-4f;
+    const n = amount * parts;
+    return abs(n - round(n)) < 1e-3f;
 }
 
 KeyEvent keyEvent(ref const SDL_KeyboardEvent key, KeyEventType type) nothrow @nogc

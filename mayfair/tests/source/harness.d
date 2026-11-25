@@ -186,7 +186,8 @@ final class Driver
     }
 
     /// The wheel or a touchpad, with the pointer at `x`, `y`, in SDL's amounts: notches of a
-    /// wheel, or tenths of one for a touchpad. `dy` is positive away from the user, `dx` to the right.
+    /// wheel (120ths of one, for a high-resolution wheel), or tenths of one for a touchpad, which
+    /// on Wayland come in 2560ths, rarely on the wheel's 120ths: -0.3125, say, rather than -0.3. `dy` is positive away from the user, `dx` to the right.
     void scroll(float x, float y, float dy, float dx = 0)
     {
         SDL_Event e;
