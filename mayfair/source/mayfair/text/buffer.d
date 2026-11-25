@@ -460,8 +460,11 @@ public:
         tagsChanged(i, i);
     }
 
-    /// ditto
+    /// A highlighter's styling of line `i`: see setHighlights.
     TagSpan[] highlightsOn(int i) nothrow @nogc { return i >= 0 && i < highlights.length ? highlights[i] : null; }
+
+    /// Says every line's styling changed -- a tag's colour, say -- for views to draw them again.
+    void restyled() { tagsChanged(0, cast(int) lines.length - 1); }
 
     // Listeners
 
