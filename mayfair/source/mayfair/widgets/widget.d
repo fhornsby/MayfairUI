@@ -1309,18 +1309,35 @@ private:
     /*
         What's behind the content of this widget, seen at `seen` in the window, with `base` behind
         the window: each layer of each ancestor's background, then its own, that covers it.
+
+        Only the part of it that can show counts: what's inside every ancestor that clips what's
+        in it. Content in a scroll pane -- a long document, a text view's whole file -- reaches far
+        past anything's background, but only what's scrolled into view is ever seen.
     */
     Behind behindAt(Rect seen, Behind base) nothrow @nogc
     {
-        const content = insidePadding(seen);
+        auto content = insidePadding(seen);
         Widget[64] ancestors;
         size_t n;
         for (auto p = parent; p && n < ancestors.length; p = p.parent)
+        {
             ancestors[n++] = p;
+            if (p._childClip && p.painted.x == p.painted.x)
+                content = clipped(content, p.insidePadding(p.painted));
+        }
         auto b = base;
         foreach_reverse (a; ancestors[0 .. n])
             b = a.coveredBy(b, a.painted, content);
         return coveredBy(b, seen, content);
+    }
+
+    /// The part of `r` inside `clip`; `r` as it is if none of it is, as then nothing of it shows.
+    static Rect clipped(Rect r, Rect clip) nothrow @nogc
+    {
+        const x0 = r.x > clip.x ? r.x : clip.x, y0 = r.y > clip.y ? r.y : clip.y;
+        const x1 = r.x + r.w < clip.x + clip.w ? r.x + r.w : clip.x + clip.w;
+        const y1 = r.y + r.h < clip.y + clip.h ? r.y + r.h : clip.y + clip.h;
+        return x1 > x0 && y1 > y0 ? Rect(x0, y0, x1 - x0, y1 - y0) : r;
     }
 
     /// `b`, with each layer of this widget's background, as it's drawn at `at`, that covers `content`.

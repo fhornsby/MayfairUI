@@ -217,7 +217,8 @@
     background-colour: var(--field);
     colour: var(--text);
     font-family: monospace;
-    font-size: 13px;
+    font-size: 15px;
+    line-spacing: 1.5;
     selection-colour: var(--selection);
     caret-colour: var(--accent);
     current-line-colour: var(--row-hover);

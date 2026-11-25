@@ -41,6 +41,20 @@ void wheel()
             d.expect(list.boundsInScene.width, p.width, "fitToWidth: the list as wide as the pane");
         });
 
+        // What's behind the list, for its text's subpixel colours, is the pane's background: the
+        // list reaches far below the pane, but only what's in view of it shows
+        d.ui({
+            pane.setStyle("background-colour: #204060;");
+        });
+        d.settle();
+        d.ui({
+            const b = list.behind;
+            d.check(b.known && b.colour == Colour(0x20, 0x40, 0x60),
+                    format!"behind a long list, the pane's colour: %s %s"(b.known, b.colour));
+            pane.setStyle("");
+        });
+        d.settle();
+
         // Item 5 is drawn below the pane, clipped: a click there doesn't reach it
         d.click(p.minX + 10, yBelow);
         d.ui({ d.expect(clicked.length, 0, "what's scrolled out of view can't be clicked"); });

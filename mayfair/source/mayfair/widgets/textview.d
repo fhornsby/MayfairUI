@@ -341,6 +341,10 @@ public:
 protected:
     override bool takesChildren() const nothrow @nogc { return false; }
 
+    // The gutter's line numbers, as they scroll, are clipped to it: a line part way out of view
+    // at the top would otherwise show over what's above the view
+    override void mounted() nothrow { clipChildren(); }
+
     override void handleKey(ref KeyEvent event)
     {
         foreach (f; keyFilters)
@@ -1767,6 +1771,7 @@ private:
         b.scale = scale;
         b.stale = false;
         b.image.begin(scale, behind);
+        b.image.inkColour = v._textFill; // every colour of a highlighted line one weight: the text's
         foreach (k; 0 .. lines)
         {
             const l = b.first + k;
@@ -1799,6 +1804,7 @@ private:
         tvg_shape_reset(over);
         tvg_shape_reset(caret);
         composedText.begin(scene ? scene.pixelScale : 1, behind);
+        composedText.inkColour = v._textFill;
         const lh = v.lineH, px = v.padLeft, py = v.padTop;
         const wide = max(contentWidth, v.pane.viewportBounds.maxX + 100);
 

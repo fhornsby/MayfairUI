@@ -215,12 +215,22 @@ public:
     /// of its own -- a selection's -- changes it while it's added.
     Behind behind;
 
+    /*
+        The colour whose contrast with what's behind sets how every glyph's coverage is lifted
+        and how much of its subpixel colours it keeps (see the top), rather than each glyph's own;
+        clear for each its own. For text in many colours at once that should all be of one weight:
+        code, highlighted, where a keyword lifted bolder than the name beside it looks wrong.
+        begin() clears it.
+    */
+    Colour inkColour = Colour(0, 0, 0, 0);
+
     /// Starts again, for text at `pixelScale` pixels to the point, over `behind`.
     void begin(float pixelScale, Behind behind = Behind.init) nothrow @nogc
     {
         scale = pixelScale > 0 ? pixelScale : 1;
         subpixel = subpixelAt(scale);
         this.behind = behind;
+        inkColour = Colour(0, 0, 0, 0);
         glyphCount = 0;
     }
 
@@ -271,8 +281,9 @@ public:
         const lcd = subpixel && behind.known;
         const thirds = roundf(x * scale * phases);
         const whole = floorf(thirds / phases);
-        const ink = cast(ubyte) roundf(inkExponent(colour, behind, (cast(Font) g.font).size * scale) * 255);
-        const tint = lcd ? cast(ubyte) roundf(subpixelShare(colour, behind) * 255) : 0;
+        const basis = inkColour.a ? inkColour : colour;
+        const ink = cast(ubyte) roundf(inkExponent(basis, behind, (cast(Font) g.font).size * scale) * 255);
+        const tint = lcd ? cast(ubyte) roundf(subpixelShare(basis, behind) * 255) : 0;
         glyphs[glyphCount++] = Placed(cast(void*) g.font, g.glyph, cast(int) whole, cast(int) roundf(y * scale), colour,
                                       lcd, behind.colour, cast(ubyte)(thirds - whole * phases), ink, tint);
     }
