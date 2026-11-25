@@ -307,7 +307,13 @@ public:
     void addKeyFilter(bool delegate(ref KeyEvent) filter) { keyFilters ~= filter; }
 
     /// Hears the pointer resting on a place in the text for a moment: for a tooltip of what's there.
-    TextView onHover(void delegate(TextPosition at, float sceneX, float sceneY) handler) { _onHover = handler; return this; }
+    /// `moved` hears it move on, or leave: for the tooltip to go.
+    TextView onHover(void delegate(TextPosition at, float sceneX, float sceneY) handler, void delegate() moved = null)
+    {
+        _onHover = handler;
+        _onHoverEnd = moved;
+        return this;
+    }
 
     /// Hears a Ctrl+click on a place in the text: for going to where what's there is defined.
     TextView onControlClick(void delegate(TextPosition at) handler) { _onControlClick = handler; return this; }
@@ -418,6 +424,7 @@ private:
     float goalX = float.nan;    // where Up and Down keep to, across
     bool delegate(ref KeyEvent)[] keyFilters;
     void delegate(TextPosition, float, float) _onHover;
+    void delegate() _onHoverEnd;
     void delegate(TextPosition) _onControlClick;
     string _query;
     bool _matchCase, _wholeWord;
@@ -1705,11 +1712,19 @@ protected:
                 selecting = false;
                 break;
             case MouseEventType.moved:
+                if (v._onHoverEnd && (at != hoverAt))
+                    v._onHoverEnd();
                 hoverAt = at;
                 hoverX = event.sceneX;
                 hoverY = event.sceneY;
                 if (v._onHover)
                     scheduleHover();
+                break;
+            case MouseEventType.exited:
+                if (v._onHoverEnd)
+                    v._onHoverEnd();
+                if (hoverTimer)
+                    hoverTimer.stop();
                 break;
             default:
                 break;

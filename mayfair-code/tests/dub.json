@@ -1,0 +1,14 @@
+{
+	"name": "mayfair-code-tests",
+	"description": "End-to-end tests for mayfair-code: highlighting, and a language server, in real windows",
+	"license": "MIT",
+	"targetType": "executable",
+	"dependencies": {
+		"mayfair-code": {
+			"path": ".."
+		}
+	},
+	"sourceFiles": [
+		"../../mayfair/tests/source/harness.d"
+	]
+}

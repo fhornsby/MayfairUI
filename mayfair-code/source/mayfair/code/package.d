@@ -17,3 +17,5 @@ module mayfair.code;
 
 public import mayfair.code.language;
 public import mayfair.code.highlighter;
+public import mayfair.code.lsp;
+public import mayfair.code.lspeditor;
