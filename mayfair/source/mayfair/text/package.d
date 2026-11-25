@@ -11,3 +11,4 @@ public import mayfair.text.paragraph;
 public import mayfair.text.outline;
 public import mayfair.text.raster;
 public import mayfair.text.caret;
+public import mayfair.text.buffer;

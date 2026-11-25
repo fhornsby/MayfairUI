@@ -209,6 +209,27 @@
     opacity: 0.4;
 }
 
+/*
+    A text view: a code editor's text, monospaced, its line numbers in a gutter down the left. The
+    current line, a bracket's match and what a find finds are tinted; the selection's the theme's.
+*/
+.text-view {
+    background-colour: var(--field);
+    colour: var(--text);
+    font-family: monospace;
+    font-size: 13px;
+    selection-colour: var(--selection);
+    caret-colour: var(--accent);
+    current-line-colour: var(--row-hover);
+    line-number-colour: var(--prompt-text);
+    bracket-colour: var(--row-selected);
+    match-colour: #facc1566;
+}
+
+.text-view .gutter {
+    background-colour: var(--field);
+}
+
 .scroll-pane {
     thumb-colour: var(--thumb);
     thumb-hover-colour: var(--thumb-hover);
