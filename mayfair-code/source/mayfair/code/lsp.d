@@ -251,15 +251,16 @@ private:
             fail("it couldn't be started: " ~ e.msg);
             return;
         }
-        // Its output, read on a thread of its own; its errors, read and dropped, so it never blocks on them
-        auto output = pipes.stdout, errors = pipes.stderr;
+        // Its output, read on a thread of its own; its errors, read and dropped, so it never blocks on them.
+        // Each thread reaches its pipe through the server: a File captured from here would be
+        // destroyed -- detached -- as this returns, perhaps before the thread's begun reading it.
         auto self = this;
-        auto reader = new Thread({ readMessages(self, output); });
+        auto reader = new Thread({ readMessages(self, self.pipes.stdout); });
         reader.isDaemon = true;
         reader.start();
         auto drain = new Thread({
             try
-                foreach (line; errors.byLine)
+                foreach (line; self.pipes.stderr.byLine)
                 {
                     if (environment.get("MAYFAIR_LSP_TRACE"))
                         stderr.writeln("[lsp stderr] ", line);
@@ -323,11 +324,19 @@ private:
 
     void fail(string why)
     {
+        if (_failure.length)
+            return; // already failed: the first reason's the one
         _failure = why;
+        if (environment.get("MAYFAIR_LSP_TRACE"))
+            stderr.writeln("[lsp] stopped: ", why);
         _setStatus(Status.stopped);
-        foreach (id, done; pending.dup)
-            done(JSONValue(null), why);
+        // Taken first: an answer's handler that fails too mustn't find itself still waiting
+        auto unanswered = pending;
         pending = null;
+        waiting = null;
+        foreach (id, done; unanswered)
+            if (done)
+                done(JSONValue(null), why);
     }
 
     void send(JSONValue message, bool waitUntilReady)
@@ -463,8 +472,12 @@ private void readMessages(LanguageServer server, File output)
             Platform.runLater(delivery(server, message));
         }
     }
-    catch (Exception)
+    catch (Exception e)
+    {
+        if (environment.get("MAYFAIR_LSP_TRACE"))
+            stderr.writeln("[lsp] reading stopped: ", e.msg);
         Platform.runLater({ server.ended(); });
+    }
 }
 
 /*

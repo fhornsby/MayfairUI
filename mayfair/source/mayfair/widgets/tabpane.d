@@ -221,6 +221,8 @@ private:
 
     void close(Tab tab)
     {
+        if (tab._onCloseRequest && !tab._onCloseRequest())
+            return; // kept open: to ask about unsaved changes first, say
         remove(tab);
         if (tab._onClosed)
             tab._onClosed();
@@ -269,10 +271,15 @@ public:
     /// What to do after it's been closed, by its close button or Ctrl+W.
     Tab onClosed(void delegate() handler) nothrow @nogc { _onClosed = handler; return this; }
 
+    /// What's to happen when its close button's pressed, before it closes: false keeps it open,
+    /// to ask about unsaved changes first, say. Not asked when the app removes it itself.
+    Tab onCloseRequest(bool delegate() handler) nothrow @nogc { _onCloseRequest = handler; return this; }
+
 private:
     TabPane _pane;
     TabHeader _header;
     void delegate() _onSelected, _onClosed;
+    bool delegate() _onCloseRequest;
 }
 
 /// A tab in a TabPane's strip: what's clicked on to show its page.

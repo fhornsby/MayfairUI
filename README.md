@@ -78,6 +78,15 @@ and adds the toolkit around them.
 - **Properties:** observable properties that can be listened to, mapped and bound to each other.
 - **Text:** full Unicode: shaping (HarfBuzz), bidirectional text, line breaking, and
   selectable, copyable labels.
+- **Text editing:** `TextView` and `TextBuffer`, as GTK has them. It scales to files of
+  hundreds of thousands of lines.
+  - Undo and redo.
+  - Marks, and tags for colouring and underlining ranges.
+  - A gutter of line numbers.
+  - Auto-indentation and bracket matching.
+  - Find and replace.
+  - Moving and commenting out lines.
+  - Input methods.
 - **Translation:** an app's strings in `strings.xml`, one entry per language.
 - **Drag and drop:** files and text dragged in from other apps, dropped on any widget, handled
   as in JavaFX: `onDragOver` accepts a drag, and `onDragDropped` is given what was dropped.
@@ -103,6 +112,10 @@ In packages of their own:
   can be edited and saved: pages rotated, moved, deleted, inserted and cropped; annotations made
   with the view's markup tools; forms filled in; every change undoable.
   [`mayfair-pdfium`](mayfair-pdfium) reads them with PDFium (BSD), downloaded as it's built.
+- **Code editing:** [`mayfair-code`](mayfair-code) highlights a `TextView` in 24 languages, as
+  it's edited. It connects the view to language servers (pyright, clangd, rust-analyzer, gopls,
+  serve-d and others), which give errors underlined as you type, completions, hovers, and going
+  to a definition. It has no libraries: the servers are separate programs, found on `PATH`.
 - **A terminal:** [`mayfair-terminal`](mayfair-terminal), on alacritty_terminal.
 
 ## Platforms
@@ -171,6 +184,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
+| [`code-editor`](examples/code-editor) | A code editor in the Oriel theme: a folder's files, a tab per file, highlighting, and language servers for errors, completions and definitions |
 | [`pdf-viewer`](examples/pdf-viewer) | A PDF viewer and editor, modelled on macOS's Preview, in the Oriel theme: markup, signatures, forms, page editing, export and printing |
 | [`gpu-cube`](examples/gpu-cube) | A `GpuView`: a lit cube drawn with WebGPU, spinning, and turned by dragging it |
 | [`appwrite-todo`](examples/appwrite-todo) | A to-do list stored in Appwrite, with sign-in |
@@ -191,6 +205,18 @@ What's still to be done, that I know of:
 - Choose a default font. IBM Plex Sans is bundled for now, so Mayfair can be compared side by
   side with Zed.
 - Justified text: `TextAlignment.justify` lines text up on the left for now.
+
+**Text editing**
+- Line wrapping in `TextView`. Lines scroll sideways for now.
+- More than one caret, and column selections.
+- Right-to-left and mixed-direction lines in `TextView`. They're shaped, but the caret and
+  selection only approximate where they should be.
+- Screen readers: a `TextView` gives them its text, but not yet line by line, as large texts need.
+- Tree-sitter grammars, for highlighting that knows the language's grammar.
+- More of the Language Server Protocol: renaming, formatting, quick fixes, signature help, and
+  finding references.
+- Typing into popups on X11 without a window manager (Xvfb), where they don't get the keyboard.
+  Dialogs are used for now.
 
 **GPU views**
 - Drawing on a thread of its own, so a heavy scene doesn't hold up the rest of the window.

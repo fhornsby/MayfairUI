@@ -153,10 +153,8 @@ void languageServer()
         d.type("phab");
         d.check(waitFor(d, () => editor.completionLabels == ["alphabet"]), "and narrowed further as it's typed");
         d.key(SDL_Keycode.SDLK_RETURN);
-        d.ui({
-            d.check(!editor.completing, "put away");
-            d.expect(buffer.line(1), "alphabet", "put in, in place of what was typed");
-        });
+        d.check(waitFor(d, () => !editor.completing && buffer.line(1) == "alphabet"),
+                format!"chosen: put away, and put in in place of what was typed: %s"(buffer.line(1)));
         d.type(".");
         d.check(waitFor(d, () => editor.completing), "a trigger character: completions");
         d.key(SDL_Keycode.SDLK_ESCAPE);
@@ -170,6 +168,14 @@ void languageServer()
         d.ui({ d.expect(hovered, "hover at 2:3", "asked where it was, in UTF-16"); view.placeCaret(TextPosition(0, 0)); });
         d.key(SDL_Keycode.SDLK_F12);
         d.check(waitFor(d, () => view.caretPosition == TextPosition(3, 4)), format!"F12: to the definition: %s"(view.caretPosition));
+
+        // Ctrl+click: the same, from where it's clicked
+        Bounds at;
+        d.ui({ view.placeCaret(TextPosition(0, 0)); at = view.rectInScene(TextPosition(0, 1)); });
+        d.hold(SDL_Keymod.KMOD_LCTRL);
+        d.click(at.minX + 1, at.centreY);
+        d.hold(SDL_Keymod.KMOD_NONE);
+        d.check(waitFor(d, () => view.caretPosition == TextPosition(3, 4)), format!"Ctrl+click: to the definition: %s"(view.caretPosition));
 
         d.ui({ document.close(); server.stop(); });
         d.check(waitFor(d, () => server.status == LanguageServer.Status.stopped), "stopped");
