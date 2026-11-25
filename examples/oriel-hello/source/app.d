@@ -49,10 +49,13 @@ void main()
     app.setSize(640, 400);
     auto window = new MainWindow;
     auto scene = new Scene(View.load(window));
-    // A title bar of its own, as the Oriel apps have: the traffic lights, and the sidebar's glass at its start
-    scene.titleBar(new TitleBar);
-    // On the scene rather than the root, so the title bar's styled by it too
-    scene.stylesheets.add(stylesheet!(resource!"oriel.css")); // resources/views/oriel.css
+    // A title bar of its own, as the Oriel apps have: the traffic lights, and the sidebar's glass
+    // over the sidebar, following it
+    scene.titleBar(new TitleBar().sidebar(window.nav));
+    // The Oriel look, then this app's own (resources/views/oriel.css): on the scene rather than
+    // the root, so the title bar's styled by them too
+    scene.stylesheets.add(orielStylesheet);
+    scene.stylesheets.add(stylesheet!(resource!"oriel.css"));
     window.appearance.follow(scene);
     app.setTranslucent(true); // where the compositor blurs what's behind it, which Oriel does
     app.scene = scene;

@@ -20,3 +20,4 @@ struct Colour
 }
 
 public import mayfair.theme.colours;
+public import mayfair.theme.oriel;

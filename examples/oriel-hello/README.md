@@ -17,14 +17,16 @@ cd examples/oriel-hello && dub run
 
 ## What's where
 
-* `source/app.d`: the window. It gives the scene its own title bar, adds `oriel.css`, and asks
-  for translucency with `app.setTranslucent(true)`.
+* `source/app.d`: the window. It gives the scene its own title bar, which follows the sidebar,
+  adds Mayfair's Oriel stylesheet (`mayfair.theme.oriel`) and its own, and asks for translucency
+  with `app.setTranslucent(true)`.
 * `resources/views/main.xml`: what's below the title bar, the sidebar and the first page.
 * `resources/views/appearance.xml`, `source/appearance.d`: the second page, which follows
   `scene.translucentProperty`.
 * `resources/strings.xml`: its text, each string in UK English, French, German and Chinese.
   It's shown in the desktop's language; try another with `LANGUAGE=fr dub run`, or build for one alone with
   `dub build --d-version=MayfairLanguage_fr`.
-* `resources/views/oriel.css`: the Oriel palette (the template's colours), the frosted sidebar under
-  `.root:translucent`, and the traffic lights. Give a part of the window
-  `backdrop-blur: true` and a translucent background to make it glass too.
+* `resources/views/oriel.css`: what's this app's own: the sidebar's width, and the hello. The
+  Oriel palette (the template's colours), the frosted sidebar, the title bar and the traffic
+  lights are in Mayfair's `themes/oriel.css`. Give a part of the window `backdrop-blur: true`
+  and a translucent background to make it glass too.
