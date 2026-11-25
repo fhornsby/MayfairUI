@@ -71,8 +71,9 @@ nothrow @nogc:
         this.ownFrame = ownFrame;
         auto props = SDL_GetWindowProperties(window);
         auto display = SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null);
-        if (ownFrame)
-            mover.open(display);
+        mover.open(display); // for scrolling, whoever draws the frame; and moving by Mayfair's title bar
+        trace("input pointer of our own: version %u, %s", mover.pointerVersion,
+              mover.pointerVersion >= 5 ? "scroll sources and lifts said".ptr : "scrolls told from their amounts".ptr);
         blur.open(display, SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null));
         trace("blur  %s", blur.available ? "the compositor's, behind backdrop-blur".ptr : "none".ptr);
         watchTiling();
@@ -110,15 +111,20 @@ nothrow @nogc:
         return tiles.tiled;
     }
 
-    bool movesByDrag() { return mover.available; }
+    bool movesByDrag() { return ownFrame && mover.available; }
 
     bool beginMove()
     {
+        if (!ownFrame)
+            return false;
         return mover.move(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
                                                  SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_POINTER, null));
     }
 
     bool blurs() { return blur.available; }
+
+    ScrollSource scrollSource() { return mover.scrollSource; }
+    bool takeFingersLifted() { return mover.takeFingersLifted; }
 
     void blurBehind(Scene scene)
     {
@@ -129,7 +135,7 @@ private:
     SDL_Window* window;
     bool ownFrame;
     TileWatcher tiles;   // whether the window's snapped to an edge, for its frame to go flat
-    WindowMover mover;   // moves the window by Mayfair's title bar, once a press turns into a drag
+    WindowMover mover;   // what scrolls are from; and moves the window by Mayfair's title bar, once a press turns into a drag
     BackgroundBlur blur; // the compositor's blur behind widgets with backdrop-blur
 
     /*

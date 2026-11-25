@@ -742,8 +742,9 @@ package(mayfair):
 
     /// The wheel or a touchpad scrolled by `dx`, `dy` points with the pointer at `x`, `y`. It goes
     /// to what's under the pointer and bubbles up. See ScrollEvent.
-    void scrolled(float x, float y, float dx, float dy, ScrollDevice device = ScrollDevice.wheel, double time = 0,
-                  bool systemMomentum = false)
+    /// Public, as what a window calls as scrolling arrives: for tests, and for embedding a scene.
+    public void scrolled(float x, float y, float dx, float dy, ScrollDevice device = ScrollDevice.wheel, double time = 0,
+                         bool glides = true, bool liftSaid = false)
     {
         hideTooltip();
         pointAt(x, y);
@@ -757,7 +758,28 @@ package(mayfair):
         event.meta = heldMeta;
         event.target = hovered;
         event.device = device;
-        event.systemMomentum = systemMomentum;
+        event.glides = glides;
+        event.liftSaid = liftSaid;
+        event.time = time;
+        for (auto w = hovered; w && !event.consumed;)
+        {
+            auto next = w.parent;
+            w.deliver(event);
+            w = next;
+        }
+    }
+
+    /// Fingers scrolling on a touchpad lifted, as the window system said: to what's under the
+    /// pointer, which is what they were scrolling, bubbling up as a scroll does. See ScrollEvent.
+    /// Public, as scrolled() is.
+    public void fingersLifted(double time = 0)
+    {
+        if (!hovered)
+            return;
+        auto event = ScrollEvent(0, 0, pointerX, pointerY);
+        event.target = hovered;
+        event.device = ScrollDevice.touchpad;
+        event.fingersLifted = true;
         event.time = time;
         for (auto w = hovered; w && !event.consumed;)
         {

@@ -800,6 +800,15 @@ public:
             if (w.sdl) {
                 w.backend.dispatch();
                 w.applyTranslucency(); // the compositor can stop blurring, or start
+                // Fingers lifted from scrolling: after the movements SDL gave with them, queued above
+                if (w.backend.takeFingersLifted()) {
+                    SDL_Event lift;
+                    lift.type = SDL_EventType.SDL_EVENT_MOUSE_WHEEL;
+                    lift.wheel.windowID = SDL_GetWindowID(w.sdl);
+                    lift.wheel.which = fingersLiftedMouse;
+                    lift.wheel.timestamp = SDL_GetTicksNS();
+                    queueInputEvent(lift);
+                }
             }
         trace("loop  in SDL_WaitEvent %.2f ms, then handled %d events in %.2f ms",
               traceMs(waitStart, woke), handled, traceMs(woke, traceNow()));

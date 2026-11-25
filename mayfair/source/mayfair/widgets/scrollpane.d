@@ -42,10 +42,15 @@ enum ScrollBarPolicy
     Scrolling moves smoothly. A wheel's notch, or a page, is eased into rather than jumped to, and
     notches in quick succession add up to where it's heading. A touchpad follows the fingers
     exactly, and when they lift, carries on at the speed they were going and slows to a stop, as
-    GNOME's does. On macOS and Windows the system does that itself, sending more scroll events
-    after the fingers lift, so there it's only followed. Any scroll, or a press anywhere in the pane, takes over from a glide on its way.
-    SDL doesn't say when fingers lift, so a moment with no movement is taken to mean they have:
-    fingers resting on the pad start a glide, and moving again stops it at once. Tab moving focus to something out of view scrolls it into view. To a screen reader it's
+    GNOME's does. Any scroll, or a press anywhere in the pane, takes over from a glide on its way.
+
+    On Wayland the compositor says when the fingers lift (ScrollEvent.fingersLifted), and that's
+    when the glide starts; fingers that rested a moment before lifting don't start one. Where
+    nothing says -- X11 -- a moment with no movement is taken to mean they've lifted: fingers
+    resting on the pad start a glide there, and moving again stops it at once. On macOS and
+    Windows the system glides itself, sending more scroll events, so there it's only followed.
+
+    Tab moving focus to something out of view scrolls it into view. To a screen reader it's
     a scroll view, with its position and the actions to change it, and everything in it can be
     asked to scroll into view.
 
@@ -261,12 +266,22 @@ protected:
 
     override void handleScroll(ref ScrollEvent event)
     {
+        // The fingers lifted, as the window system said: glide on, if they were moving as they did
+        if (event.fingersLifted)
+        {
+            if (_sampleCount)
+            {
+                lifted(event.time);
+                event.consume();
+            }
+            return;
+        }
         // Only what it can scroll: a pane that only scrolls down leaves sideways to what's around it
         const dx = _max[0] > 0 ? -event.deltaX : 0, dy = _max[1] > 0 ? -event.deltaY : 0;
         if (dx == 0 && dy == 0)
             return;
         if (event.device == ScrollDevice.touchpad)
-            follow(event.time, dx, dy, !event.systemMomentum);
+            follow(event.time, dx, dy, event.glides, event.liftSaid);
         else
             easeBy(dx, dy);
         showBars();
@@ -395,7 +410,7 @@ private:
 
     /// A touchpad: straight there, remembering how fast, in case the fingers lift -- unless the
     /// system carries it on itself, when there's nothing to do once they have.
-    void follow(double time, float dx, float dy, bool glides)
+    void follow(double time, float dx, float dy, bool glides, bool liftSaid)
     {
         _easing = _gliding = false;
         scrollTo(scrollX + dx, scrollY + dy);
@@ -412,7 +427,24 @@ private:
             _sampleCount--;
         }
         _samples[_sampleCount++] = Sample(time, dx, dy);
-        _lift.playFromStart();
+        // Where the window system says when the fingers lift, that's when; elsewhere, a pause
+        if (liftSaid)
+            _lift.stop();
+        else
+            _lift.playFromStart();
+    }
+
+    /// The fingers lifted at `time`, as the window system said. Resting still a moment first,
+    /// they weren't moving as they lifted, and nothing glides: GTK's way, and a phone's.
+    void lifted(double time)
+    {
+        const last = _samples[_sampleCount - 1].time;
+        if (time - last > Theme.scroll_rest_time)
+        {
+            _sampleCount = 0;
+            return;
+        }
+        glide();
     }
 
     /// The fingers lifted: carry on at the speed they were going over the last tenth of a second.

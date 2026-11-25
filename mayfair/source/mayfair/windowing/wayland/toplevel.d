@@ -1,16 +1,25 @@
 module mayfair.windowing.wayland.toplevel;
 
 import core.stdc.string : strcmp;
+import mayfair.windowing.backend : ScrollSource;
 
 /*
-    Moving a window drawing its own title bar, on Wayland, the way GTK does: the press goes to the
-    app, which asks the compositor to move the window only once the pointer's gone a little way with
-    the button down. Then a double click can be told from the start of a drag. SDL's hit test can't
-    do that: it hands the compositor the press itself, straight away, and the app never hears of it.
+    A pointer of Mayfair's own on SDL's Wayland connection, on an event queue of its own, for what
+    the compositor says about the pointer that SDL keeps to itself or drops. It hears everything
+    SDL's pointer does. libwayland-client is opened at run time, as SDL opens it. Two things:
 
-    xdg_toplevel.move wants the serial of the press it's for, which SDL keeps to itself. So the
-    WindowMover binds a pointer of its own on SDL's connection, on an event queue of its own, and
-    hears every press SDL does. libwayland-client is opened at run time, as SDL opens it.
+    Moving a window drawing its own title bar, the way GTK does: the press goes to the app, which
+    asks the compositor to move the window only once the pointer's gone a little way with the
+    button down. Then a double click can be told from the start of a drag. SDL's hit test can't do
+    that: it hands the compositor the press itself, straight away, and the app never hears of it.
+    xdg_toplevel.move wants the serial of the press it's for, which SDL keeps to itself.
+
+    What scrolling is from, and when it stops: wl_pointer's axis_source says, for each scroll,
+    whether it's a wheel, fingers on a touchpad, or something continuous, and axis_stop says when
+    the fingers lift. SDL ignores both, and gives a wheel's notch and a touchpad's movement as
+    amounts that have to be told apart by their sizes, and no lift at all -- so a scroll pane
+    would have to guess when to start gliding. GTK and Qt go by these; so does Mayfair, where the
+    compositor offers version 5 of the seat, as every current one does.
 */
 struct WindowMover
 {
@@ -92,6 +101,20 @@ struct WindowMover
 
     bool available() const nothrow @nogc { return pointer !is null; }
 
+    /// The version the pointer's bound at: 5 or more, and the compositor says what scrolls are from.
+    uint pointerVersion() nothrow @nogc { return pointer ? fn.proxy_get_version(pointer) : 0; }
+
+    /// What the last scroll was from, as the compositor said: unknown if it can't say.
+    ScrollSource scrollSource() const nothrow @nogc { return source; }
+
+    /// Whether fingers scrolling have lifted since this was last asked.
+    bool takeFingersLifted() nothrow @nogc
+    {
+        const was = lifted;
+        lifted = false;
+        return was;
+    }
+
     /// Hears what's arrived on our queue. Call once a turn of the loop, after SDL has read the
     /// connection, or the pointer's motion piles up there.
     void dispatch() nothrow @nogc
@@ -136,8 +159,11 @@ private:
     void* display, queue, registry, seat, pointer;
     uint pressSerial; // the last press's
     bool held;        // and whether it's still down
+    ScrollSource source; // what the last scroll was from
+    bool lifted;         // fingers scrolling lifted, not yet asked about
 
-    // Version 1 of wl_seat and wl_pointer: all that's needed, and the fewest events to listen for
+    // Version 5 of wl_seat and wl_pointer, for axis_source and axis_stop; 1 where that's all there is
+    enum maxVersion = 5;
     struct RegistryListener
     {
         extern (C) void function(void*, void*, uint, const(char)*, uint) nothrow @nogc global;
@@ -146,6 +172,7 @@ private:
     struct SeatListener
     {
         extern (C) void function(void*, void*, uint) nothrow @nogc capabilities;
+        extern (C) void function(void*, void*, const(char)*) nothrow @nogc name;  // version 2
     }
     struct PointerListener
     {
@@ -155,10 +182,16 @@ private:
         void function(void*, void*, uint, int, int) motion;
         void function(void*, void*, uint, uint, uint, uint) button;
         void function(void*, void*, uint, uint, int) axis;
+        // Version 5
+        void function(void*, void*) frame;
+        void function(void*, void*, uint) axisSource;
+        void function(void*, void*, uint, uint) axisStop;
+        void function(void*, void*, uint, int) axisDiscrete;
     }
     static immutable registryListener = RegistryListener(&global, &globalRemove);
-    static immutable seatListener = SeatListener(&capabilities);
-    static immutable pointerListener = PointerListener(&enter, &leave, &motion, &button, &axis);
+    static immutable seatListener = SeatListener(&capabilities, &seatName);
+    static immutable pointerListener = PointerListener(&enter, &leave, &motion, &button, &axis,
+                                                       &frame, &axisSource, &axisStop, &axisDiscrete);
 
     static extern (C) void global(void* data, void* registry, uint name, const(char)* iface, uint version_) nothrow @nogc
     {
@@ -166,7 +199,8 @@ private:
         if (self.seat || strcmp(iface, "wl_seat") != 0)
             return; // the first seat: a desktop has one
         enum bind = 0;
-        self.seat = self.fn.proxy_marshal_flags(registry, bind, self.seatInterface, 1, 0, name, "wl_seat".ptr, 1, null);
+        const v = version_ < maxVersion ? version_ : maxVersion;
+        self.seat = self.fn.proxy_marshal_flags(registry, bind, self.seatInterface, v, 0, name, "wl_seat".ptr, v, null);
         if (self.seat)
             self.fn.proxy_add_listener(self.seat, &seatListener, data);
     }
@@ -179,7 +213,7 @@ private:
         if (!(caps & hasPointer) || self.pointer)
             return;
         enum getPointer = 0;
-        self.pointer = self.fn.proxy_marshal_flags(seat, getPointer, self.pointerInterface, 1, 0, null);
+        self.pointer = self.fn.proxy_marshal_flags(seat, getPointer, self.pointerInterface, self.fn.proxy_get_version(seat), 0, null);
         if (self.pointer)
             self.fn.proxy_add_listener(self.pointer, &pointerListener, data);
     }
@@ -198,6 +232,25 @@ private:
     static extern (C) void enter(void*, void*, uint, void*, int, int) nothrow @nogc {}
     static extern (C) void motion(void*, void*, uint, int, int) nothrow @nogc {}
     static extern (C) void axis(void*, void*, uint, uint, int) nothrow @nogc {}
+    static extern (C) void seatName(void*, void*, const(char)*) nothrow @nogc {}
+    static extern (C) void frame(void*, void*) nothrow @nogc {}
+    static extern (C) void axisDiscrete(void*, void*, uint, int) nothrow @nogc {}
+
+    static extern (C) void axisSource(void* data, void*, uint s) nothrow @nogc
+    {
+        // wl_pointer.axis_source: wheel 0, finger 1, continuous 2, wheel_tilt 3
+        auto self = cast(WindowMover*) data;
+        self.source = s == 1 ? ScrollSource.finger : s == 2 ? ScrollSource.continuous : ScrollSource.wheel;
+        self.lifted = false; // moving again
+    }
+
+    static extern (C) void axisStop(void* data, void*, uint, uint) nothrow @nogc
+    {
+        // Sent for each axis that was scrolling; one lift is all that's wanted
+        auto self = cast(WindowMover*) data;
+        if (self.source == ScrollSource.finger)
+            self.lifted = true;
+    }
 }
 
 /*
@@ -386,4 +439,23 @@ extern (C) void forwardConfigureBounds(void* data, void* toplevel, int width, in
 extern (C) void forwardWmCapabilities(void* data, void* toplevel, WlArray* capabilities) nothrow @nogc
 {
     watchOf(toplevel).sdlListener.wmCapabilities(data, toplevel, capabilities);
+}
+
+unittest {
+    // What the compositor says about scrolling, as it says it: a wheel, then fingers, which lift
+    WindowMover m;
+    assert(m.scrollSource == ScrollSource.unknown && !m.takeFingersLifted);
+    WindowMover.axisSource(&m, null, 0);
+    assert(m.scrollSource == ScrollSource.wheel);
+    WindowMover.axisStop(&m, null, 0, 0);
+    assert(!m.takeFingersLifted, "a wheel doesn't lift");
+    WindowMover.axisSource(&m, null, 1);
+    assert(m.scrollSource == ScrollSource.finger);
+    WindowMover.axisStop(&m, null, 0, 0);
+    WindowMover.axisStop(&m, null, 0, 1); // both axes stop: one lift
+    assert(m.takeFingersLifted && !m.takeFingersLifted);
+    WindowMover.axisSource(&m, null, 2);
+    assert(m.scrollSource == ScrollSource.continuous);
+    WindowMover.axisSource(&m, null, 3);
+    assert(m.scrollSource == ScrollSource.wheel, "a tilted wheel's a wheel");
 }

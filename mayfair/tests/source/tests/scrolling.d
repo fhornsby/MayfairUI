@@ -241,6 +241,40 @@ void momentum()
         d.ui({ after = scrolled; });
         d.check(abs(after - caught) < 0.5f, format!"a press stops it where it is: %s, then %s"(caught, after));
 
+        // Where the compositor says when the fingers lift, as Wayland's do: a pause isn't a lift,
+        // the lift itself starts the glide, and fingers that rested before lifting don't glide
+        import core.time : MonoTime;
+        double now() { return (MonoTime.currTime - MonoTime.zero).total!"usecs" / 1e6; }
+        void stroke()
+        {
+            foreach (i; 0 .. 6)
+            {
+                d.ui({ pane.scene.scrolled(p.centreX, p.centreY, 0, -13, ScrollDevice.touchpad, now(), true, true); });
+                Thread.sleep(16.msecs);
+            }
+        }
+        d.ui({ pane.setVvalue(0); });
+        d.settle();
+        stroke();
+        float paused, stillPaused;
+        d.ui({ paused = scrolled; });
+        Thread.sleep(300.msecs); // fingers resting: no glide, as the lift's said
+        d.ui({ stillPaused = scrolled; });
+        d.check(abs(stillPaused - paused) < 0.5f, format!"resting, not lifted: no glide: %s, then %s"(paused, stillPaused));
+        d.ui({ pane.scene.fingersLifted(now()); });
+        Thread.sleep(100.msecs);
+        float afterRest;
+        d.ui({ afterRest = scrolled; });
+        d.check(abs(afterRest - paused) < 0.5f, format!"lifted after resting: no glide: %s, then %s"(paused, afterRest));
+
+        stroke();
+        float atLift, glidedAfterLift;
+        d.ui({ atLift = scrolled; pane.scene.fingersLifted(now()); });
+        Thread.sleep(400.msecs);
+        d.ui({ glidedAfterLift = scrolled; });
+        d.check(glidedAfterLift > atLift + 40, format!"lifted while moving: it glides: %s, then %s"(atLift, glidedAfterLift));
+        Thread.sleep(1500.msecs); // to a stop
+
         // A high-resolution wheel, spun: 120ths of a notch, not whole eighths (KDE's scroll speed
         // at 70% makes a notch 84). It's a wheel: 40 points a notch, and it stops when it does
         d.ui({ pane.setVvalue(0); });

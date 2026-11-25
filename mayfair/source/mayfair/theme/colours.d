@@ -43,7 +43,8 @@ struct Theme
     enum Duration scroll_bar_linger_time = 1000.msecs; // shown after the last scroll or movement
     enum float scroll_ease_time          = 0.03;  // seconds: how quickly a wheel's notch is eased into: most of the way in 70 ms
     enum float scroll_glide_time         = 0.325; // seconds: how quickly a touchpad's momentum dies away
-    enum Duration scroll_lift_time       = 45.msecs; // no touchpad movement for this long: the fingers lifted
+    enum Duration scroll_lift_time       = 45.msecs; // no touchpad movement for this long: the fingers lifted (where it's not said)
+    enum float scroll_rest_time          = 0.08;  // seconds still before the fingers lift: they were resting, and nothing glides
     enum float scroll_glide_min_speed    = 120;   // points a second: slower than this, lifting just stops
     enum float scroll_glide_max_speed    = 8000;  // points a second: the fastest a glide starts
     enum Duration popup_fade_time        = 120.msecs; // a popup fading in

@@ -96,6 +96,27 @@ nothrow @nogc:
     /// Blurs behind the parts of the window `scene` was last painted with backdrop-blur on, from
     /// the next frame presented. Asked only while blurs() says it can.
     void blurBehind(Scene scene);
+
+    /*
+        What the scrolling that's coming in is from, as the window system says: a wheel, fingers
+        on a touchpad, or something continuous, such as a TrackPoint. SDL doesn't pass that on,
+        so where the window system can't be asked it's `unknown`, and the window tells from
+        SDL's amounts (see mayfair.windowing.window.scrollKind).
+    */
+    ScrollSource scrollSource();
+
+    /// Whether the fingers scrolling on a touchpad have lifted since it was last asked, as the
+    /// window system says: the moment a glide starts. Only where scrollSource() can say `finger`.
+    bool takeFingersLifted();
+}
+
+/// What a scroll came from, as the window system says. Wayland's wl_pointer axis_source.
+enum ScrollSource
+{
+    unknown,    /// Not said: told from the amounts
+    wheel,      /// A wheel's notches, or a tilted wheel's
+    finger,     /// Fingers on a touchpad, which say when they lift
+    continuous, /// Continuous, but not fingers: a TrackPoint, or a button held to scroll by the mouse
 }
 
 /*
@@ -147,4 +168,6 @@ nothrow @nogc:
     bool beginMove() { return false; }
     bool blurs() { return false; }
     void blurBehind(Scene) {}
+    ScrollSource scrollSource() { return ScrollSource.unknown; }
+    bool takeFingersLifted() { return false; }
 }

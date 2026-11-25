@@ -314,7 +314,7 @@ package(mayfair):
 
     int _minWidth = -1, _minHeight = -1;             // the window's inside; 0 for none, -1 for the default
     int _maxWidth, _maxHeight;                        // the same; 0 for none
-    double _lastTouchpad = -1;                        // when a touchpad last scrolled it: see wheelDevice()
+    double _lastTouchpad = -1;                        // when a touchpad last scrolled it: see scrollKind()
     int _openWidth, _openHeight;                      // the size it was made at, which caps the default minimum
     bool _startMaximised, _wasMaximised;              // see setMaximised and wasMaximised
     bool _fullScreen;                                 // see setFullScreen
@@ -736,8 +736,17 @@ package(mayfair):
                                      mouseButton(event.button.button), event.button.clicks);
                 break;
             case SDL_EventType.SDL_EVENT_MOUSE_WHEEL:
+                // Fingers lifted, as the compositor said (see App's loop): a glide starts
+                if (event.wheel.which == fingersLiftedMouse) {
+                    _scene.fingersLifted(event.wheel.timestamp / 1e9);
+                    break;
+                }
                 const time = event.wheel.timestamp / 1e9;
-                const device = wheelDevice(event.wheel.x, event.wheel.y, time, _lastTouchpad);
+                const source = backend.scrollSource();
+                const kind = scrollKind(source, event.wheel.x, event.wheel.y, time, _lastTouchpad);
+                trace("input scroll %.4f, %.4f  source %d  as %s%s", event.wheel.x, event.wheel.y, cast(int) source,
+                      kind.device == ScrollDevice.wheel ? "wheel".ptr : "touchpad".ptr, kind.glides ? ", glides".ptr : "".ptr);
+                const device = kind.device;
                 float dx = wheelPoints(event.wheel.x, device), dy = wheelPoints(event.wheel.y, device);
                 // Shift turns the wheel sideways, as it does everywhere else on the desktop
                 if ((mods & SDL_Keymod.KMOD_SHIFT) && dx == 0) {
@@ -746,7 +755,7 @@ package(mayfair):
                 }
                 // SDL's x is positive to the right, where a ScrollEvent's is the way the content moves
                 _scene.scrolled(pointsX(event.wheel.windowID, event.wheel.mouse_x), pointsY(event.wheel.windowID, event.wheel.mouse_y), -dx, dy, device,
-                                time, device == ScrollDevice.touchpad && systemMomentum);
+                                time, kind.glides, kind.liftSaid);
                 break;
             case SDL_EventType.SDL_EVENT_WINDOW_MOUSE_LEAVE:
                 _scene.mouseLeft();
@@ -1122,47 +1131,90 @@ bool isUserInput(uint type) nothrow @nogc
     }
 }
 
+/// The mouse a queued wheel event names to say fingers scrolling on a touchpad have lifted.
+package(mayfair) enum SDL_MouseID fingersLiftedMouse = 0xFFFF_FFFE;
+
+/// What a scroll's from, and how a scroll pane's to take it: see scrollKind().
+struct ScrollKind
+{
+    ScrollDevice device;
+    bool glides;    /// Whether it glides on after the fingers lift: not where the system does that itself
+    bool liftSaid;  /// Whether the window system says when the fingers lift, so it needn't be guessed
+}
+
 /*
-    What a scroll came from, a wheel or a touchpad, and how many points it is. SDL doesn't say
-    which it was, so it's told from the amounts, which come differently on each system.
+    What a scroll came from, a wheel or a touchpad, and how a scroll pane's to take it.
 
-    - Linux and the BSDs: Wayland gives a wheel in 120ths of a notch, as libinput does on X11,
-      and a touchpad in 256ths of a pixel, which SDL divides by ten. A notch is
-      Theme.scroll_step points, and a touchpad's tenth of a notch is a pixel, followed exactly.
-      Its amounts land on the 120ths only by chance, about one in 64, so once a touchpad's
-      moving, everything until it's been still a moment is taken for it.
+    On Wayland the compositor says, in wl_pointer's axis_source, which Mayfair hears on a pointer
+    of its own (see mayfair.windowing.wayland.toplevel), and says when fingers lift. Then a wheel
+    is a wheel, however its notches come -- a high-resolution one in 120ths of a notch, scaled by
+    a scroll speed setting -- and a touchpad glides from the moment the fingers lift, not from a
+    guess that a pause means they have. This is the case that matters: Linux's desktops.
+
+    Where it's not said -- X11, or a compositor without version 5 of wl_seat -- SDL's amounts are
+    all there is, and they come differently on each system:
+
+    - Linux and the BSDs: a wheel in 120ths of a notch (libinput's), and a touchpad in pixels over
+      ten, in 256ths of a pixel on Wayland and finer on X11. Those land on the 120ths only by
+      chance, so once a touchpad's moving, everything until it's been still a moment is taken for
+      it; a pause is taken for the fingers lifting.
     - macOS: SDL rounds a mouse wheel's movement to whole notches, and gives a trackpad's, or a
-      Magic Mouse's, exactly, in the tenths of a point macOS calls lines.
+      Magic Mouse's, exactly. The system carries a trackpad on after the fingers lift, with more
+      scroll events, so there's no glide of Mayfair's.
     - Windows: a notch is 120 units. A high-resolution wheel, and a precision touchpad, send
-      fractions of one, and both are followed as they come, a notch to Theme.scroll_step points.
+      fractions of one, followed as they come; Windows carries a touchpad on itself.
 
-    On macOS and Windows the system carries a touchpad's movement on after the fingers lift,
-    with more scroll events, slowing down, so a ScrollPane mustn't add a glide of its own:
-    `systemMomentum`. Taking a wheel for a touchpad does the most harm -- it's slow, and floats
-    on after the wheel stops -- so where it's unclear it's taken for a wheel.
+    Taking a wheel for a touchpad does the most harm -- it's slow, and floats on after the wheel
+    stops -- so where it's unclear it's taken for a wheel.
 */
-version (OSX)
-    enum bool systemMomentum = true;
-else version (Windows)
-    enum bool systemMomentum = true;
-else
-    enum bool systemMomentum = false;
-
-ScrollDevice wheelDevice(float x, float y, double time, ref double lastTouchpad) nothrow @nogc {
+ScrollKind scrollKind(ScrollSource source, float x, float y, double time, ref double lastTouchpad) nothrow @nogc {
+    final switch (source) {
+        case ScrollSource.wheel:
+            return ScrollKind(ScrollDevice.wheel, false, false);
+        case ScrollSource.finger:
+            return ScrollKind(ScrollDevice.touchpad, true, true);
+        case ScrollSource.continuous:
+            return ScrollKind(ScrollDevice.touchpad, false, false); // a TrackPoint stops when it's let go
+        case ScrollSource.unknown:
+            break;
+    }
     version (OSX) {
-        return onGrid(x, 1) && onGrid(y, 1) ? ScrollDevice.wheel : ScrollDevice.touchpad;
+        const wheel = onGrid(x, 1) && onGrid(y, 1);
+        return ScrollKind(wheel ? ScrollDevice.wheel : ScrollDevice.touchpad, false, false);
     } else version (Windows) {
-        return onGrid(x, 1) && onGrid(y, 1) ? ScrollDevice.wheel : ScrollDevice.touchpad;
+        const wheel = onGrid(x, 1) && onGrid(y, 1);
+        return ScrollKind(wheel ? ScrollDevice.wheel : ScrollDevice.touchpad, false, false);
     } else {
         const touchpadMoving = lastTouchpad >= 0 && time >= lastTouchpad && time - lastTouchpad < 0.1;
         if (!touchpadMoving && onGrid(x, 120) && onGrid(y, 120))
-            return ScrollDevice.wheel;
+            return ScrollKind(ScrollDevice.wheel, false, false);
         lastTouchpad = time;
-        return ScrollDevice.touchpad;
+        return ScrollKind(ScrollDevice.touchpad, true, false);
     }
 }
 
-/// How many points one of SDL's amounts is, from `device`: see wheelDevice().
+unittest {
+    double last = -1;
+    // Said by the compositor: a wheel's 120ths that aren't eighths are a wheel's still
+    auto k = scrollKind(ScrollSource.wheel, 0, 0.7f, 1, last);
+    assert(k.device == ScrollDevice.wheel && !k.glides);
+    k = scrollKind(ScrollSource.finger, 0, 0.3f, 1, last);
+    assert(k.device == ScrollDevice.touchpad && k.glides && k.liftSaid);
+    k = scrollKind(ScrollSource.continuous, 0, 0.3f, 1, last);
+    assert(k.device == ScrollDevice.touchpad && !k.glides);
+    version (linux) {
+        // Not said: from the amounts
+        assert(scrollKind(ScrollSource.unknown, 0, -1, 2, last).device == ScrollDevice.wheel);
+        assert(scrollKind(ScrollSource.unknown, 0, -0.7f, 2.5, last).device == ScrollDevice.wheel);
+        k = scrollKind(ScrollSource.unknown, 0, -0.3125f, 3, last);
+        assert(k.device == ScrollDevice.touchpad && k.glides && !k.liftSaid);
+        // While a touchpad's moving, an amount on the 120ths is the touchpad's too
+        assert(scrollKind(ScrollSource.unknown, 0, -0.25f, 3.02, last).device == ScrollDevice.touchpad);
+        assert(scrollKind(ScrollSource.unknown, 0, -1, 4, last).device == ScrollDevice.wheel);
+    }
+}
+
+/// How many points one of SDL's amounts is, from `device`: see scrollKind().
 float wheelPoints(float amount, ScrollDevice device) nothrow @nogc {
     if (device == ScrollDevice.wheel)
         return amount * Theme.scroll_step;
