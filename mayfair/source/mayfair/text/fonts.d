@@ -22,6 +22,10 @@ import mayfair.text.freetype;
     renders on a machine with no usable fonts at all. It's also the fallback of last resort for a
     missing glyph, and the reason font() and defaultFont() never fail.
 
+    For code, monospaceFont() -- and font-family: monospace -- gives the platform's usual
+    monospaced family, and DejaVu Sans Mono, compiled in too, in regular and bold, where there's
+    none.
+
     IBM Plex Sans is compiled in too, in regular, italic, semibold and bold, and is the default
     font everywhere for now: Zed's interface is in it, which makes the two easy to compare side by
     side. Both are under licences that let them be (fonts/LICENSE-*.txt).
@@ -34,6 +38,9 @@ import mayfair.text.freetype;
 /// to `weight` and `italic`. A family that isn't installed gets the default font instead.
 Font font(string family, float size, FontWeight weight = FontWeight.regular, bool italic = false)
 {
+    import std.uni : sicmp;
+    if (sicmp(family, "monospace") == 0)
+        return monospaceFont(size, weight, italic);
     auto want = FaceStyle(weight, 5, italic);
     if (auto face = bestFace(family, want))
         return face.at(size);
@@ -55,6 +62,17 @@ Font defaultFont(float size, FontWeight weight = FontWeight.regular, bool italic
         if (auto face = bestFace(family, want))
             return face.at(size);
     return bestFace(bundledFamily, want).at(size);
+}
+
+/// A monospaced font, for code: the first of the platform's usual ones that's installed, or
+/// DejaVu Sans Mono, which is bundled. "monospace" as a family name means the same.
+Font monospaceFont(float size, FontWeight weight = FontWeight.regular, bool italic = false)
+{
+    auto want = FaceStyle(weight, 5, italic);
+    foreach (family; monospaceFamilies)
+        if (auto face = bestFace(family, want))
+            return face.at(size);
+    return bestFace(bundledMonoFamily, want).at(size);
 }
 
 /// Every installed family's name, sorted, for listing in a picker.
@@ -112,6 +130,13 @@ private:
 enum bundledFamily = "DejaVu Sans";
 static immutable bundledData = cast(immutable(ubyte)[]) import("DejaVuSans.ttf");
 
+/// The monospaced family of last resort, compiled in, regular and bold.
+enum bundledMonoFamily = "DejaVu Sans Mono";
+static immutable monoData = [
+    cast(immutable(ubyte)[]) import("DejaVuSansMono.ttf"),
+    cast(immutable(ubyte)[]) import("DejaVuSansMono-Bold.ttf"),
+];
+
 /// The default family's faces, compiled in: see the top of this module.
 static immutable plexData = [
     cast(immutable(ubyte)[]) import("IBMPlexSans-Regular.ttf"),
@@ -127,6 +152,15 @@ else version (OSX)
 else
     static immutable defaultFamilies = ["IBM Plex Sans", "Noto Sans", "Cantarell", "Ubuntu", "Roboto",
                                         "Liberation Sans", "DejaVu Sans"];
+
+// For code: the platform's usual monospaced families, then widely installed ones
+version (Windows)
+    static immutable monospaceFamilies = ["Cascadia Mono", "Cascadia Code", "Consolas", "Courier New"];
+else version (OSX)
+    static immutable monospaceFamilies = ["SF Mono", "Menlo", "Monaco"];
+else
+    static immutable monospaceFamilies = ["Adwaita Mono", "Source Code Pro", "JetBrains Mono", "Noto Sans Mono",
+                                          "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono"];
 
 // Wide coverage first, so a stray symbol lands in a font that looks like the text around it
 static immutable fallbackFamilies = [
@@ -227,6 +261,8 @@ ref FontIndex index()
             scanDirectory(dir, idx);
         // Last, so an installed copy of a bundled font is preferred to it
         foreach (data; plexData)
+            addFaces(FaceSource(null, data, 0), idx);
+        foreach (data; monoData)
             addFaces(FaceSource(null, data, 0), idx);
         addFaces(FaceSource(null, bundledData, 0), idx);
     }
