@@ -93,3 +93,90 @@ void titleBars()
         d.ui({ d.expect(maximise.accessibleText, "Maximise", "and another restores"); });
     });
 }
+
+/*
+    A title bar over a sidebar, in the Oriel theme: its glass (the first layer) over the sidebar
+    only, and the page's colour beside it, following the sidebar as it's hidden and resized; the
+    compositor asked to blur behind that much of it; and the glass translucent with the window.
+*/
+void sidebarGlass()
+{
+    // A root that can be put in :translucent, as the App does where the compositor blurs
+    static class Root : Dock
+    {
+        void translucent(bool on) { pseudoClassStateChanged(pseudo!"translucent", on); }
+    }
+    Root root;
+    Column side;
+    TitleBar bar;
+    run("title bar: over a sidebar", {
+        root = new Root();
+        side = new Column().prefWidth(180).minWidth(180).maxWidth(180);
+        side.styleClass.add("sidebar");
+        side.add(new Label("Sidebar"));
+        auto page = new Column().grow(1);
+        page.styleClass.add("page");
+        page.add(new Label("Page"));
+        root.setLeft(side);
+        root.setCentre(page);
+        return cast(Widget) root;
+    }, (Driver d) {
+        d.ui({
+            bar = new TitleBar("Documents").sidebar(side);
+            root.scene.titleBar(bar);
+            root.scene.stylesheets.add(orielStylesheet);
+        });
+        d.settle();
+        void layers(float glass, string what)
+        {
+            d.ui({
+                const w = bar.boundsInScene.width;
+                d.check(bar.background.fills.length == 2, "the Oriel title bar's two layers");
+                if (bar.background.fills.length != 2)
+                    return;
+                const g = bar.backgroundInsets(0, w), p = bar.backgroundInsets(1, w);
+                d.check(abs((w - g.right) - glass) <= 1, format!"%s: the glass %s across, not %s"(what, glass, w - g.right));
+                d.check(abs(p.left - glass) <= 1, format!"%s: the page's colour from %s, not %s"(what, glass, p.left));
+            });
+        }
+        float edge = 0;
+        d.ui({ edge = side.boundsInScene.maxX - bar.boundsInScene.minX; });
+        d.check(edge > 170, format!"the sidebar laid out: %s"(edge));
+        layers(edge, "over the sidebar");
+
+        // Blurred behind: the compositor's asked to blur where the first layer is (Scene.backdropBlurRegion
+        // takes it from backgroundInsets, as above), so over the sidebar only
+        d.ui({ d.check(bar.backdropBlur && side.backdropBlur, "the bar and the sidebar both glass"); });
+
+        // Hidden: the page's colour all the way across; back, wider: the glass with it
+        d.ui({ root.setLeft(null); });
+        d.settle();
+        layers(0, "with the sidebar hidden");
+        d.ui({
+            side.setPrefWidth(260);
+            side.setMinWidth(260);
+            side.setMaxWidth(260);
+            root.setLeft(side);
+        });
+        d.settle();
+        d.ui({ edge = side.boundsInScene.maxX - bar.boundsInScene.minX; });
+        layers(edge, "with the sidebar back, wider");
+        d.check(edge > 250, format!"wider: %s"(edge));
+
+        // The window translucent: the glass is, the page beside it isn't. The bar isn't below the
+        // root, whose variables it takes, so it has to be restyled with it
+        Colour before;
+        d.ui({ before = bar.background.fills[0].fill; root.translucent(true); });
+        d.settle();
+        d.ui({
+            const glass = bar.background.fills[0].fill, page = bar.background.fills[1].fill;
+            d.check(glass.a < 255 && glass != before, format!"the bar's glass translucent: %s, was %s"(glass, before));
+            d.expect(page.a, 255, "the page's colour beside it opaque");
+            d.check(side.background.fills.length && side.background.fills[0].fill == glass,
+                    "the sidebar's colour, up to the top of the window");
+        });
+        d.ui({ root.translucent(false); });
+        d.settle();
+        d.ui({ d.expect(bar.background.fills[0].fill, before, "opaque again, with the window"); });
+    });
+}

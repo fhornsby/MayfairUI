@@ -246,8 +246,13 @@ protected:
         childLayoutChanged();
     }
 
+    /// Called on every paint pass, as laidOut is for other widgets, before it's arranged if it has
+    /// to be: for a subclass whose drawing depends on more than its own rectangle.
+    void beforeArranging(float x, float y, float w, float h) nothrow @nogc {}
+
     final override void laidOut(float x, float y, float w, float h) nothrow @nogc
     {
+        beforeArranging(x, y, w, h);
         const l = YGNodeLayoutGetPadding(node, YGEdgeLeft), t = YGNodeLayoutGetPadding(node, YGEdgeTop);
         const cw = w - l - YGNodeLayoutGetPadding(node, YGEdgeRight);
         const ch = h - t - YGNodeLayoutGetPadding(node, YGEdgeBottom);

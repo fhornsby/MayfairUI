@@ -37,7 +37,19 @@ import mayfair.widgets.widget;
     unless they say otherwise.
 
     Its style class is "title-bar", with :backdrop while the window doesn't have focus, as GNOME
-    fades its title bars. Its parts are `.start`, `.end` and `.title`, and the window buttons are
+    fades its title bars.
+
+    Given the window's `sidebar`, it can run the sidebar up to the top of the window, as macOS's
+    do: the first `sidebar-layers` layers of its background are drawn over the sidebar only, and
+    the rest beside it, following the sidebar as it's resized, hidden and shown. So a theme can
+    give the bar the sidebar's colour where it's over the sidebar, and its frosted glass too, with
+    backdrop-blur, which blurs behind those layers only:
+
+        .title-bar {
+            background-colour: var(--sidebar), var(--page);
+            sidebar-layers: 1;
+            backdrop-blur: true;
+        } Its parts are `.start`, `.end` and `.title`, and the window buttons are
     `.window-button`s, each `.minimise`, `.maximise` or `.close` too.
 */
 class TitleBar : CustomLayout
@@ -68,6 +80,36 @@ public:
 
     /// Something in the middle in the title's place: a search field, a set of tabs. Null for the title.
     mixin(declareProperty!(Widget, "titleWidget", "null", q{ showTitleWidget(); }));
+
+    /*
+        The window's sidebar, down its left side, which the first sidebar-layers of the bar's
+        background follow (see above). Null for none, or while there isn't one: the whole bar's
+        background is then the layers after those.
+    */
+    mixin(declareProperty!(Widget, "sidebar", "null", q{ invalidate(); }));
+
+    /// How many of its background's layers, from the first, are drawn over the sidebar: 0 for none.
+    mixin(declareStyleableProperty!(float, "sidebarLayers", "sidebar-layers", "0", q{ invalidate(); }));
+
+    /*
+        Its background's layers, as drawn: those over the sidebar to its right edge, and the rest
+        from there on -- when it has a sidebar, and sidebar-layers says which.
+    */
+    override Insets backgroundInsets(size_t layer, float width) const nothrow @nogc
+    {
+        auto ins = super.backgroundInsets(layer, width);
+        if (!_sidebar || _sidebarLayers < 1)
+            return ins;
+        if (layer < cast(size_t) _sidebarLayers)
+        {
+            const right = width - sidebarEdge;
+            if (right > ins.right)
+                ins.right = right;
+        }
+        else if (sidebarEdge > ins.left)
+            ins.left = sidebarEdge;
+        return ins;
+    }
 
     /// Whether it shows the minimise, maximise and close buttons.
     mixin(declareProperty!(bool, "showWindowButtons", "true", q{
@@ -105,8 +147,29 @@ public:
         return this;
     }
 
+private:
+    float sidebarEdge = 0;
+
 protected:
     override bool takesChildren() const nothrow @nogc { return false; }
+
+    // Where the sidebar ends, from its left: drawn again when that moves, or the sidebar goes
+    override void beforeArranging(float x, float y, float w, float h) nothrow @nogc
+    {
+        float edge = 0;
+        if (_sidebar && _sidebar.visible)
+        {
+            const b = _sidebar.boundsInScene;
+            if (b.width > 0)
+                edge = b.maxX - x;
+        }
+        edge = edge < 0 ? 0 : edge > w ? w : edge;
+        if (edge != sidebarEdge)
+        {
+            sidebarEdge = edge;
+            invalidate();
+        }
+    }
 
     override void placeChild(Widget child) nothrow @nogc
     {

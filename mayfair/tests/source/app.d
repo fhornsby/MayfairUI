@@ -88,6 +88,7 @@ void main(string[] args)
     tests.lists.multipleSelection();
     tests.lists.treeViews();
     tests.titlebar.titleBars();
+    tests.titlebar.sidebarGlass();
     tests.windows.secondWindow();
     tests.windows.modalWindow();
     tests.windows.minimumSize();

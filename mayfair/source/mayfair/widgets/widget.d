@@ -362,6 +362,17 @@ public:
     /// rectangle: JavaFX's shape. See SvgPath. Empty for a rectangle.
     mixin(declareStyleableProperty!(string, "shapePath", "shape", "null", q{ parseShape(); }));
 
+    /*
+        Where layer `layer` of its background is drawn, when it's `width` across: the layer's
+        insets. As they're styled, unless a widget draws a layer where something else says -- a
+        title bar's, over the window's sidebar (see TitleBar.sidebar). What's drawn, what a widget
+        has behind it, and the glass blurred behind it (backdropBlur) all come from here.
+    */
+    Insets backgroundInsets(size_t layer, float width) const nothrow @nogc
+    {
+        return _background.fills[layer].insets;
+    }
+
     /// How opaque it is, and everything below it, from 0 to 1.
     mixin(declareStyleableProperty!(float, "opacity", "opacity", "1", q{ invalidate(); }));
 
@@ -1316,10 +1327,11 @@ private:
     Behind coveredBy(Behind b, Rect at, Rect content) nothrow @nogc
     {
         enum slack = 0.5f; // in points: for edges that differ only by rounding
-        foreach (ref f; _background.fills)
+        foreach (i, ref f; _background.fills)
         {
-            const fx = at.x + f.insets.left, fy = at.y + f.insets.top;
-            const fw = at.w - f.insets.left - f.insets.right, fh = at.h - f.insets.top - f.insets.bottom;
+            const ins = backgroundInsets(i, at.w);
+            const fx = at.x + ins.left, fy = at.y + ins.top;
+            const fw = at.w - ins.left - ins.right, fh = at.h - ins.top - ins.bottom;
             if (content.x >= fx - slack && content.y >= fy - slack && content.x + content.w <= fx + fw + slack
                 && content.y + content.h <= fy + fh + slack)
                 b = b.covered(f.fill);
@@ -1414,8 +1426,8 @@ private:
             auto p = regionPaints[i];
             tvg_shape_reset(p);
             tvg_shape_set_fill_color(p, f.fill.tupleof);
-            appendOutline(p, x + f.insets.left, y + f.insets.top, w - f.insets.left - f.insets.right,
-                          h - f.insets.top - f.insets.bottom, f.radii);
+            const ins = backgroundInsets(i, w);
+            appendOutline(p, x + ins.left, y + ins.top, w - ins.left - ins.right, h - ins.top - ins.bottom, f.radii);
         }
         foreach (i, ref b; _border.strokes)
         {
