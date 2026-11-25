@@ -558,6 +558,19 @@ package:
 package(mayfair):
     ColourScheme platformColourScheme = ColourScheme.light; // the desktop's, as the App last heard it
 
+    /*
+        What takes the root's variables without being below it -- the title bar, popups -- to be
+        restyled: the root's style changed, and so might the variables. So a theme's translucent
+        --sidebar reaches the title bar's glass as the window goes translucent.
+    */
+    void restyleRootsOwn() nothrow @nogc
+    {
+        if (_titleBar)
+            markCssDirty(_titleBar, true);
+        foreach (p; popups)
+            markCssDirty(p, true);
+    }
+
     /// Everything to be restyled: a stylesheet or the colour scheme changed.
     void restyleAll() nothrow @nogc
     {
@@ -989,7 +1002,7 @@ package(mayfair):
                 auto area = RoundedArea(b.minX, b.minY, b.width, b.height, fills.length ? fills[0].radii : CornerRadii.init);
                 if (fills.length)
                 {
-                    const i = fills[0].insets;
+                    const i = w.backgroundInsets(0, b.width);
                     area.x += i.left;
                     area.y += i.top;
                     area.w -= i.left + i.right;

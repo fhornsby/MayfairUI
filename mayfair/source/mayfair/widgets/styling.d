@@ -629,6 +629,9 @@ void pseudoClassChanged(Widget w, PseudoClass pc, bool on) nothrow @nogc
     if (w.pseudoClasses == was || !PseudoClass.affects(pc.bit))
         return;
     markCssDirty(w, PseudoClass.affectsBelow(pc.bit));
+    // The root's variables are its title bar's and popups' too, though they're not below it
+    if (w.scene && w.scene.root is w)
+        w.scene.restyleRootsOwn();
 }
 
 package(mayfair):
