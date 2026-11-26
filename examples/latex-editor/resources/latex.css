@@ -1,0 +1,74 @@
+/*
+    OverBrief's own look, over the Oriel theme: the files on the sidebar's glass, the editor and
+    the PDF on the page, and a toolbar along the top of each.
+*/
+.files-pane {
+    padding: 4 6 6 6;
+}
+
+.files-pane .tree-view {
+    background-colour: transparent;
+}
+
+.pane-heading {
+    font-size: 11px;
+    font-weight: bold;
+    colour: var(--secondary-text);
+}
+
+.toolbar {
+    padding: 4 8 4 8;
+    min-height: 36;
+    background-colour: var(--divider), var(--page);
+    background-insets: 0, 0 0 1 0;
+}
+
+.toolbar .button, .toolbar .toggle-button, .title-bar .button, .title-bar .menu-button,
+.files-pane .button {
+    --base: transparent;
+    --hover-base: var(--row-hover);
+}
+
+.toolbar .recompile {
+    --base: var(--accent);
+    --hover-base: var(--accent);
+    colour: white;
+    font-weight: bold;
+}
+
+.status-line {
+    padding: 4 12 4 12;
+    background-colour: var(--divider), var(--page);
+    background-insets: 0, 1 0 0 0;
+}
+
+.status-line .label, .toolbar .label {
+    font-size: 12px;
+    colour: var(--secondary-text);
+}
+
+.preview-pane .pdf-view {
+    background-colour: var(--secondary-page, #e9e9ec);
+}
+
+.log-pane {
+    background-colour: var(--divider), var(--page);
+    background-insets: 0, 1 0 0 0;
+}
+
+.log-pane .heading {
+    padding: 4 8 4 10;
+}
+
+.log-pane .heading .label {
+    font-size: 12px;
+    colour: var(--secondary-text);
+}
+
+.text-view, .text-view .gutter {
+    background-colour: var(--page);
+}
+
+.placeholder {
+    colour: var(--secondary-text);
+}

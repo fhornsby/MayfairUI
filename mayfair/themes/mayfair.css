@@ -237,6 +237,28 @@
 }
 
 /*
+    A split pane's dividers: a line down the middle of each, with room either side of it to take
+    hold of, and the line in the accent's colour while it's held.
+*/
+.split-pane {
+    divider-width: 5;
+}
+
+.split-pane > .divider:horizontal {
+    background-colour: var(--divider);
+    background-insets: 0 2 0 2;
+}
+
+.split-pane > .divider:vertical {
+    background-colour: var(--divider);
+    background-insets: 2 0 2 0;
+}
+
+.split-pane > .divider:dragged {
+    background-colour: var(--accent);
+}
+
+/*
     Check boxes and radio buttons: a mark, then the text. The mark's colours are variables on the
     mark itself -- its ring, its edge and its fill -- and each state changes the one it's about, so
     any mix of them comes out right with a rule for each. The focus ring is a border outside it,

@@ -26,7 +26,7 @@ import mayfair.code.language;
 /// How a line ended, for the next one: inside a comment, a string, a fence, a tag, or none of them.
 struct LineState
 {
-    enum Kind : ubyte { none, block, nested, string_, fence, tag }
+    enum Kind : ubyte { none, block, nested, string_, fence, tag, math }
     Kind kind;
     ubyte quote;     // which of the language's quotes the string's in
     ushort depth;    // how deep in nested comments
@@ -56,6 +56,8 @@ Token[] scanLine(const Language l, string s, ref LineState state)
 
     if (l.markdown)
         return markdownLine(s, state);
+    if (l.tex)
+        return texLine(s, state);
 
     size_t i;
     // A comment that runs on: to its close
@@ -116,7 +118,7 @@ Token[] scanLine(const Language l, string s, ref LineState state)
     // Carried on from the line before
     final switch (state.kind)
     {
-        case LineState.Kind.none, LineState.Kind.fence:
+        case LineState.Kind.none, LineState.Kind.fence, LineState.Kind.math: // fences and maths are Markdown's and TeX's
             break;
         case LineState.Kind.block:
             i = blockEnd(0, l.nestedBlocks, l.blockOpen, l.blockClose);
@@ -480,6 +482,160 @@ private Token[] markupLine(const Language l, string s, size_t i, ref LineState s
     return tokens;
 }
 
+/*
+    TeX and LaTeX, a line at a time. A comment runs from % to the line's end; a command is a \
+    and the letters after it, or one character that isn't a letter (\\, \%, \{). The commands that
+    give a document its shape -- \section, \begin, \usepackage -- are keywords, and the rest are
+    functions. What they're given in braces is coloured for what it is: an environment's name as a
+    type, a section's title as a heading, a label, reference, citation or file as a property.
+    Maths, $...$, $$...$$, \(...\) and \[...\], is coloured as a string, and display maths runs
+    on from one line to the next until it's closed.
+*/
+private Token[] texLine(string s, ref LineState state)
+{
+    Token[] tokens;
+    void add(size_t a, size_t b, Syntax k)
+    {
+        if (b > a)
+            tokens ~= Token(a, b, k);
+    }
+    bool at(size_t i, string what) { return i + what.length <= s.length && s[i .. i + what.length] == what; }
+    static bool letter(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '@'; }
+    static immutable structural = ["documentclass", "usepackage", "begin", "end", "part", "chapter", "section",
+        "subsection", "subsubsection", "paragraph", "subparagraph", "section*", "input", "include",
+        "includeonly", "bibliography", "bibliographystyle", "newcommand", "renewcommand", "providecommand",
+        "newenvironment", "renewenvironment", "def", "let", "maketitle", "tableofcontents", "appendix",
+        "item", "label", "ref", "eqref", "pageref", "cite", "citep", "citet", "autoref", "cref", "Cref",
+        "includegraphics", "caption", "title", "author", "date", "frontmatter", "mainmatter", "backmatter",
+        "printbibliography", "addbibresource", "if", "else", "fi"];
+    static immutable headings = ["part", "chapter", "section", "subsection", "subsubsection", "paragraph",
+        "subparagraph", "title", "caption"];
+    static immutable references = ["label", "ref", "eqref", "pageref", "cite", "citep", "citet", "autoref",
+        "cref", "Cref", "input", "include", "includeonly", "usepackage", "documentclass", "bibliography",
+        "bibliographystyle", "includegraphics", "addbibresource"];
+
+    // Maths running on from the line before: to where it closes, if it does here
+    string closer = state.kind == LineState.Kind.math ? (state.quote == 1 ? "$$" : "\\]") : null;
+    size_t i;
+    if (closer)
+    {
+        size_t j;
+        while (j < s.length && !at(j, closer) && s[j] != '%')
+            j += s[j] == '\\' && j + 1 < s.length ? 2 : 1;
+        if (j < s.length && at(j, closer))
+        {
+            add(0, j + closer.length, Syntax.string_);
+            state.kind = LineState.Kind.none;
+            i = j + closer.length;
+        }
+        else
+        {
+            add(0, j, Syntax.string_);
+            add(j, s.length, Syntax.comment);
+            return tokens;
+        }
+    }
+
+    // What's in braces straight after position `from`: [optional] arguments skipped
+    size_t argument(size_t from, out size_t start)
+    {
+        size_t j = from;
+        while (j < s.length && s[j] == '[')
+        {
+            while (j < s.length && s[j] != ']')
+                j++;
+            if (j < s.length)
+                j++;
+        }
+        if (j >= s.length || s[j] != '{')
+            return 0;
+        start = j + 1;
+        size_t depth = 1, k = start;
+        while (k < s.length && depth)
+        {
+            if (s[k] == '{') depth++;
+            else if (s[k] == '}') depth--;
+            if (depth)
+                k++;
+        }
+        return k; // the closing brace, or the line's end
+    }
+
+    while (i < s.length)
+    {
+        const c = s[i];
+        if (c == '%')
+        {
+            add(i, s.length, Syntax.comment);
+            break;
+        }
+        if (c == '$' || at(i, "\\(") || at(i, "\\["))
+        {
+            // Maths: inline to its close on this line; display may run on
+            const display = at(i, "$$") || at(i, "\\[");
+            const open = at(i, "$$") ? "$$" : c == '$' ? "$" : s[i .. i + 2];
+            const close = open == "$$" ? "$$" : open == "$" ? "$" : open == "\\(" ? "\\)" : "\\]";
+            size_t j = i + open.length;
+            while (j < s.length && !at(j, close))
+                j += s[j] == '\\' && j + 1 < s.length ? 2 : 1;
+            if (j < s.length)
+            {
+                add(i, j + close.length, Syntax.string_);
+                i = j + close.length;
+                continue;
+            }
+            add(i, s.length, Syntax.string_);
+            if (display)
+            {
+                state.kind = LineState.Kind.math;
+                state.quote = open == "$$" ? 1 : 2;
+            }
+            break;
+        }
+        if (c == '\\')
+        {
+            size_t j = i + 1;
+            if (j < s.length && letter(s[j]))
+            {
+                while (j < s.length && letter(s[j]))
+                    j++;
+                if (j < s.length && s[j] == '*')
+                    j++;
+                const name = s[i + 1 .. j];
+                const plain = name.length && name[$ - 1] == '*' ? name[0 .. $ - 1] : name;
+                add(i, j, structural.canFind(name) || structural.canFind(plain) ? Syntax.keyword : Syntax.function_);
+                // What it's given: coloured for what it is
+                size_t start;
+                const end = argument(j, start);
+                if (end)
+                {
+                    Syntax what = Syntax.none;
+                    if (plain == "begin" || plain == "end")
+                        what = Syntax.type;
+                    else if (headings.canFind(plain))
+                        what = Syntax.heading;
+                    else if (references.canFind(plain))
+                        what = Syntax.property;
+                    if (what != Syntax.none)
+                    {
+                        add(start, end, what);
+                        i = end;
+                        continue;
+                    }
+                }
+                i = j;
+                continue;
+            }
+            // \\, \%, \{ and the like: one character
+            add(i, j < s.length ? j + 1 : j, Syntax.escape);
+            i = j + 1;
+            continue;
+        }
+        i++;
+    }
+    return tokens;
+}
+
 /// Markdown, a line at a time: headings, fences, quotes, lists, `code`, **strong**, *emphasis*, [links](url).
 private Token[] markdownLine(string s, ref LineState state)
 {
@@ -838,6 +994,18 @@ unittest
         // Strings, their escapes, functions, types by their capital
         st = LineState.init;
         assert(kinds(d, `writeln("a\n", Foo.bar);`, st) == [function_, string_, escape, type]);
+        // LaTeX: commands, what they're given, comments, escapes, and maths over lines
+        auto tex = languageNamed("LaTeX");
+        assert(languageFor("thesis.tex") is tex);
+        st = LineState.init;
+        assert(kinds(tex, `\section{Results} % to do`, st) == [keyword, heading, comment]);
+        assert(kinds(tex, `\begin{figure}[h]`, st) == [keyword, type]);
+        assert(kinds(tex, `see \ref{fig:a}, 50\% of \emph{it}`, st) == [keyword, property, escape, function_]);
+        assert(kinds(tex, `where $x^2$ is`, st) == [string_]);
+        st = LineState.init;
+        kinds(tex, `\[ a = b`, st);
+        assert(st.kind == LineState.Kind.math, "display maths runs on");
+        assert(kinds(tex, `  + c \] then`, st) == [string_] && st.kind == LineState.Kind.none);
         // Python: a decorator, and a triple-quoted string over lines
         auto py = languageNamed("Python");
         st = LineState.init;

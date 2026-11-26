@@ -1,3 +1,9 @@
 .dub
-/code-editor
 /latex-editor
+/latex-editor-test-*
+# PDFium, copied here by mayfair-pdf
+/libpdfium.so
+/libpdfium.dylib
+/pdfium.dll
+# What compiling the sample project leaves
+/sample/.build/

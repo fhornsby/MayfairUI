@@ -96,6 +96,14 @@ public:
     /// Called when a link to a web address -- not a page of the document -- is clicked.
     PdfView onExternalLink(void delegate(string uri) handler) { _onExternalLink = handler; return this; }
 
+    /*
+        Hears a page pressed with the select tool, before the view does anything with it: which
+        page, where on it in its points (unturned, from its top left), and which click of a run it
+        is, 2 for a double click. Returning true takes the press from the view: a LaTeX editor's
+        double click, going to the source it was made from.
+    */
+    PdfView onPagePressed(bool delegate(int page, float x, float y, int clicks) handler) { _onPagePressed = handler; return this; }
+
     /// Scrolls to page `index`, from 0: its top, or `y` points down it, if given.
     void goToPage(int index, float y = float.nan)
     {
@@ -399,6 +407,7 @@ protected:
 private:
     PdfPages pages;
     void delegate(string) _onExternalLink;
+    bool delegate(int, float, float, int) _onPagePressed;
     void delegate(int, PdfAnnotation) _onEditAnnotation;
 
     /// A key while a form field has focus: whether it was the field's.
@@ -1313,6 +1322,8 @@ private:
         moved = false;
         gesture = Gesture.none;
         const tool = view._tool;
+        if (tool == PdfTool.select && view._onPagePressed && view._onPagePressed(page, px, py, clicks))
+            return; // the app's
         auto list = doc.cachedAnnotations(page);
         with (PdfTool) switch (tool)
         {

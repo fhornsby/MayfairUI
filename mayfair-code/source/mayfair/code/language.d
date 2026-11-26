@@ -72,6 +72,7 @@ final class Language
     bool sectionHeaders;     /// a line "[name]" is a heading: TOML's, INI's
     bool markup;             /// HTML or XML: <tags attr="value">, &entities;
     bool markdown;           /// Markdown, read a line at a time
+    bool tex;                /// TeX and LaTeX: \commands, % comments, $maths$
     bool css;                /// CSS: properties, selectors, #colours
     bool insertSpaces = true;/// indented with spaces, not tabs
     int tabWidth = 4;
@@ -392,6 +393,11 @@ Language[] define()
     all ~= lang("Markdown", ["md", "markdown", "mdown"], (l) {
         l.fileNames = ["README", "CHANGELOG"];
         l.markdown = true;
+        l.tabWidth = 2;
+    });
+    all ~= lang("LaTeX", ["tex", "latex", "ltx", "sty", "cls", "dtx"], (l) {
+        l.lineComment = "%";
+        l.tex = true;
         l.tabWidth = 2;
     });
     all ~= lang("SQL", ["sql"], (l) {

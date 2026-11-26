@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The title bar: a Header (header.d), which <root> stands for. The files' button at its start,
+    the project's name in the middle, and at its end the button to show the place in the PDF the
+    caret's at, and a menu of the rest.
+-->
+<root>
+    <atStart>
+        <Button onAction="toggleFiles" tooltip="%files_panel" accessibleText="%files_panel">
+            <graphic><Icon iconName="sidebar-show-symbolic"/></graphic>
+        </Button>
+    </atStart>
+    <atEnd>
+        <Row spacing="2" alignment="centreLeft">
+            <Button onAction="goToPdf" tooltip="%go_to_pdf" accessibleText="%go_to_pdf">
+                <graphic><Icon iconName="go-next-symbolic"/></graphic>
+            </Button>
+            <Button onAction="togglePdf" tooltip="%pdf_panel" accessibleText="%pdf_panel">
+                <graphic><Icon iconName="x-office-document-symbolic"/></graphic>
+            </Button>
+            <MenuButton accessibleText="%menu">
+                <graphic><Icon iconName="open-menu-symbolic"/></graphic>
+                <menu>
+                    <ContextMenu>
+                        <MenuItem text="%open_project" accelerator="Ctrl+O" onAction="openProject"/>
+                        <MenuItem text="%new_file" accelerator="Ctrl+N" onAction="newFile"/>
+                        <MenuSeparator/>
+                        <MenuItem text="%save" accelerator="Ctrl+S" onAction="save"/>
+                        <MenuItem text="%save_all" accelerator="Ctrl+Shift+S" onAction="saveAll"/>
+                        <MenuItem text="%close_tab" accelerator="Ctrl+W" onAction="closeTab"/>
+                        <MenuSeparator/>
+                        <MenuItem text="%recompile" accelerator="Ctrl+Enter" onAction="compile"/>
+                        <MenuItem text="%go_to_pdf" accelerator="Ctrl+." onAction="goToPdf"/>
+                        <MenuItem text="%files_panel" accelerator="F9" onAction="toggleFiles"/>
+                        <MenuItem text="%pdf_panel" accelerator="F10" onAction="togglePdf"/>
+                    </ContextMenu>
+                </menu>
+            </MenuButton>
+        </Row>
+    </atEnd>
+</root>

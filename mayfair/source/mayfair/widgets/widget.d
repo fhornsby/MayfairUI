@@ -158,6 +158,7 @@ public:
         else
             YGNodeInsertChild(node, child.node, index);
         placeChild(child);
+        childAdded(child);
         invalidateAccessible(); // its list of children changed
         child.refreshDisabled(); // it's disabled now if this is
         if (scene)
@@ -781,6 +782,9 @@ protected:
 
     /// Called when `child` has been taken out from below this widget.
     void childRemoved(Widget child) {}
+
+    /// Called when `child` has been put below this widget, by add() or adopt(), once it's in place.
+    void childAdded(Widget child) {}
 
     /*
         Something to do in the next update, when it's safe to allocate and change properties: for

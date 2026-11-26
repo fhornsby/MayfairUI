@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import mayfair.pdf?>
+<?import compiler?>
+<!--
+    The PDF, as it was last compiled: what's in a PreviewPane (preview.d), which <root> stands for.
+    A toolbar -- recompiling, compiling as you type, the logs, the page and the zoom -- then the
+    PDF, and under it the logs, shown when Logs is pressed: how the compile went, the engine to
+    compile with, and the errors and warnings. Double-click the PDF to go to the line it was
+    made from.
+-->
+<root styleClass="page preview-pane">
+    <Row styleClass="toolbar" spacing="4" alignment="centreLeft">
+        <Button id="compileButton" text="%recompile" styleClass="recompile" onAction="compile"/>
+        <ToggleButton id="autoButton" text="%auto_compile" onAction="autoChanged"/>
+        <ToggleButton id="logsButton" text="%logs" onAction="toggleLogs"/>
+        <Row grow="1"/>
+        <Label id="pageLabel"/>
+        <Button onAction="zoomOut" tooltip="%zoom_out" accessibleText="%zoom_out">
+            <graphic><Icon iconName="zoom-out-symbolic"/></graphic>
+        </Button>
+        <Button onAction="zoomIn" tooltip="%zoom_in" accessibleText="%zoom_in">
+            <graphic><Icon iconName="zoom-in-symbolic"/></graphic>
+        </Button>
+        <Button onAction="fitWidth" tooltip="%fit_width" accessibleText="%fit_width">
+            <graphic><Icon iconName="zoom-fit-best-symbolic"/></graphic>
+        </Button>
+    </Row>
+    <Stack grow="1">
+        <PdfView id="pdf"/>
+        <Label id="placeholder" text="%not_compiled" styleClass="placeholder"/>
+    </Stack>
+    <!-- The logs: how the last compile went, with which engine, and its errors and warnings -->
+    <Column id="logPane" styleClass="log-pane" prefHeight="200" visible="false">
+        <Row styleClass="heading" spacing="8" alignment="centreLeft">
+            <Label id="statusLabel" grow="1"/>
+            <ComboBox id="engineBox" items="%engine_pdflatex %engine_xelatex %engine_lualatex"/>
+        </Row>
+        <ListView id="problemList" of="Problem" grow="1" placeholder="%no_problems"/>
+    </Column>
+</root>

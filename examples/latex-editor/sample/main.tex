@@ -1,0 +1,38 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+
+\title{A Sample for OverBrief}
+\author{Mayfair}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  A short document in two files, to try the editor with: change something and press
+  Ctrl+Enter, or turn Auto on and just type. Double-click the PDF to go to the line that made it.
+\end{abstract}
+
+\input{sections/introduction}
+
+\section{Some maths}
+\label{sec:maths}
+
+The area of a circle of radius $r$ is $\pi r^2$, and its circumference is
+\begin{equation}
+  C = 2 \pi r. \label{eq:circumference}
+\end{equation}
+Euler's identity ties five constants together:
+\[
+  e^{i\pi} + 1 = 0
+\]
+Equation~\eqref{eq:circumference} is used in Section~\ref{sec:introduction}.
+
+\section{A list}
+\begin{itemize}
+  \item Files down the left, in a tree.
+  \item The source in the middle, highlighted as LaTeX.
+  \item The PDF on the right, compiled by latexmk.
+\end{itemize}
+
+\end{document}

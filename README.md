@@ -67,7 +67,7 @@ and adds the toolkit around them.
 
 - **Widgets:** buttons, check boxes, toggles, text fields and areas, password fields, sliders,
   progress bars, combo boxes, menus, dialogs, tabs, list, tree and table views (virtualised, so
-  they scale to large data), a navigation sidebar, a scroll pane, a canvas, images, icons, Lottie
+  they scale to large data), a navigation sidebar, a scroll pane, a split pane, a canvas, images, icons, Lottie
   animations, and LiteWebView for simple HTML.
 - **GPU views:** `GpuView` is drawn by the app itself, with WebGPU: a 3D view, a CAD model, a
   game. It draws into a texture on the window's own GPU, which goes in the window in its place
@@ -113,9 +113,9 @@ In packages of their own:
   with the view's markup tools; forms filled in; every change undoable. They're read with PDFium
   (BSD), which the package downloads prebuilt as it's built and puts beside the app: one
   dependency, nothing to set up.
-- **Code editing:** [`mayfair-code`](mayfair-code) highlights a `TextView` in 24 languages, as
-  it's edited. It connects the view to language servers (pyright, clangd, rust-analyzer, gopls,
-  serve-d and others), which give errors underlined as you type, completions, hovers, and going
+- **Code editing:** [`mayfair-code`](mayfair-code) highlights a `TextView` in 25 languages, LaTeX
+  among them, as it's edited. It connects the view to language servers (pyright, clangd, rust-analyzer, gopls,
+  serve-d, texlab and others), which give errors underlined as you type, completions, hovers, and going
   to a definition. It has no libraries: the servers are separate programs, found on `PATH`.
 - **A terminal:** [`mayfair-terminal`](mayfair-terminal), on alacritty_terminal.
 
@@ -185,6 +185,7 @@ download fails. To choose for yourself:
 | [`hello-xml`](examples/hello-xml) | Hello world, its window written in XML, with widgets of its own |
 | [`hello-web`](examples/hello-web) | The same, in a browser |
 | [`markdown-editor`](examples/markdown-editor) | A Markdown editor: a folder's files, a tab per document, and a live preview |
+| [`latex-editor`](examples/latex-editor) | OverBrief, a LaTeX editor in the manner of Overleaf: a project's files, the source and the PDF side by side, compiled with latexmk, SyncTeX both ways. Laid out in XML, a view and a module for each part |
 | [`code-editor`](examples/code-editor) | A code editor in the Oriel theme: a folder's files, a tab per file, highlighting, and language servers for errors, completions and definitions |
 | [`pdf-viewer`](examples/pdf-viewer) | A PDF viewer and editor, modelled on macOS's Preview, in the Oriel theme: markup, signatures, forms, page editing, export and printing |
 | [`gpu-cube`](examples/gpu-cube) | A `GpuView`: a lit cube drawn with WebGPU, spinning, and turned by dragging it |
@@ -208,7 +209,8 @@ What's still to be done, that I know of:
 - Justified text: `TextAlignment.justify` lines text up on the left for now.
 
 **Text editing**
-- Line wrapping in `TextView`. Lines scroll sideways for now.
+- Line wrapping in `TextView`. Lines scroll sideways for now, which the LaTeX editor feels most:
+  its paragraphs are long lines.
 - More than one caret, and column selections.
 - Right-to-left and mixed-direction lines in `TextView`. They're shaped, but the caret and
   selection only approximate where they should be.

@@ -117,6 +117,21 @@ public:
             b.setVisible(_showWindowButtons && b._wanted);
     }));
 
+    /*
+        What goes at its start, and at its end, as a view says it: one widget each, a Row of
+        buttons, say, put there as addStart() and addEnd() put them, and taken away again if
+        another's set.
+
+            <TitleBar title="Notes">
+                <atStart><Button iconName="sidebar-show-symbolic"/></atStart>
+                <atEnd><Row><Button text="Share"/></Row></atEnd>
+            </TitleBar>
+    */
+    mixin(declareProperty!(Widget, "atStart", "null", q{ replace(_start, shownAtStart, _atStart, true); }));
+
+    /// ditto
+    mixin(declareProperty!(Widget, "atEnd", "null", q{ replace(_end, shownAtEnd, _atEnd, false); }));
+
     /// Adds `w` at the start, after what's there. Returns this, so calls chain.
     final TitleBar addStart(Widget w)
     {
@@ -149,6 +164,23 @@ public:
 
 private:
     float sidebarEdge = 0;
+    Widget shownAtStart, shownAtEnd; // what atStart and atEnd last put there
+
+    void replace(Row row, ref Widget shown, Widget now, bool start)
+    {
+        if (shown is now)
+            return;
+        if (shown && shown.parent is row)
+            row.remove(shown);
+        shown = now;
+        if (now)
+        {
+            if (start)
+                addStart(now);
+            else
+                addEnd(now);
+        }
+    }
 
 protected:
     override bool takesChildren() const nothrow @nogc { return false; }

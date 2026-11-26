@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The app's text, in UK English. A view puts one in with %id, and code with tr!"id"; to
+     translate it, name more languages on <strings> and give each string its text in them, as
+     examples/oriel-hello does. -->
+<strings>
+    <string id="app_name">OverBrief</string>
+    <string id="files">Files</string>
+    <string id="no_project">No project open</string>
+    <string id="new_file">New file</string>
+    <string id="new_folder">New folder</string>
+    <string id="refresh">Refresh</string>
+    <string id="recompile">Recompile</string>
+    <string id="compiling">Compiling…</string>
+    <string id="compiled">Compiled in {0}</string>
+    <string id="compile_failed">Didn't compile: {0}</string>
+    <string id="not_compiled">Recompile to see the PDF</string>
+    <string id="auto_compile">Auto</string>
+    <string id="logs">Logs</string>
+    <string id="problems">{0} errors, {1} warnings</string>
+    <string id="no_problems">No errors or warnings</string>
+    <string id="page_of">Page {0} of {1}</string>
+    <string id="zoom_in">Zoom in</string>
+    <string id="zoom_out">Zoom out</string>
+    <string id="fit_width">Fit to width</string>
+    <string id="go_to_pdf">Show in PDF</string>
+    <string id="files_panel">Show or hide the files</string>
+    <string id="pdf_panel">Show or hide the PDF</string>
+    <string id="menu">Menu</string>
+    <string id="open_project">Open Project…</string>
+    <string id="save">Save</string>
+    <string id="save_all">Save All</string>
+    <string id="close_tab">Close Tab</string>
+    <string id="main_file">Main file: {0}</string>
+    <string id="position">Ln {0}, Col {1}</string>
+    <string id="name_prompt">Name</string>
+    <string id="create">Create</string>
+    <string id="cancel">Cancel</string>
+    <string id="save_changes">Save the changes to “{0}”?</string>
+    <string id="lost">If you don't, they're lost.</string>
+    <string id="dont_save">Don't Save</string>
+    <string id="no_tex">No LaTeX found: install TeX Live (latexmk and pdflatex)</string>
+    <string id="no_server">No LaTeX language server: install texlab for completions and checking</string>
+    <string id="engine_pdflatex">pdfLaTeX</string>
+    <string id="engine_xelatex">XeLaTeX</string>
+    <string id="engine_lualatex">LuaLaTeX</string>
+</strings>

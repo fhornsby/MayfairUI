@@ -23,6 +23,7 @@ public import mayfair.widgets.canvas;
 public import mayfair.widgets.gpuview;
 public import mayfair.widgets.litewebview;
 public import mayfair.widgets.scrollpane;
+public import mayfair.widgets.splitpane;
 public import mayfair.widgets.tabpane;
 public import mayfair.widgets.navigationlist;
 public import mayfair.widgets.popup;

@@ -81,13 +81,13 @@ rescans from the line it's on until a line ends in the same state as before. Typ
 one line. Opening a `/*` costs the lines down to where it's closed. A file opened is highlighted
 in slices between frames, so a large one shows at once and fills in its colours as it goes.
 
-There are 24 languages:
+There are 25 languages:
 
 - **Programming languages:** D, C, C++, C#, Java, JavaScript, TypeScript, Python, Rust, Go, Ruby
   and Lua.
 - **Shell and build files:** shell scripts, Makefiles and Dockerfiles.
 - **Data and configuration:** JSON, YAML, TOML and INI.
-- **Markup and styles:** CSS, HTML, XML and Markdown.
+- **Markup and styles:** CSS, HTML, XML, Markdown and LaTeX.
 - **Queries:** SQL.
 
 For another language, fill in a `Language` of your own and give it to `SyntaxHighlighter`.
@@ -124,6 +124,7 @@ their own and handled on the UI thread, so a slow server never holds up typing.
 | Ruby | `solargraph`, `ruby-lsp` |
 | HTML, CSS, JSON | `vscode-html-language-server`, `-css-`, `-json-` |
 | YAML | `yaml-language-server` |
+| LaTeX | `texlab` |
 
 Or start any server with `new LanguageServer(command, rootFolder)`.
 

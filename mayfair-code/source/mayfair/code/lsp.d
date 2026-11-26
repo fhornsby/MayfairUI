@@ -101,6 +101,7 @@ public:
             case "C#": return [["csharp-ls"], ["OmniSharp", "-lsp"]];
             case "Java": return [["jdtls"]];
             case "Zig": return [["zls"]];
+            case "LaTeX": return [["texlab"]];
             case "Ruby": return [["solargraph", "stdio"], ["ruby-lsp"]];
             case "HTML": return [["vscode-html-language-server", "--stdio"]];
             case "CSS": return [["vscode-css-language-server", "--stdio"]];

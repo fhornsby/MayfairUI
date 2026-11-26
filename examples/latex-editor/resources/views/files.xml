@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import project?>
+<!--
+    The project's files: what's in a FilesPane (files.d), which <root> stands for. A heading with
+    buttons to make a file or a folder, and the folder's tree, each folder opened as it's
+    expanded. On the sidebar's frosted glass, in the Oriel theme.
+-->
+<root styleClass="sidebar files-pane" spacing="2">
+    <Row spacing="2" alignment="centreLeft" padding="4 2 4 8">
+        <Label text="%files" styleClass="pane-heading" grow="1"/>
+        <Button onAction="newFile" tooltip="%new_file" accessibleText="%new_file">
+            <graphic><Icon iconName="document-new-symbolic"/></graphic>
+        </Button>
+        <Button onAction="newFolder" tooltip="%new_folder" accessibleText="%new_folder">
+            <graphic><Icon iconName="folder-new-symbolic"/></graphic>
+        </Button>
+        <Button onAction="refresh" tooltip="%refresh" accessibleText="%refresh">
+            <graphic><Icon iconName="view-refresh-symbolic"/></graphic>
+        </Button>
+    </Row>
+    <TreeView id="tree" of="Entry" showRoot="false" placeholder="%no_project" grow="1"/>
+</root>

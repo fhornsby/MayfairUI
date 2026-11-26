@@ -49,6 +49,7 @@ kept once read. `close()` lets go of it.
 | Selecting | dragging across text, across pages, a word by a double click, `selectAll`; `copySelection` or Ctrl+C |
 | Searching | `find`, with every match highlighted as pages are searched, `findNext`, `findPrevious`, `matchCount`, `currentMatch` |
 | Links | to a page, followed; to the web, handed to `onExternalLink` |
+| Pressing | `onPagePressed` hears a page pressed, with the place on it, before the view acts on it: a LaTeX editor's double click, to go to the source |
 
 **`PdfThumbnails`** lists the pages, small, and marks the current one. Pages are selected with
 clicks (Ctrl and Shift for more), moved by dragging (`onPagesMoved`), and deleted with Delete

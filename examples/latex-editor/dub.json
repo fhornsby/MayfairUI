@@ -3,7 +3,7 @@
 		"Freddie Hornsby"
 	],
 	"copyright": "Copyright © 2026, Freddie Hornsby",
-	"description": "A latex editor: a folder's files, a tab per file, highlighting, and language servers, with Mayfair's TextView and mayfair-code.",
+	"description": "OverBrief: a LaTeX editor in the manner of Overleaf, with a project's files, an editor and the PDF side by side, built with Mayfair, mayfair-code and mayfair-pdf.",
 	"license": "MIT",
 	"name": "latex-editor",
 	"dependencies": {
@@ -12,6 +12,9 @@
 		},
 		"mayfair-code": {
 			"path": "../../mayfair-code"
+		},
+		"mayfair-pdf": {
+			"path": "../../mayfair-pdf"
 		}
 	},
 	"stringImportPaths": [
