@@ -18,7 +18,7 @@ pdf-viewer-test-*
 /trace*.txt
 /strace.log
 /perf.data
-# PDFium, copied here by mayfair-pdfium
+# PDFium, copied here by mayfair-pdf
 /libpdfium.so
 /libpdfium.dylib
 /pdfium.dll

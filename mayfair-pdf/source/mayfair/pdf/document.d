@@ -11,9 +11,8 @@ import mayfair.windowing.platform : Platform;
 
 /*
     A PDF, opened: its pages, what it says about itself, its outline, and its pages' pictures, text
-    and links, read by the app's engine on the PDF thread (see mayfair.pdf.thread).
+    and links, read by PDFium on the PDF thread (see mayfair.pdf.thread).
 
-        PdfDocument.setEngine(new PdfiumEngine);       // once: the app's choice
         auto doc = PdfDocument.open("/home/me/report.pdf");
         doc.statusProperty.addListener((PdfStatus was, PdfStatus now) { ... });
 
@@ -65,7 +64,8 @@ public:
         return doc;
     }
 
-    /// What PDFs are read with: given once, before the first is opened. False if it's too late to change.
+    /// What PDFs are read with: PDFium (mayfair.pdf.pdfium) unless another's given, once, before
+    /// the first is opened -- a test's fake, say. False if it's too late to change.
     static bool setEngine(PdfEngine engine) { return PdfThread.setEngine(engine); }
 
     /// ditto

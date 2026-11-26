@@ -1,8 +1,8 @@
 # PDF Viewer
 
 A PDF viewer and editor built with Mayfair, modelled on Preview, the one macOS comes with. It's
-built with [mayfair-pdf](../../mayfair-pdf), and reads and writes PDFs with
-[mayfair-pdfium](../../mayfair-pdfium). The build downloads PDFium the first time.
+built with [mayfair-pdf](../../mayfair-pdf), which reads and writes PDFs with PDFium. The build
+downloads PDFium the first time.
 
 ```sh
 dub run                      # open a PDF, drop one on the window, or open the tour
@@ -80,5 +80,5 @@ What Preview does that this doesn't, or does differently:
 In a Linux container, on Xvfb, with real pointer and keyboard input, on the CPU and WebGPU
 renderers: opening and reading, every markup tool, moving and undoing annotations, filling in a
 form, rotating, reordering and deleting pages, signatures, search, the slideshow, saving and
-document info. mayfair-pdfium's tests cover the same ground automatically. Printing was tried
+document info. mayfair-pdf's tests cover the same ground automatically. Printing was tried
 only as far as finding no printer. macOS, Windows, Wayland and a real GPU haven't been tried.

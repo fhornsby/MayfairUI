@@ -10,7 +10,6 @@ import std.stdio : writefln, writeln;
 import harness;
 import mayfair;
 import mayfair.pdf;
-import mayfair.pdf.pdfium;
 
 /*
     End-to-end tests for mayfair-pdf on PDFium: real PDFs, read by PDFium on the PDF thread, shown
@@ -20,7 +19,7 @@ import mayfair.pdf.pdfium;
 */
 void main()
 {
-    PdfDocument.setEngine(new PdfiumEngine);
+    // No engine set: documents are read with PDFium, as an app's are
     opening();
     errorsAndPasswords();
     rendering();

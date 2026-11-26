@@ -1,10 +1,10 @@
 {
-	"name": "mayfair-pdfium-tests",
-	"description": "End-to-end tests for mayfair-pdf on PDFium: real PDFs, real windows",
+	"name": "mayfair-pdf-tests",
+	"description": "End-to-end tests for mayfair-pdf: real PDFs read by PDFium, in real windows",
 	"license": "MIT",
 	"targetType": "executable",
 	"dependencies": {
-		"mayfair-pdfium": {
+		"mayfair-pdf": {
 			"path": ".."
 		}
 	},

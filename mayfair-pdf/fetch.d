@@ -1,8 +1,8 @@
 /+ dub.sdl:
-    name "mayfair-pdfium-fetch"
+    name "mayfair-pdf-fetch"
 +/
 /*
-    PDFium, there before mayfair-pdfium's built: few systems package it, so this downloads a
+    PDFium, there before mayfair-pdf's built: few systems package it, so this downloads a
     prebuilt one from the pdfium-binaries project (github.com/bblanchon/pdfium-binaries), at the
     version below, checks it against the checksum pinned here for its platform, and unpacks it
     into pdfium/ beside this script: its library, its licences, and its headers (which
@@ -45,7 +45,7 @@ int main(string[] args)
     const platform = thisPlatform;
     if (platform !in checksums)
     {
-        writeln("pdfium-binaries has no PDFium for ", platform, ": mayfair-pdfium will use the system's, "
+        writeln("pdfium-binaries has no PDFium for ", platform, ": mayfair-pdf will use the system's, "
                 ~ "or MAYFAIR_PDFIUM's");
         return 0;
     }
@@ -80,7 +80,7 @@ int main(string[] args)
     catch (Exception e)
     {
         stderr.writeln("PDFium couldn't be downloaded: ", e.msg);
-        stderr.writeln("mayfair-pdfium will use the system's PDFium, or MAYFAIR_PDFIUM's, if there is one");
+        stderr.writeln("mayfair-pdf will use the system's PDFium, or MAYFAIR_PDFIUM's, if there is one");
         return 0;
     }
 }

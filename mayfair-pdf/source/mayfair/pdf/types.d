@@ -84,7 +84,7 @@ struct PdfError
 enum PdfErrorKind
 {
     none,
-    noEngine,           /// No engine to read it with: see PdfDocument.setEngine
+    noEngine,           /// No engine to read it with: one given to PdfDocument.setEngine was null
     engineUnavailable,  /// The engine couldn't start: its library isn't there, say
     notFound,           /// There's no file there
     unreadable,         /// It couldn't be read

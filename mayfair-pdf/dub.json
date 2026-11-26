@@ -3,7 +3,7 @@
 		"Freddie Hornsby"
 	],
 	"copyright": "Copyright © 2026, Freddie Hornsby",
-	"description": "PDFs for Mayfair: PdfDocument, PdfView and PdfThumbnails, read by an engine of the app's choosing",
+	"description": "PDFs for Mayfair: PdfDocument, PdfView and PdfThumbnails, read with PDFium, downloaded prebuilt as it's built",
 	"license": "MIT",
 	"name": "mayfair-pdf",
 	"targetType": "library",
@@ -12,6 +12,21 @@
 			"path": "../mayfair"
 		}
 	},
+	"preGenerateCommands": [
+		"\"$DUB\" run --quiet --single \"$PACKAGE_DIR/fetch.d\" -- \"$PACKAGE_DIR\""
+	],
+	"copyFiles-linux": [
+		"pdfium/lib/libpdfium.so"
+	],
+	"copyFiles-osx": [
+		"pdfium/lib/libpdfium.dylib"
+	],
+	"copyFiles-windows": [
+		"pdfium/bin/pdfium.dll"
+	],
+	"libs-posix": [
+		"dl"
+	],
 	"toolchainRequirements": {
 		"frontend": ">=2.111.0",
 		"gdc": "no"

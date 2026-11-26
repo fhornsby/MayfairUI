@@ -61,7 +61,8 @@ struct PdfThread
 {
     @disable this(); // namespace only
 
-    /// The engine documents are opened with. Set once, before the first document; after, it can't change.
+    /// The engine documents are opened with: PDFium's, unless another's set, once, before the
+    /// first document; after, it can't change.
     static bool setEngine(PdfEngine engine)
     {
         synchronized (lock)
@@ -110,9 +111,11 @@ struct PdfThread
             {
                 started = true;
                 if (!chosen)
-                    startFailure = "no PDF engine: give PdfDocument.setEngine one, such as mayfair-pdfium's PdfiumEngine";
-                else
-                    engineToStart = chosen;
+                {
+                    import mayfair.pdf.pdfium : PdfiumEngine;
+                    chosen = new PdfiumEngine; // none set: PDFium, which this package downloads
+                }
+                engineToStart = chosen;
             }
             engine = chosen;
         }

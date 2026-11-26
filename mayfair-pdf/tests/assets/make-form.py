@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Makes form.pdf, for mayfair-pdfium's form tests: one page with a text field, a multi-line one,
+Makes form.pdf, for mayfair-pdf's form tests: one page with a text field, a multi-line one,
 a checkbox, two radio buttons and a drop-down list, at known places. Needs ReportLab.
 
     python3 make-form.py

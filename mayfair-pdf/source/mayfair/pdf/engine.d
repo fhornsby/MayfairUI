@@ -1,9 +1,10 @@
 module mayfair.pdf.engine;
 
 /*
-    What reads PDFs: an engine, chosen by the app (see PdfDocument.setEngine). mayfair-pdfium is one;
-    another -- on MuPDF or Poppler, under their own licences -- implements the same two interfaces,
-    and nothing in PdfDocument, PdfView or PdfThumbnails changes.
+    What reads PDFs: an engine. PDFium's (mayfair.pdf.pdfium) is the one this package has, and
+    what documents are read with unless the app gives another (see PdfDocument.setEngine): a
+    test's fake, say. Another implements the same two interfaces, and nothing in PdfDocument,
+    PdfView or PdfThumbnails changes.
 
     An engine is simple on purpose: everything here is synchronous, and called on the one PDF thread
     only (see mayfair.pdf.thread), so an engine that isn't thread-safe -- PDFium isn't -- needs no

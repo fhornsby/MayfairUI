@@ -16,12 +16,10 @@
 */
 import mayfair;
 import mayfair.pdf;
-import mayfair.pdf.pdfium;
 import viewer;
 
 void main(string[] args)
 {
-    PdfDocument.setEngine(new PdfiumEngine);
     auto app = new App("PDF Viewer");
     app.setSize(1180, 820);
     auto first = openWindow(null, app.window);

@@ -2,11 +2,7 @@ module mayfair.pdf.pdfium;
 
 /*
     A PdfEngine on PDFium: Google's PDF library, Chrome's, BSD-3-Clause and Apache-2.0 licensed.
-
-        import mayfair.pdf;
-        import mayfair.pdf.pdfium;
-
-        PdfDocument.setEngine(new PdfiumEngine);
+    It's what documents are read with, unless an app gives PdfDocument.setEngine another.
 
     PDFium is found at run time, the first time a document's opened, not linked: so an app builds
     without it, and one run where it's missing has its documents fail with

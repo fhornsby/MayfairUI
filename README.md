@@ -110,8 +110,9 @@ In packages of their own:
 - **PDFs:** [`mayfair-pdf`](mayfair-pdf) has `PdfDocument`, and `PdfView` to read one in: zoom,
   search, selecting and copying text, links, and a sidebar of thumbnails and contents. Documents
   can be edited and saved: pages rotated, moved, deleted, inserted and cropped; annotations made
-  with the view's markup tools; forms filled in; every change undoable.
-  [`mayfair-pdfium`](mayfair-pdfium) reads them with PDFium (BSD), downloaded as it's built.
+  with the view's markup tools; forms filled in; every change undoable. They're read with PDFium
+  (BSD), which the package downloads prebuilt as it's built and puts beside the app: one
+  dependency, nothing to set up.
 - **Code editing:** [`mayfair-code`](mayfair-code) highlights a `TextView` in 24 languages, as
   it's edited. It connects the view to language servers (pyright, clangd, rust-analyzer, gopls,
   serve-d and others), which give errors underlined as you type, completions, hovers, and going
