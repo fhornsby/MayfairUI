@@ -1,0 +1,20 @@
+{
+	"authors": [
+		"Freddie Hornsby"
+	],
+	"copyright": "Copyright © 2026, Freddie Hornsby",
+	"description": "A latex editor: a folder's files, a tab per file, highlighting, and language servers, with Mayfair's TextView and mayfair-code.",
+	"license": "MIT",
+	"name": "latex-editor",
+	"dependencies": {
+		"mayfair": {
+			"path": "../../mayfair"
+		},
+		"mayfair-code": {
+			"path": "../../mayfair-code"
+		}
+	},
+	"stringImportPaths": [
+		"resources"
+	]
+}
