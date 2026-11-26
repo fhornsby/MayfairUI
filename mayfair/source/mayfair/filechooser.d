@@ -81,6 +81,19 @@ public:
         return this;
     }
 
+    /*
+        What to do if the desktop can't show a dialog at all -- on Linux, with neither
+        xdg-desktop-portal's file chooser nor zenity -- in place of handing the chosen function
+        nothing, as for a cancel: `why` says what SDL said. An app can ask another way, such as
+        for a path typed in. Without it, a dialog that can't be shown is a cancel, and a warning
+        in the log.
+    */
+    final FileChooser onUnavailable(void delegate(string why) handler)
+    {
+        _onUnavailable = handler;
+        return this;
+    }
+
     /// Asks for a file to open, and hands `chosen` its path, or null if none was chosen.
     final void showOpenDialog(Widget owner, void delegate(string path) chosen)
     {
@@ -121,12 +134,14 @@ package(mayfair):
 
 private:
     string _title, _initialDirectory, _initialFileName, _acceptText;
+    void delegate(string) _onUnavailable;
     ExtensionFilter[] _filters;
 
     void show(SDL_FileDialogType type, Widget owner, bool many, void delegate(string[]) chosen)
     {
         auto request = new Request;
         request.chosen = chosen;
+        request.unavailable = _onUnavailable;
         foreach (f; _filters)
             request.filters ~= SdlFilter(f.description.toStringz, patternOf(f.extensions).toStringz);
 
@@ -169,6 +184,7 @@ struct SdlFilter
 final class Request
 {
     void delegate(string[]) chosen;
+    void delegate(string) unavailable; // if there's no dialog to show
     SdlFilter[] filters; // kept, with their strings, for as long as SDL might read them
 }
 
@@ -211,6 +227,11 @@ void hand(void* data, const(const(char)*)* list)
         auto request = outstanding[data];
         outstanding.remove(data);
         asked--;
+        if (error.length && request.unavailable)
+        {
+            request.unavailable(error);
+            return;
+        }
         if (error.length)
             logWarning("FileChooser: no dialog to show: %.*s", cast(int) error.length, error.ptr);
         request.chosen(paths);

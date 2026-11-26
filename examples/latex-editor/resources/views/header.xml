@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    The title bar: a Header (header.d), which <root> stands for. The files' button at its start,
-    the project's name in the middle, and at its end the button to show the place in the PDF the
-    caret's at, and a menu of the rest.
+    The title bar: a Header (header.d), which <root> stands for. At its start the buttons to show
+    the files and to open a folder; the project's name in the middle; and at its end the button
+    to show the place in the PDF the caret's at, and a menu of the rest, ending with the projects
+    opened lately, which header.d adds as they change.
 -->
 <root>
     <atStart>
-        <Button onAction="toggleFiles" tooltip="%files_panel" accessibleText="%files_panel">
-            <graphic><Icon iconName="sidebar-show-symbolic"/></graphic>
-        </Button>
+        <Row spacing="2" alignment="centreLeft">
+            <Button onAction="toggleFiles" tooltip="%files_panel" accessibleText="%files_panel">
+                <graphic><Icon iconName="sidebar-show-symbolic"/></graphic>
+            </Button>
+            <Button onAction="openFolder" tooltip="%open_folder" accessibleText="%open_folder">
+                <graphic><Icon iconName="folder-open-symbolic"/></graphic>
+            </Button>
+        </Row>
     </atStart>
     <atEnd>
         <Row spacing="2" alignment="centreLeft">
@@ -21,8 +27,8 @@
             <MenuButton accessibleText="%menu">
                 <graphic><Icon iconName="open-menu-symbolic"/></graphic>
                 <menu>
-                    <ContextMenu>
-                        <MenuItem text="%open_project" accelerator="Ctrl+O" onAction="openProject"/>
+                    <ContextMenu id="menu">
+                        <MenuItem text="%open_folder" accelerator="Ctrl+O" onAction="openFolder"/>
                         <MenuItem text="%new_file" accelerator="Ctrl+N" onAction="newFile"/>
                         <MenuSeparator/>
                         <MenuItem text="%save" accelerator="Ctrl+S" onAction="save"/>

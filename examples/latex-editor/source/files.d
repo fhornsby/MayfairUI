@@ -9,7 +9,8 @@ import project;
 /*
     The project's files, down the left: a FilesPane, laid out in files.xml. Choosing a file asks
     the workspace to open it (onOpen); the buttons along its top make a file or a folder, in the
-    folder chosen in the tree or the project's own, and refresh the tree.
+    folder chosen in the tree or the project's own, and refresh the tree. With no project open,
+    it has a button to open one instead (onOpenFolder).
 */
 @View("files.xml")
 final class FilesPane : Column
@@ -17,6 +18,9 @@ final class FilesPane : Column
 public:
     /// Hears a file chosen in the tree, to open.
     void delegate(string path) onOpen;
+
+    /// Hears Open Folder pressed, with no project open.
+    void delegate() onOpenFolder;
 
     this()
     {
@@ -28,11 +32,16 @@ public:
         });
     }
 
-    /// Shows `p`'s files.
+    /// Shows `p`'s files; or, for null, the button to open a project.
     void show(Project p)
     {
         project = p;
-        refresh();
+        tree.setVisible(p !is null);
+        noProject.setVisible(p is null);
+        if (p)
+            refresh();
+        else
+            tree.root = null;
     }
 
     /// Asks for a name, and makes a file -- or a folder -- of it in the folder chosen in the tree.
@@ -48,7 +57,10 @@ public:
 
 private:
     @xml TreeView!Entry tree;
+    @xml Column noProject;
     Project project;
+
+    void openFolder() { if (onOpenFolder) onOpenFolder(); }
 
     // Asks for a name, and makes it in the folder chosen in the tree -- or the one the chosen
     // file's in, or the project's -- then shows it, and opens a file

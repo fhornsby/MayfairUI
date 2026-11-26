@@ -4,6 +4,14 @@ A LaTeX editor in the manner of [Overleaf](https://www.overleaf.com), on the des
 project's files down the left, the file being edited in the middle, and the PDF it makes on the
 right, side by side in a `SplitPane` whose dividers are dragged to share out the room.
 
+- **Projects:** a project is a folder. To open another in its place, use any of these:
+  - Open Folder (the folder button in the title bar, or Ctrl+O);
+  - a project from Recent, at the end of the menu;
+  - a folder dropped on the window.
+
+  The project open is closed first, after asking about unsaved files. The one open last is
+  opened again at start-up. Where the desktop has no folder chooser to show (no
+  xdg-desktop-portal and no zenity), it asks for the folder's path instead.
 - **Files:** the project's folder, in a tree, with buttons to make a file or a folder.
 - **Editor:** a tab for each file open, highlighted as LaTeX by mayfair-code. Errors and warnings
   from the last compile are underlined at their lines, with a dot beside each.
@@ -32,7 +40,8 @@ dub run -- ~/thesis
 dub run -- ~/thesis/chapters/results.tex
 ```
 
-With no argument it opens the sample project in `sample/`. Given a folder, it opens that project;
+With no argument it opens the project open last time, or the first time the sample project in
+`sample/`. Given a folder, it opens that project;
 given a file, the project it's in, with the file open. The main file, the one compiled, is
 `main.tex` if there is one, or else the first `.tex` file with a `\documentclass`. What compiling
 makes goes in `.build/` in the project, out of the tree.
@@ -63,6 +72,7 @@ And three modules with no view, the app's logic:
 | `source/compiler.d` | Runs latexmk on a thread of its own, and reads its log for errors and warnings. |
 | `source/synctex.d` | Asks SyncTeX where a line is in the PDF, and which line made a place in it. |
 | `source/documents.d` | A file open in the editor: its buffer, view, tab, highlighting and problems. |
+| `source/recent.d` | The projects opened lately, kept in `~/.config/overbrief/recent`. |
 
 `source/app.d` is `main`. It makes the window, loads `main.xml` with a `Workspace`, gives it the
 title bar, and opens the project. `resources/strings.xml` has the app's text, which the views

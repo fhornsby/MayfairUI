@@ -3,9 +3,12 @@
     the left, the file being edited in the middle, and the PDF it makes on the right, compiled
     with the TeX that's installed, and SyncTeX going between the two.
 
-        dub run                       the sample project, in sample/
+        dub run                       the project open last time, or the sample in sample/
         dub run -- ~/thesis           a project's folder
         dub run -- ~/thesis/main.tex  a file, and the project it's in
+
+    Open Folder (Ctrl+O, or the folder in the title bar) opens another in its place, and so does
+    a folder dropped on the window; the menu lists those opened lately.
 
     The window's laid out in XML, a view for each part, and each part's code in a module of its own:
 
@@ -19,11 +22,12 @@
     and with no view of their own: project.d (the folder, and which file's the main one),
     documents.d (a file open in the editor), compiler.d (latexmk, and its log) and synctex.d.
 */
-import std.file : thisExePath;
+import std.file : exists, thisExePath;
 import std.path : buildPath, dirName;
 import mayfair;
 import mayfair.pdf;
 import header;
+import recent;
 import workspace;
 
 void main(string[] args)
@@ -43,6 +47,14 @@ void main(string[] args)
     app.setTranslucent(true);
     app.window.onCloseRequest(() => work.quitting());
 
-    work.openProject(args.length > 1 ? args[1] : buildPath(dirName(thisExePath), "sample"));
+    // The project named, or the one open last time, or the sample; or, with none of them there,
+    // none, and the files pane offers to open one
+    const last = recentProjects();
+    const sample = buildPath(dirName(thisExePath), "sample");
+    const start = args.length > 1 ? args[1] : last.length ? last[0] : exists(sample) ? sample : null;
+    if (start)
+        work.openProject(start);
+    else
+        work.header.showRecent(null);
     app.run();
 }

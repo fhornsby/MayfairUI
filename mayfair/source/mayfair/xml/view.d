@@ -1020,6 +1020,14 @@ unittest
     assert((cast(Label) column.children[0]).text == "One");
     assert((cast(Button) column.children[1]).text == "Two");
 
+    // A menu's items are add()ed, all of them: not set, one after another, as Popup's content
+    auto menu = View.parse!(`<ContextMenu>
+        <MenuItem text="Open"/>
+        <MenuSeparator/>
+        <MenuItem text="Quit"/>
+    </ContextMenu>`)();
+    assert(menu.items.length == 3 && (cast(MenuItem) menu.items[2]).text == "Quit");
+
     auto dock = View.parse!(layoutView, "layout.xml")();
     auto title = cast(Label) dock.top;
     assert(title.text == "Hello & welcome" && title.id == "title");

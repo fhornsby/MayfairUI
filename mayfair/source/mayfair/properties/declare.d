@@ -129,7 +129,9 @@ string observableProperty(T)(string field)
         @DefaultProperty("content")
         class ScrollPane : Widget
 
-    A class without one, and without a base class with one, has its children add()ed.
+    A class without one, and without a base class with one, has its children add()ed. So does one
+    marked @DefaultProperty(""), whatever its base class has: ContextMenu, whose children are
+    items, though Popup's are its content.
 */
 struct DefaultProperty
 {

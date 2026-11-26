@@ -42,7 +42,21 @@ import mayfair.widgets.widget;
     Its style class is "menu", as well as "popup"; each item is a `.menu-item`, with its shortcut
     in an `.accelerator`, and a separator is a `.separator`. To a screen reader it's a menu of
     menu items.
+
+    In a view, its items are its children, add()ed in order: not Popup's content, which is the
+    menu's own list.
+
+        <MenuButton>
+            <menu>
+                <ContextMenu>
+                    <MenuItem text="Open…" accelerator="Ctrl+O" onAction="open"/>
+                    <MenuSeparator/>
+                    <MenuItem text="Quit" onAction="quit"/>
+                </ContextMenu>
+            </menu>
+        </MenuButton>
 */
+@DefaultProperty("") // its children are items, add()ed, not a Popup's content
 class ContextMenu : Popup
 {
 public:

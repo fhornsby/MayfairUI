@@ -3,7 +3,8 @@
 <!--
     The project's files: what's in a FilesPane (files.d), which <root> stands for. A heading with
     buttons to make a file or a folder, and the folder's tree, each folder opened as it's
-    expanded. On the sidebar's frosted glass, in the Oriel theme.
+    expanded -- or, with no project open, a button to open one. On the sidebar's frosted glass,
+    in the Oriel theme.
 -->
 <root styleClass="sidebar files-pane" spacing="2">
     <Row spacing="2" alignment="centreLeft" padding="4 2 4 8">
@@ -18,5 +19,9 @@
             <graphic><Icon iconName="view-refresh-symbolic"/></graphic>
         </Button>
     </Row>
-    <TreeView id="tree" of="Entry" showRoot="false" placeholder="%no_project" grow="1"/>
+    <TreeView id="tree" of="Entry" showRoot="false" grow="1" visible="false"/>
+    <Column id="noProject" spacing="10" alignment="centre" padding="16" grow="1">
+        <Label text="%open_folder_hint" styleClass="placeholder" wrapText="true" textAlignment="centre"/>
+        <Button text="%open_folder" styleClass="open-folder" onAction="openFolder"/>
+    </Column>
 </root>

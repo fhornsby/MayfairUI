@@ -93,6 +93,25 @@ public:
     /// The document shown, to ask SyncTeX about: the PDF TeX made, not the copy.
     string compiledPdf() const { return source; }
 
+    /// Shows nothing: no PDF, no problems, as a project's closed.
+    void clear()
+    {
+        if (auto old = pdf.document)
+        {
+            pdf.setDocument(null);
+            old.close();
+        }
+        source = null;
+        placeholder.setVisible(true);
+        problemList.setItems(null);
+        statusLabel.setText("");
+        logsButton.setText(tr!"logs");
+        compileButton.setDisable(false);
+        showPage();
+        if (logsShown)
+            toggleLogs();
+    }
+
 private:
     @xml PdfView pdf;
     @xml Label placeholder, statusLabel, pageLabel;

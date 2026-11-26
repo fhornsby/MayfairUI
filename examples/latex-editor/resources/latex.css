@@ -29,6 +29,12 @@
     --hover-base: var(--row-hover);
 }
 
+.files-pane .open-folder {
+    --base: var(--accent);
+    --hover-base: var(--accent);
+    colour: white;
+}
+
 .toolbar .recompile {
     --base: var(--accent);
     --hover-base: var(--accent);

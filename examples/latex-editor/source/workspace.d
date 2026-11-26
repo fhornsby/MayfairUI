@@ -5,7 +5,8 @@ import std.algorithm : filter;
 import std.array : array;
 import std.file : exists, isDir, readText;
 import std.format : format;
-import std.path : absolutePath, baseName, buildNormalizedPath;
+import std.path : absolutePath, baseName, buildNormalizedPath, expandTilde;
+import std.string : strip;
 import mayfair;
 import mayfair.code;
 import compiler;
@@ -14,6 +15,7 @@ import files;
 import header;
 import preview;
 import project;
+import recent;
 import synctex;
 
 /*
@@ -28,6 +30,8 @@ import synctex;
         a problem chosen in the logs        opens its file at its line
         a double click on the PDF           opens the source that made it, at its line
         Show in PDF (Ctrl+.)                scrolls the PDF to the caret's line
+        Open Folder, Ctrl+O, a recent       closes the project open, asking about unsaved files,
+          project, or a folder dropped        and opens that one in its place
 */
 @View("main.xml")
 final class Workspace
@@ -45,6 +49,7 @@ public:
     void initialise()
     {
         files.onOpen = (string path) { open(path); };
+        files.onOpenFolder = { chooseProject(); };
         preview.onCompile = { compile(); };
         preview.onAutoChanged = (bool on) { autoCompile = on; };
         preview.onEngineChanged = (Engine e) { compiler.engine = e; compile(); };
@@ -52,32 +57,98 @@ public:
         preview.onSourceWanted = (int page, float x, float y) { goToSource(page, x, y); };
         tabs.selectedIndexProperty.addListener((int was, int now) { showStatus(); });
         split.setOnKeyPressed((ref KeyEvent e) { shortcut(e); });
+        // A folder dropped on the window opens as the project; a file opens with its project
+        split.setOnDragOver((ref DragEvent e) {
+            if (e.dragboard.hasFiles)
+            {
+                e.acceptTransferModes(TransferMode.copy);
+                e.consume();
+            }
+        });
+        split.setOnDragDropped((ref DragEvent e) {
+            if (e.dragboard.files.length)
+            {
+                openProject(e.dragboard.files[0]);
+                e.setDropCompleted(true);
+                e.consume();
+            }
+        });
         // Compiling as you type: once typing's paused this long
         pause = new Timeline(KeyFrame(1500.msecs, { if (autoCompile) compile(); }));
     }
 
-    /// Opens the project in `folder`, or the one a file's in, with its main file open.
+    /*
+        Opens the project in `path` -- a folder, or the one a file's in, with the file open --
+        in place of the one that's open: once its unsaved files have been asked about, and its
+        tabs closed. A file in the project that's open is opened in it, not as a new project.
+    */
     void openProject(string path)
     {
         path = buildNormalizedPath(absolutePath(path));
-        const folder = exists(path) && isDir(path) ? path : std.path.dirName(path);
-        project = new Project(folder);
-        files.show(project);
-        if (header)
-            header.setTitle(project.name);
-        mainLabel.setText(project.mainFile ? tr!"main_file"(project.relative(project.mainFile)) : "");
-        if (exists(path) && !isDir(path))
-            open(path);
-        else if (project.mainFile)
-            open(project.mainFile);
-        if (project.mainFile)
-            compile();
+        if (!exists(path))
+            return;
+        const folder = isDir(path) ? path : std.path.dirName(path);
+        if (project && folder == project.folder)
+        {
+            if (!isDir(path))
+                open(path);
+            return;
+        }
+        closeProject({ load(path, folder); });
     }
 
-    /// Asks for a project's folder, and opens it.
+    /// Asks for a project's folder, starting beside the one open, and opens it: with the
+    /// desktop's folder chooser, or, where it has none, by asking for the folder's path.
     void chooseProject()
     {
-        new FileChooser().title(tr!"open_project").showDirectoryDialog(split, (string f) { if (f) openProject(f); });
+        auto chooser = new FileChooser().title(tr!"open_folder");
+        if (project)
+            chooser.initialDirectory(std.path.dirName(project.folder));
+        chooser.onUnavailable((string why) { askForFolder(); });
+        chooser.showDirectoryDialog(split, (string f) { if (f) openProject(f); });
+    }
+
+    /// Asks for a project's folder by its path, typed in: where the desktop has no folder chooser.
+    void askForFolder()
+    {
+        auto field = new TextField(project ? std.path.dirName(project.folder) ~ "/" : "~/")
+            .prefWidth(420).promptText(tr!"folder_path");
+        auto open = () {
+            const path = expandTilde(field.text.strip);
+            if (path.length && exists(path))
+                openProject(path);
+            else
+                serverLabel.setText(tr!"not_a_folder"(path));
+        };
+        new Dialog(tr!"open_folder_title")
+            .text(tr!"no_dialog")
+            .extra(field)
+            .addButton(tr!"cancel", null, ButtonKind.cancel)
+            .addButton(tr!"open", open, ButtonKind.default_)
+            .show(split);
+        Platform.runLater({ field.requestFocus(); });
+    }
+
+    /// Closes the project: its unsaved files asked about first, then `then` called -- unless
+    /// it's cancelled. Its tabs, PDF, logs and language server go.
+    void closeProject(void delegate() then)
+    {
+        Document[] unsaved;
+        foreach (d; documents)
+            if (d.buffer.modified)
+                unsaved ~= d;
+        if (!unsaved.length)
+        {
+            closeAll();
+            then();
+            return;
+        }
+        new Dialog(unsaved.length == 1 ? tr!"unsaved_file"(baseName(unsaved[0].path)) : tr!"unsaved_files"(unsaved.length))
+            .text(tr!"lost")
+            .addStartButton(tr!"dont_save", { closeAll(); then(); })
+            .addButton(tr!"cancel", null, ButtonKind.cancel)
+            .addButton(tr!"save_all_button", { if (saveAll()) { closeAll(); then(); } }, ButtonKind.default_)
+            .show(split);
     }
 
     /// Shows `file`'s tab, opening it first if it isn't open, at line `line` (from 1) if it's given.
@@ -142,7 +213,10 @@ public:
         saveAll();
         pause.stop();
         preview.compiling();
+        auto compiled = project;
         compiler.compile(project, (CompileResult r) {
+            if (compiled !is project)
+                return; // a project since closed: its PDF isn't wanted
             problems = r.problems;
             foreach (d; documents)
                 d.showProblems(problems);
@@ -206,6 +280,51 @@ public:
 
 private:
     Project project;
+
+    // The project in `folder` opened, with `path` open in it if it's a file, or else its main file
+    void load(string path, string folder)
+    {
+        project = new Project(folder);
+        remember(project.folder);
+        files.show(project);
+        if (header)
+        {
+            header.setTitle(project.name);
+            header.showRecent(recentProjects().filter!(p => p != project.folder).array); // the others
+        }
+        mainLabel.setText(project.mainFile ? tr!"main_file"(project.relative(project.mainFile)) : "");
+        if (!isDir(path))
+            open(path);
+        else if (project.mainFile)
+            open(project.mainFile);
+        showStatus();
+        if (project.mainFile)
+            compile();
+    }
+
+    // Every tab closed, the language server stopped, and the PDF and logs cleared
+    void closeAll()
+    {
+        pause.stop();
+        foreach (d; documents.dup)
+        {
+            if (d.lsp)
+                d.lsp.close();
+            tabs.remove(d.tab);
+        }
+        documents = null;
+        foreach (s; servers)
+            s.stop();
+        servers = null;
+        server = null;
+        problems = null;
+        project = null;
+        preview.clear();
+        files.show(null);
+        mainLabel.setText("");
+        serverLabel.setText("");
+        showStatus();
+    }
     Compiler compiler = new Compiler;
     Document[] documents;
     Problem[] problems;                 // the last compile's
