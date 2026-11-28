@@ -135,6 +135,20 @@ An experimental browser build (WebAssembly, through Emscripten) is in [`mayfair/
 [`hello-web`](examples/hello-web) runs in it. It draws on the CPU, and has no LiteWebView,
 accessibility, file dialogs, notifications or drag and drop.
 
+What it builds is a folder of static files to serve: `index.html`, `index.js` and `index.wasm`.
+The app fills its page, so an `<iframe>` of that page puts it in another site's page, at the
+iframe's size. That's a live example in documentation, say:
+
+```html
+<iframe src="/examples/hello/index.html" width="760" height="420" loading="lazy"></iframe>
+```
+
+- **Size:** each example is about 2.8 MB of WebAssembly gzipped (7.8 MB as it is), so serve it
+  compressed. `loading="lazy"` keeps a page of several from fetching those out of sight.
+- **Serving:** the files want the `application/wasm` type, which Rack, nginx and most servers
+  give `.wasm` already.
+- **Browsers:** Chrome 137 and Firefox 131 on, for WebAssembly's newer exceptions.
+
 ## Building
 
 Mayfair currently needs LDC 1.41 or later, dub, SDL3, CMake, Meson and a C/C++ compiler; Rust's

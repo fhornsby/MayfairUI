@@ -74,26 +74,40 @@ mkdir -p "$objects" "$out"
 # Mayfair, less the WebGPU and OpenGL renderers, and the C bindings, less wgpu-native's; then the stand-ins for
 # what isn't built for the browser
 echo "Compiling Mayfair"
+# Its output kept to show, less a warning every file gives; a failure stops the build here, rather
+# than at the link with whatever object files there are
+log=$here/build/compile.log
 # shellcheck disable=SC2046,SC2086 # the lists are words
-ldc2 -mtriple=wasm32-unknown-emscripten -O -c -oq -od="$objects" \
+if ! ldc2 -mtriple=wasm32-unknown-emscripten -O -c -oq -od="$objects" \
     -I"$mayfair/source" -I"$mayfair/bindings" -I"$sdl" -J"$mayfair/fonts" -J"$mayfair/themes" $cimports \
     $(find "$mayfair/source" -name '*.d' -not -path '*/renderers/webgpu/*' -not -path '*/renderers/opengl/*') \
     $(ls "$mayfair"/bindings/*.c | grep -v webgpu_c) \
-    $(find "$sdl" -name '*.d') 2>&1 | grep -v "ALLOW_MEMORY_GROWTH" || true
+    $(find "$sdl" -name '*.d') > "$log" 2>&1; then
+    grep -v "ALLOW_MEMORY_GROWTH" "$log" >&2
+    echo "Mayfair didn't compile for the browser" >&2
+    exit 1
+fi
+grep -v "ALLOW_MEMORY_GROWTH" "$log" || true
 emcc -O2 -c -I"$vendor/accesskit/include" -I"$mayfair/bindings" "$here/stubs.c" -o "$objects/stubs.o"
 
 # The app, linked with all of it. SDL is Emscripten's own; libc++ is for ThorVG and Yoga, which
 # are C++, built without exceptions. SDL's port draws to the canvas with Emscripten's Browser
 # library, which newer Emscriptens leave out unless it's asked for.
 echo "Linking"
+log=$here/build/link.log
 # shellcheck disable=SC2086
-ldc2 -mtriple=wasm32-unknown-emscripten -O -oq -od="$here/build/app" \
+if ! ldc2 -mtriple=wasm32-unknown-emscripten -O -oq -od="$here/build/app" \
     -I"$mayfair/source" -I"$mayfair/bindings" -I"$sdl" -J"$mayfair/fonts" -J"$mayfair/themes" $cimports \
     $imports $strings "$@" "$objects"/*.o \
     "$built/thorvg/src/libthorvg-1.a" "$built/yoga/libyogacore.a" "$built/harfbuzz/src/libharfbuzz.a" \
     "$built/freetype/libfreetype.a" "$built/libunibreak/libunibreak.a" "$built/sheenbidi/libsheenbidi.a" \
     -Xcc=-sUSE_SDL=3 -Xcc=-lc++ -Xcc=-lc++abi -Xcc=--shell-file -Xcc="$here/shell.html" $preloads \
     '-Xcc=-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$Browser' \
-    -of="$out/index.html" 2>&1 | grep -v "ALLOW_MEMORY_GROWTH\|linker' input unused\|ignored during compilation" || true
+    -of="$out/index.html" > "$log" 2>&1; then
+    grep -v "ALLOW_MEMORY_GROWTH\|linker' input unused\|ignored during compilation\|local port" "$log" >&2
+    echo "The app didn't build for the browser" >&2
+    exit 1
+fi
+grep -v "ALLOW_MEMORY_GROWTH\|linker' input unused\|ignored during compilation\|local port" "$log" || true
 test -f "$out/index.wasm"
 echo "Built $out/index.html"

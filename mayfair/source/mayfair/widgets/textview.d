@@ -1251,7 +1251,8 @@ private:
             }
             else
             {
-                for (long i = l == at.line ? cast(long) at.column : cast(long) text.length - 1; i >= 0; i--)
+                // ptrdiff_t, not long: an index is 32 bits in the browser's WebAssembly
+                for (ptrdiff_t i = l == at.line ? cast(ptrdiff_t) at.column : cast(ptrdiff_t) text.length - 1; i >= 0; i--)
                 {
                     if (text[i] == close) depth++;
                     else if (text[i] == open && --depth == 0) return TextPosition(l, cast(size_t) i);
